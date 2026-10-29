@@ -1,0 +1,57 @@
+
+ RUN  v5.0.3 C:/Users/arvik/AppData/Local/Temp/claude/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422/scratchpad/b2rc2/m
+
+ ❯ packages/gateway/test/clip-wait.test.ts (53 tests | 2 failed) 60272ms
+   ❯ a fal clip waits its video model’s wait from fal’s acceptance, then is cancelled and never submitted again (14)
+     × a cancel that did not go through, then a status that never answers: fal is asked once more for at most 30 seconds, and the call ends as may have been billed 30014ms
+   ❯ a resumed clip keeps its clock: its wait counts from when fal accepted it, as the spend book recorded (6)
+     × a job resumed after its wait has passed whose status never answers is cancelled 30 seconds on, not later: an unread status shows nothing done 30003ms
+
+ Test Files  1 failed | 28 passed (29)
+      Tests  2 failed | 1004 passed (1006)
+   Start at  10:29:46
+   Duration  62.56s (tests 70%, import 24%, transform 6%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/gateway/test/clip-wait.test.ts > a fal clip waits its video model’s wait from fal’s acceptance, then is cancelled and never submitted again > a cancel that did not go through, then a status that never answers: fal is asked once more for at most 30 seconds, and the call ends as may have been billed
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ untilSeen packages/gateway/test/clip-wait.test.ts:221:18
+    219|   const realBound = performance.now() + 30_000;
+    220|   while (!seen() && performance.now() < realBound) await turn();
+    221|   expect(seen()).toBe(true);
+       |                  ^
+    222| }
+    223|
+ ❯ packages/gateway/test/clip-wait.test.ts:319:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  packages/gateway/test/clip-wait.test.ts > a resumed clip keeps its clock: its wait counts from when fal accepted it, as the spend book recorded > a job resumed after its wait has passed whose status never answers is cancelled 30 seconds on, not later: an unread status shows nothing done
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ untilSeen packages/gateway/test/clip-wait.test.ts:221:18
+    219|   const realBound = performance.now() + 30_000;
+    220|   while (!seen() && performance.now() < realBound) await turn();
+    221|   expect(seen()).toBe(true);
+       |                  ^
+    222| }
+    223|
+ ❯ packages/gateway/test/clip-wait.test.ts:484:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+

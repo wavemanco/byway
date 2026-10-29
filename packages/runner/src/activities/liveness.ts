@@ -16,11 +16,9 @@
  */
 import { CancelledFailure, Context } from '@temporalio/activity';
 import { ApplicationFailure } from '@temporalio/common';
-import type { Gateway, RunStatus, Store } from '@byway/contracts';
+import type { Gateway, Store } from '@byway/contracts';
 import type { PageRenderer } from '../pages.ts';
-import { FAILURE } from '../types.ts';
-
-const ENDED: ReadonlySet<RunStatus> = new Set(['done', 'failed', 'cancelled']);
+import { ENDED_STATUSES as ENDED, FAILURE } from '../types.ts';
 
 /** How often an invocation heartbeats; the worker sends them on at most every 2 s (worker.ts). */
 export const HEARTBEAT_EVERY_MS = 1_000;

@@ -266,7 +266,11 @@ const COPY: readonly Copy[] = [
         covers: ['dedupe', 'territories-render'],
       },
       obviousCheck('Territories that plain sessions with no spark also come up with are flagged.'),
-      { label: 'Shortlist', explainer: 'Your turn: shortlist up to three territories.', covers: ['shortlist'] },
+      {
+        label: 'Shortlist',
+        explainer: 'Your turn: shortlist up to three territories. With three or fewer left after the merge, all of them go on and you are not asked.',
+        covers: ['shortlist'],
+      },
       {
         label: 'Your direction',
         explainer: 'Your turn: as creative director, give the brief, the shot list and the style you want.',
@@ -277,7 +281,11 @@ const COPY: readonly Copy[] = [
         explainer: 'The AI builds a concept for each shortlisted territory, under your direction.',
         covers: ['concept'],
       },
-      { label: 'Pick a concept', explainer: 'Your turn: choose the concept to produce.', covers: ['pick-concept'] },
+      {
+        label: 'Pick a concept',
+        explainer: 'Your turn: choose the concept to produce. With only one concept, it goes on and you are not asked.',
+        covers: ['pick-concept'],
+      },
       {
         label: 'Your words: the script',
         explainer: 'Your turn: write the voice-over script and every spoken claim. From here on it is locked, and nothing changes it.',
@@ -291,7 +299,7 @@ const COPY: readonly Copy[] = [
       {
         label: 'Motion',
         explainer:
-          'Shot by shot, each clip starts from the last frame of the one before. Each clip’s last frame is checked for visible defects against the frame it started from, and the clip is remade when needed; the motion between them is not checked. Without a video provider set up, the run stops at the storyboard and images, and nothing is checked.',
+          'Shot by shot, each clip starts from the last frame of the one before. Each clip’s last frame, and a frame from its middle when one could be taken, is checked for visible defects against the frame it started from, and the clip is remade when needed; the motion between them is not checked. Without a video provider set up, the run stops at the storyboard and images, and nothing is checked.',
         covers: ['clip', 'shot-render', 'shot-check', 'regenerate'],
       },
       {

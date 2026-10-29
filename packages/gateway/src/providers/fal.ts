@@ -1,6 +1,6 @@
 import { createFalClient as createFalSdkClient } from '@fal-ai/client';
-import { GatewayError } from '@byway/contracts';
-import { cutOffError, isCutOff } from '../errors.ts';
+import { GatewayError, type ProviderJobRole } from '@byway/contracts';
+import { cutOffError, isCutOff, takenOverOf } from '../errors.ts';
 import { makeRedactor } from '../redact.ts';
 import { isNotStarted, notStartedError, waitedError, waitMinutes } from '../waited.ts';
 import { Deadline } from './deadline.ts';
@@ -20,8 +20,11 @@ import { plain, type MediaBytes, type ProviderAdapter, type ProviderVideo, type 
  *   is after a failure that may have reached fal;
  * - image-to-video models answer `{ video: { url, content_type } }` (fal's `I2VOutput`);
  * - `fal-ai/ffmpeg-api/extract-frame` with `frame_type: 'last'` answers `{ images: [{ url, content_type }] }`, so
- *   fal itself provides the last frame the next link starts from, and no local video decoder is needed.
- * Media URLs expire, so the gateway downloads and stores both at once, only from fal's media host and within a byte
+ *   fal itself provides the last frame the next link starts from, and no local video decoder is needed. The same
+ *   endpoint with `frame_type: 'middle'` gives a frame from the clip's middle for the shot check (F10 (a)): best effort,
+ *   asked for after the last frame and under the same bound, so it never fails the billed clip, and counted in
+ *   videoExtras whether or not it is made.
+ * Media URLs expire, so the gateway downloads and stores them at once, only from fal's media host and within a byte
  * cap (download, below; ADR-0088).
  *
  * A stop (ADR-0111: the call's run is ending) submits nothing more, and cancels the job under way over fal's REST queue
@@ -81,6 +84,12 @@ export const FAL_EXTRACT_FRAME = 'fal-ai/ffmpeg-api/extract-frame';
  * call is charged this upper bound: a frame grab from a clip of a few seconds takes well under it.
  */
 export const EXTRACT_FRAME_SECONDS_BOUND = 10;
+
+/** The helper jobs every fal clip is priced with (ProviderAdapter.videoExtras): its last frame, and its middle frame (F10 (a)). */
+export const FAL_VIDEO_EXTRAS: readonly { model: string; seconds: number }[] = [
+  { model: FAL_EXTRACT_FRAME, seconds: EXTRACT_FRAME_SECONDS_BOUND },
+  { model: FAL_EXTRACT_FRAME, seconds: EXTRACT_FRAME_SECONDS_BOUND },
+];
 
 /** How each supported image-to-video model names its inputs, and the clip lengths it makes. */
 interface VideoModelSpec {
@@ -255,8 +264,9 @@ export async function cancelJob(fetchImpl: typeof fetch, key: string, endpointId
  */
 export function createFalClient(key: string, fetchImpl: typeof fetch = fetch): FalClientLike {
   const client = createFalSdkClient({ credentials: key, retry: { maxRetries: 0 }, fetch: fetchImpl });
+  const storage = createFalSdkClient({ credentials: key, retry: { maxRetries: 0 }, fetch: uploadFetch(fetchImpl) });
   return {
-    storage: { upload: (file) => client.storage.upload(file) },
+    storage: { upload: (file) => storage.storage.upload(file) },
     queue: {
       submit: (endpointId, options) => submitJob(fetchImpl, key, endpointId, options.input, options.startTimeoutSeconds),
       subscribeToStatus: (endpointId, options) => client.queue.subscribeToStatus(endpointId, options),
@@ -292,6 +302,25 @@ export function admitMediaUrl(u: URL): boolean {
 
 /** Where a URL points, for messages: scheme and host only, never userinfo or path. */
 const originOf = (u: URL) => `${u.protocol}//${u.host}`;
+
+/** fal's REST API, where the SDK asks for an upload's slot (storage.js initiateUpload, getRestApiUrl). */
+const FAL_REST_ORIGIN = 'https://rest.fal.ai';
+
+/**
+ * The fetch the SDK's start-frame upload goes through (F17 (a)). The SDK asks fal's REST API for a slot, then PUTs the
+ * frame to the `upload_url` fal's answer names, with fetch's default redirects (@fal-ai/client 1.10.1, storage.js).
+ * That URL is fal's to name, as a media URL is, so it is held to admitMediaUrl (ADR-0088), and its redirects are not
+ * followed at all: a PUT followed hop by hop would send the frame again to each hop. A slot outside fal's media host is
+ * refused before anything is sent, and nothing is billed, since the upload comes before the clip's submission.
+ */
+function uploadFetch(fetchImpl: typeof fetch): typeof fetch {
+  return (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.origin === FAL_REST_ORIGIN) return fetchImpl(input, init);
+    if (!admitMediaUrl(url)) return Promise.reject(mediaError(`fal named an upload address for the start frame outside its media host (${originOf(url)})`));
+    return fetchImpl(input, { ...init, redirect: 'error' });
+  };
+}
 
 const mediaError = (message: string, retryable = false) => new GatewayError('provider-error', message, retryable);
 
@@ -411,20 +440,20 @@ export interface FalAdapterOptions {
   fetch?: typeof fetch;
 }
 
-/** The two jobs a relay link submits, by role: the clip, then its last frame. */
-type JobRole = 'generation' | 'extract';
-const JOB_WHAT: Record<JobRole, string> = { generation: 'the clip', extract: 'the last-frame job' };
+/** The jobs a relay link submits, by role: the clip, its last frame, then its middle frame. */
+type JobRole = ProviderJobRole;
+const JOB_WHAT: Record<JobRole, string> = { generation: 'the clip', extract: 'the last-frame job', middle: 'the middle-frame job' };
 
 /** A wait that a stop ended first (untilEnded). */
-const STOPPED = Symbol('stopped');
+export const STOPPED = Symbol('stopped');
 /** A wait that its own deadline ended first: the clip's wait, or the frame's bound (untilEnded). */
-const WAITED = Symbol('waited');
+export const WAITED = Symbol('waited');
 
 /**
  * `work`, or STOPPED once `stop` aborts, or WAITED once `deadline` does (at once when one already has; the stop first).
- * What `work` does afterwards is ignored.
+ * What `work` does afterwards is ignored. Exported for its test.
  */
-async function untilEnded<T>(work: Promise<T>, stop: AbortSignal | undefined, deadline?: AbortSignal): Promise<T | typeof STOPPED | typeof WAITED> {
+export async function untilEnded<T>(work: Promise<T>, stop: AbortSignal | undefined, deadline?: AbortSignal): Promise<T | typeof STOPPED | typeof WAITED> {
   if (!stop && !deadline) return work;
   work.catch(() => undefined);
   if (stop?.aborted) return STOPPED;
@@ -481,17 +510,30 @@ const droppedAtStart = (e: unknown): boolean => {
 };
 
 /**
- * fal's own failure answer to a read, in words (its HTTP status), or undefined when the failure is not fal's word: an
- * HTTP status that came with fal's JSON error body, which @fal-ai/client 1.10.1 hands on as an ApiError (a
- * ValidationError for 422) carrying `status` and `body`. A page from a proxy in between has no body (the SDK sets one
- * only from a JSON answer), and a lost connection or a timeout has no status, so neither is fal's word on the job. The
- * body is how errors.ts tells fal's own 5xx from a proxy's (hasProviderBody); here it is asked of a 4xx too, since a
- * status without fal's body says nothing of the job either (Claude's reading). Read by those fields, as droppedAtStart
- * reads them, and before the gateway maps the error, which keeps neither.
+ * The statuses with which fal answers a job's result to say that the job itself failed: 400 (`bad_request`), 422 (its
+ * model errors, `content_policy_violation`, `no_media_generated` and the input checks) and 500 (`internal_server_error`,
+ * `downstream_service_error`), from fal's errors page (fal.ai/docs/model-apis/errors, read 2026-10-28). The others are
+ * about the read, not the job: 401 and 403 (the key), 408, 429 (fal's limits, which @fal-ai/client 1.10.1 retries), 499,
+ * 502 and 503 (fal's runners and gateway, retried too), and a 504 without the start-deadline header, whose types on that
+ * page are a timeout of the request as often as of the generation (R2-MONEY-1, Block 2's second re-check; Claude's
+ * choice, which the row left to Claude).
+ */
+const JOB_FAILED_STATUSES = new Set([400, 422, 500]);
+
+/**
+ * fal's own word that a job failed, in words (its HTTP status), or undefined when the failure is not that word: one of
+ * JOB_FAILED_STATUSES with fal's JSON error body (an object with its `detail`), which @fal-ai/client 1.10.1 hands on as
+ * an ApiError (a ValidationError for 422) carrying `status` and `body`. A page from a proxy in between has no such body,
+ * and a lost connection or a timeout has no status, so neither is fal's word on the job. The body is how errors.ts tells
+ * fal's own 5xx from a proxy's (hasProviderBody); here it is asked of a 4xx too, since a status without fal's body says
+ * nothing of the job either (Claude's reading). Read by those fields, as droppedAtStart reads them, and before the
+ * gateway maps the error, which keeps neither.
  */
 const falFailure = (e: unknown): string | undefined => {
   const err = e as { status?: unknown; body?: unknown } | null;
-  return typeof err?.status === 'number' && typeof err.body === 'object' && err.body !== null ? `HTTP ${err.status}` : undefined;
+  const body = err?.body;
+  const fals = typeof body === 'object' && body !== null && 'detail' in body;
+  return typeof err?.status === 'number' && JOB_FAILED_STATUSES.has(err.status) && fals ? `HTTP ${err.status}` : undefined;
 };
 
 /**
@@ -569,7 +611,8 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
         if (status === STOPPED || status === WAITED) return ended(status, 'running');
       }
       done = true;
-      const result = await untilEnded(req.attempt(read), stop, deadline?.reading ? until : undefined);
+      // fal reported the job done: its result is there to read, so the read is retried even after a cancel.
+      const result = await untilEnded(req.attempt(read, { done: true }), stop, deadline?.reading ? until : undefined);
       if (result === STOPPED || result === WAITED) return ended(result, 'done');
       return { data: result.data, requestId };
     } catch (e) {
@@ -600,7 +643,20 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
     // Stopped before its submission: nothing more is submitted (ADR-0111), so nothing billable was sent for this job.
     if (req.signal?.aborted) throw cutOffError('fal', 'none', `${JOB_WHAT[role]} was not submitted`);
     const start = opts.startTimeoutSeconds;
-    const { request_id: requestId } = await req.submit(() => queue.submit(endpointId, { input: body, ...(start !== undefined ? { startTimeoutSeconds: start } : {}) }), JOB_WHAT[role]);
+    let requestId: string;
+    try {
+      ({ request_id: requestId } = await req.submit(() => queue.submit(endpointId, { input: body, ...(start !== undefined ? { startTimeoutSeconds: start } : {}) }), JOB_WHAT[role]));
+    } catch (e) {
+      // Another attempt's jobs fal had already accepted, which this call now holds (B-071): this and any later job of
+      // the call are polled by those ids, as a resumed call's are, and not submitted. The request is updated in place so
+      // the last-frame job and the stored request body see them too.
+      const taken = takenOverOf(e);
+      if (taken?.resume[role] === undefined) throw e;
+      req.resume = taken.resume;
+      if (taken.acceptedAt) req.acceptedAt = taken.acceptedAt;
+      else delete req.acceptedAt;
+      return runJob(req, role, endpointId, input, opts);
+    }
     const acceptedAt = Date.now();
     await req.accepted?.(role, requestId);
     return pollJob(req, role, endpointId, requestId, opts.deadline?.(acceptedAt));
@@ -616,12 +672,13 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
    * deadline is done too: only its result says it never ran (droppedAtStart). So is a job that failed: fal reports it
    * done, and only its result says it failed. So before a done job is settled as made, its result is read once (a free
    * read; no new job, which is all a stop forbids), for at most RESULT_LOOK_MS, and fal's word on the job is taken over
-   * the stop's. Its word that the job never ran comes first, and nothing is counted for it (notStartedError). Any other
-   * failure fal answers the read with itself (falFailure: a status with fal's own body, such as a 500 or a 422) means
-   * the clip was not made, but fal may have billed the work: the call is counted as "may have been billed", at its
-   * estimate, listed with the job's id, and nothing is ledgered, as the same answer is counted without a stop
-   * (acceptedButUnread). A result that comes back, a failure that is not fal's word (a lost connection, a proxy's page)
-   * or no answer in time leaves it settled as made, as before. (TESTS-1, Block 2's check: a stop during the dropped
+   * the stop's. Its word that the job never ran comes first, and nothing is counted for it (notStartedError). fal's word
+   * that the job failed (falFailure: a 400, a 422 or a 500 with fal's own body) says the clip may not have been made,
+   * and fal may have billed the work: the call is counted as "may have been billed", at its estimate, listed with the
+   * job's id, and nothing is ledgered, as the same answer is counted without a stop (acceptedButUnread). A result that
+   * comes back, an answer about the read rather than the job (fal's limits, its gateway, the key: a 429, a 503, a 401),
+   * a failure that is not fal's word (a lost connection, a proxy's page) or no answer in time leaves it settled as made,
+   * as before (R2-MONEY-1, Block 2's second re-check). (TESTS-1, Block 2's check: a stop during the dropped
    * job's result read, or during its poll with fal answering the cancel "already completed", ledgered a clip fal had not
    * made or billed. R-MONEY-1, its re-check: the same two races ledgered a clip whose result fal answered with its own
    * failure, which the look had read and dropped.)
@@ -677,13 +734,38 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
     const billing = cancel.status === 'removed' ? 'none' : 'maybe';
     throw waitedError({ provider: 'fal', model: req.model }, { minutes: waitMinutes(waitMs), how: 'clip', cancel: said }, { retryable: false, billing, job: polled.requestId });
   };
+  /**
+   * A frame from the middle of the clip (F10 (a)), or why there is none. Best effort: it never throws, so it never fails
+   * the billed clip. Its job is cancelled, best effort, when a stop or the frame's bound ends it first; its cost is in the
+   * clip's settled price already (FAL_VIDEO_EXTRAS), whatever fal does with it.
+   */
+  const middleFrame = async (req: ProviderVideoRequest, videoUrl: string, bound: Deadline | undefined): Promise<{ frame: MediaBytes; via: string[]; requestId: string } | { problem: string; requestId?: string }> => {
+    let requestId: string | undefined;
+    try {
+      const job = await runJob(req, 'middle', FAL_EXTRACT_FRAME, async () => ({ video_url: videoUrl, frame_type: 'middle' }), bound ? { deadline: () => ({ signal: bound.signal, reading: true }) } : {});
+      requestId = job.requestId;
+      if (!('data' in job)) {
+        const state = 'stopped' in job ? job.stopped : job.waited;
+        const cancel = state === 'running' ? await queue.cancel(FAL_EXTRACT_FRAME, { requestId: job.requestId }) : undefined;
+        return { problem: `${'stopped' in job ? 'its run was ending' : 'the frame’s time ran out'}${cancel ? ` (cancelled: ${cancel.detail})` : ''}`, requestId };
+      }
+      const url = fileUrl(job.data, 'images').url;
+      const got = await untilEnded(req.attempt(() => download(fetchImpl, url, 'middle frame', bound?.signal)), undefined, bound?.signal);
+      if (got === WAITED || got === STOPPED) return { problem: 'its download did not finish in time', requestId };
+      const mediaType = sniffImageType(got.bytes);
+      if (!mediaType) return { problem: 'it is not a PNG, JPEG or WebP image', requestId };
+      return { frame: { bytes: got.bytes, mediaType }, via: got.via, requestId };
+    } catch (e) {
+      return { problem: e instanceof Error ? e.message : String(e), ...(requestId ? { requestId } : {}) };
+    }
+  };
   return {
     id: 'fal',
     async complete() {
       throw new GatewayError('invalid-request', 'fal.ai is used for video only in byway, not for text');
     },
     videoSeconds: falVideoSeconds,
-    videoExtras: [{ model: FAL_EXTRACT_FRAME, seconds: EXTRACT_FRAME_SECONDS_BOUND }],
+    videoExtras: FAL_VIDEO_EXTRAS,
     // A queue job is cancelled when its call's run is ending (ADR-0111).
     cutsOff: { video: true },
     async video(req: ProviderVideoRequest): Promise<ProviderVideo> {
@@ -740,12 +822,13 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
         endpoint: req.model,
         input: { ...input, [spec.imageField]: `artifact:${frame.artifactId}` },
         extract: { endpoint: FAL_EXTRACT_FRAME, frame_type: 'last' },
+        middle: { endpoint: FAL_EXTRACT_FRAME, frame_type: 'middle' },
         // A resumed call says which of its jobs an earlier attempt submitted (stage 3).
         ...(req.resume && Object.keys(req.resume).length > 0 ? { resumed: { ...req.resume } } : {}),
       };
       const response: Record<string, unknown> = { requestId: polled.requestId, ...('data' in polled ? { video: plain(polled.data) } : { stopped: 'its run was ending before byway read the clip' }), ...(startTimeoutSeconds !== undefined ? { startTimeoutSeconds } : {}) };
       // The hosts each download used, in the stored evidence: a live link shows which media hosts fal really serves from.
-      const media: { clip?: string[]; frame?: string[] } = {};
+      const media: { clip?: string[]; frame?: string[]; middle?: string[] } = {};
       response.media = media;
       const out: ProviderVideo = { servedModel: req.model, usage: { inputTokens: 0, outputTokens: 0, units: req.durationSec }, requestBody, responseBody: response };
       // The clip was made (and billed) when the stop came: settled as made, never downloaded, and no last-frame job.
@@ -756,7 +839,7 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
       const generated = polled;
       try {
         const video = fileUrl(generated.data, 'video');
-        const clip = await req.attempt(() => download(fetchImpl, video.url, 'clip'));
+        const clip = await req.attempt(() => download(fetchImpl, video.url, 'clip'), { done: true });
         media.clip = clip.via;
         // Typed from its bytes, whatever a header or fal's answer claims: anything else is not kept as a clip.
         const clipType = sniffVideoType(clip.bytes);
@@ -789,6 +872,12 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
           const type = sniffImageType(last.bytes);
           if (!type) throw new GatewayError('provider-error', 'the last frame fal returned is not a PNG, JPEG or WebP image');
           out.lastFrame = { bytes: last.bytes, mediaType: type } satisfies MediaBytes;
+          const middle = await middleFrame(req, video.url, frameBound);
+          if ('frame' in middle) {
+            out.middleFrame = middle.frame;
+            media.middle = middle.via;
+            response.middleFrame = { requestId: middle.requestId };
+          } else response.middleFrame = { ...(middle.requestId ? { requestId: middle.requestId } : {}), notMade: middle.problem };
         } finally {
           frameBound?.end();
         }

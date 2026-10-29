@@ -8,7 +8,6 @@
  * draft and tell catalog as their files' ids (RunInput), never their texts; and so do the person's VOICE answers.
  */
 import type { CheckpointKind, CheckpointOption, CheckpointResolution, Medium, RunEventPayloads, RunEventType, RunStatus } from '@byway/contracts';
-import type { PortType } from '@byway/protocol';
 import type { Recipe, Step } from '@byway/recipe';
 
 /** The workflow type name the client starts. */
@@ -184,8 +183,9 @@ export const toStepSpec = (s: Step): StepSpec => ({
   ...(s.variant ? { variant: s.variant } : {}),
 });
 
-export const consumes = (s: Pick<StepSpec, 'consumes'>, port: PortType): boolean => s.consumes.includes(port);
-export const produces = (s: Pick<StepSpec, 'produces'>, port: PortType): boolean => s.produces.includes(port);
+/** Kept in the contracts beside RunStatus, where the store's endRun reads it too. */
+export { ENDED_STATUSES } from '@byway/contracts';
+
 
 // ---- Activity inputs and results -------------------------------------------------------------------------------
 

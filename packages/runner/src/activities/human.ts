@@ -9,7 +9,6 @@ import { routeChoice } from '@byway/catalog';
 import type { Medium } from '@byway/contracts';
 import { withoutMarks } from '@byway/gateway';
 import { voiceWrite } from '@byway/recipe/semantics';
-import { CheckpointResolvedError, CheckpointWithdrawnError } from '@byway/store';
 import { applyClaims, claimLines } from '../claims.ts';
 import {
   applyCopy,
@@ -35,7 +34,7 @@ import {
 } from '../copy.ts';
 import { parseArtifact, parseStoryboard } from '../formats.ts';
 import { arbiterProblem, expectedShown, locate, markedCopy, notShown, notShownWhy, WHY_NOT_SHOWN, type Location, type NotShownWhy } from '../page-arbiter.ts';
-import type { ArtifactResolver, PageRenderer, RenderOptions } from '../pages.ts';
+import type { PageRenderer, RenderOptions } from '../pages.ts';
 import { INPUT_MEDIA_TYPE } from '../stored-inputs.ts';
 import type { EarlierAnswer, FinishHumanInput, FinishHumanResult, OpenCheckpointInput, OpenCheckpointResult, RecordResolutionInput, RunRef, StepSpec } from '../types.ts';
 import { PAGE_LINES_RULE } from '../workflow/wording.ts';
@@ -43,9 +42,9 @@ import type { RunnerDeps } from './deps.ts';
 import { at, emit } from './events.ts';
 import { AnswerRejected, StepError } from './failures.ts';
 import { unreadableAnswer } from './held-voice.ts';
-import { ArtifactReader } from './prompting.ts';
+import { ArtifactReader, artifactRoute } from './prompting.ts';
 import { stepFinished, stepStarted } from './steps.ts';
-import { runSeeds, storeText, writeProblems } from './writes.ts';
+import { personWriteProblems, runSeeds, storeText } from './writes.ts';
 
 /** The claim log (ENG-2) reads claims out of Markdown, so it runs on prose; on any other medium the step writes the copy deck. */
 const isClaimLog = (medium: Medium, step: Pick<StepSpec, 'variant'>): boolean => step.variant === 'claim-log' && medium === 'prose';
@@ -225,15 +224,6 @@ function pageRenderer(deps: RunnerDeps): PageRenderer {
   return deps.pages;
 }
 
-/** Artifact routes in a page the browser reads, served from the store. */
-const artifactRoute =
-  (deps: RunnerDeps): ArtifactResolver =>
-  async (id) => {
-    if (!(await deps.store.artifacts.has(id))) return undefined;
-    const { record, bytes } = await deps.store.artifacts.get(id);
-    return { body: bytes, contentType: record.mediaType };
-  };
-
 /**
  * Where Chromium shows each of the page's lines (page-arbiter.ts). The reads fail as a render does, with a plain
  * StepError that is not retried (a page that never loads, a renderer that fails while reading); a fault in byway's own
@@ -335,11 +325,14 @@ export async function recordResolution(deps: RunnerDeps, input: RecordResolution
   try {
     await deps.store.resolveCheckpoint(input.resolution);
   } catch (e) {
+    // By name and code, not class: a store handed in by a caller that loaded @byway/store by another URL throws its own
+    // copy's classes (BUILD-1).
+    const err = e as { name?: unknown; code?: unknown } | null;
     // A withdrawn question (its run was cancelled or failed) takes no answer, and retrying will not change that. It is
     // deliberately not a CheckpointResolvedError, so it never passes for an earlier attempt's success.
-    if (e instanceof CheckpointWithdrawnError) throw new StepError('This question was withdrawn: its run was cancelled or failed.');
+    if (err?.name === 'CheckpointWithdrawnError' && err.code === 'withdrawn') throw new StepError('This question was withdrawn: its run was cancelled or failed.');
     // A retried activity whose first attempt committed finds the checkpoint already answered: that is success.
-    if (!(e instanceof CheckpointResolvedError)) throw e;
+    if (!(err?.name === 'CheckpointResolvedError' && err.code === 'already-resolved')) throw e;
   }
   await emit(deps.store, input.runId, 'checkpoint-resolved', { checkpointId: input.resolution.checkpointId }, at(input.call, `checkpoint/${input.resolution.checkpointId}/resolved`));
 }
@@ -367,8 +360,8 @@ export async function finishHumanStep(deps: RunnerDeps, input: FinishHumanInput)
     if (!applied.ok) throw new AnswerRejected(applied.problem);
     result.text = text;
     if (applied.value.changed.length) {
-      const problems = writeProblems({ seeds: await runSeeds(deps.store, run.runId) }, applied.value.text);
-      if (problems.length) throw new StepError(problems.join(' '));
+      const problems = personWriteProblems(await runSeeds(deps.store, run.runId), applied.value.text);
+      if (problems.length) throw new AnswerRejected(problems.join(' '));
       result.artifactId = await storeText(deps, run, call, applied.value.text, { label: 'With your corrections', name: 'work' });
       outputs.push(result.artifactId);
     }
@@ -382,12 +375,13 @@ export async function finishHumanStep(deps: RunnerDeps, input: FinishHumanInput)
     }
   } else if (input.kind === 'write' && step.produces.includes('artifact')) {
     // The author's own draft (C3 "your own draft", C6/C6a every sentence): their text is the work. A draft byway cannot
-    // read as the medium (bad JSON, a shot numbered twice, a diff without headers) is asked about again with why, before
-    // anything is stored, as any other answer that cannot be written is (ENG-6); the workflow keeps their text.
+    // read as the medium (bad JSON, a shot numbered twice, a diff without headers), or one that holds a SEED string, is
+    // asked about again with why, before anything is stored, as any other answer that cannot be written is (ENG-6); the
+    // workflow keeps their text.
     const parsed = run.medium === 'prose' ? { ok: true as const, value: `${text.trimEnd()}\n` } : parseArtifact(run.medium, text);
     if (!parsed.ok) throw new AnswerRejected(`Your draft could not be used as the ${run.medium}: ${parsed.problem}`);
-    const problems = writeProblems({ seeds: await runSeeds(deps.store, run.runId) }, parsed.value);
-    if (problems.length) throw new StepError(problems.join(' '));
+    const problems = personWriteProblems(await runSeeds(deps.store, run.runId), parsed.value);
+    if (problems.length) throw new AnswerRejected(problems.join(' '));
     result.artifactId = await storeText(deps, run, call, parsed.value, { label: 'Your draft', name: 'work' });
     result.text = text;
     outputs.push(result.artifactId);
@@ -468,7 +462,7 @@ function composeVoice(seeds: readonly string[], step: StepSpec, medium: Exclude<
   const refuse = (r: Refusal) => new AnswerRejected(`${r.problem}${offeredQuotes(deckKindOf(medium, scope), offered, r)}`);
   const applied = applyCopy(medium, before, edited, scope);
   if (!applied.ok) throw refuse(applied);
-  const problems = [roundTripProblem(medium, scope, applied.value, edited), ...lockedVoiceover(medium, step, before, applied.value), ...writeProblems({ seeds }, applied.value)].filter((p): p is string => !!p);
+  const problems = [roundTripProblem(medium, scope, applied.value, edited), ...lockedVoiceover(medium, step, before, applied.value), ...personWriteProblems(seeds, applied.value)].filter((p): p is string => !!p);
   if (problems.length) throw refuse({ problem: problems.join(' ') });
   return applied.value;
 }
@@ -540,7 +534,7 @@ function composePage(seeds: readonly string[], before: string, edited: string, o
   if (!edit.ok) throw refuse(edit.problem, edit.lines);
   const placed = placePageEdit(before, edit, notOffered);
   if (placed.problems.length) throw refuse(placed.problems.join(' '));
-  const problems = [...pageEditProblems(before, placed.page, edit, placed, notOffered), ...writeProblems({ seeds }, placed.page)];
+  const problems = [...pageEditProblems(before, placed.page, edit, placed, notOffered), ...personWriteProblems(seeds, placed.page)];
   if (problems.length) throw refuse(problems.join(' '));
   return { page: placed.page, edit };
 }

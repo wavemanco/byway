@@ -5,8 +5,8 @@
 import { loop, pick, relay, replicate, route, seq, step, withHash, type Node, type Recipe, type Step } from '@byway/recipe';
 import type { Medium } from '@byway/contracts';
 
-const recipe = (id: string, medium: Medium, body: Node): Recipe =>
-  withHash({ schema: 'byway.recipe/1', id, title: id, kind: 'composed', family: 'test', channel: 'workspace', medium, inputs: ['intent'], stages: [{ stage: 'D1', body }], sitsOut: [], exceptions: [], bank: false });
+const recipe = (id: string, medium: Medium, body: Node, as: Partial<Recipe> = {}): Recipe =>
+  withHash({ schema: 'byway.recipe/1', id, title: id, kind: 'composed', family: 'test', channel: 'workspace', medium, inputs: ['intent'], stages: [{ stage: 'D1', body }], sitsOut: [], exceptions: [], bank: false, ...as });
 
 const build = (id: string, extra: Partial<Step> = {}): Step =>
   step({ id, role: 'build', actor: 'model', tier: 'mid', prompt: `product.test.${id}`, consumes: ['intent'], produces: ['artifact'], writes: true, ...extra });
@@ -107,7 +107,10 @@ export const shortAd = recipe(
   ),
 );
 
-/** A critic loop whose cap is settled by policy: the best snapshot, re-ranked in a fresh call. */
+/**
+ * A critic loop whose cap is settled by policy: the best snapshot, re-ranked in a fresh call. Only a study may hand a
+ * critic loop's cap to a policy (LS1, relaxed by SM-2), so it is a research recipe, as Runner.start requires (F01 (d)).
+ */
 export const policyLoop = recipe(
   'policy-loop',
   'prose',
@@ -123,6 +126,7 @@ export const policyLoop = recipe(
       { metric: 'critic-score', threshold: 9, hidden: true, holder: 'worker', probe: 1, max: 3, onCap: 'policy-best-snapshot', onNoConverge: 'continue' },
     ),
   ),
+  { kind: 'variant', family: 'C1', channel: 'research-frozen', exceptions: ['SM-2'] },
 );
 
 /** A storyboard whose voice-over you write, then a machine pass that must keep your words (keepsVoice). */

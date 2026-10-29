@@ -117,11 +117,18 @@ describe('every single-field change of a semantic field gets a line (FIELD_ROLES
     it(`${nearest.id}: never "The same steps", and a changed quality bar is never quoted`, () => {
       const all = mutations(nearest);
       expect(all.length).toBeGreaterThan(50);
+      const ids = new Set<string>();
+      walk(nearest, (n: Node) => {
+        if ('id' in n && n.id) ids.add(n.id);
+      });
       for (const m of all) {
         const lines = diff(m.recipe, nearest);
         expect(lines, m.what).not.toEqual(same(nearest));
         expect(lines.length, m.what).toBeGreaterThan(0);
         for (const t of m.threshold ?? []) expect(lines.join('\n'), `${m.what} quotes ${t}`).not.toMatch(new RegExp(`(^|[^\\d.])${String(t).replace('.', '\\.')}([^\\d]|$)`));
+        // The screen shows the lines as they are (B-018): no node id in parentheses, no medium code.
+        for (const id of ids) expect(lines.join('\n'), m.what).not.toContain(`(${id})`);
+        expect(lines.join('\n'), m.what).not.toMatch(/web-page|code-diff/);
       }
     });
   }

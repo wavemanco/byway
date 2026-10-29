@@ -1,12 +1,12 @@
-import { c4, c6a, presentationOf } from '@byway/catalog';
+import { c4, c6a, presentationOf, PROTOCOL_CONFIGS } from '@byway/catalog';
 import { composedRecipe } from '@byway/gateway';
 import { problemSlot } from '@byway/prompts/pure';
 import type { Recipe } from '@byway/recipe';
 import { recipeHash, walk } from '@byway/recipe';
 import { validate } from '@byway/validator';
 import { describe, expect, it } from 'vitest';
-import { diffFromNearest } from '../src/index.ts';
-import { demoAdvisor, fencedJson, sequence, WS } from './helpers.ts';
+import { checkAnswer, diffFromNearest } from '../src/index.ts';
+import { demoAdvisor, fencedJson, recordingPrompts, sequence, WS } from './helpers.ts';
 
 const MEMO = { text: 'A status memo to leadership about the billing migration' };
 const LONG_MEMO = { text: 'A detailed strategy memo on the billing migration for leadership' };
@@ -287,6 +287,18 @@ describe('compose: the composed profile (ADR-0058)', () => {
       }),
     );
     expect(range).toMatch(/COMPOSED-KNOB: .*catalog/);
+  });
+
+  it('reports an unregistered or out-of-range knob once, at its path (the ST7 copy of it is dropped)', () => {
+    const deps = { prompts: recordingPrompts().renderer, catalog: PROTOCOL_CONFIGS };
+    const atKnob = (raw: unknown, name: string) => checkAnswer(fencedJson(raw), c4, deps, 'composed-knob').violations.filter((v) => v.path?.endsWith(`.knobs.${name}`));
+    const unknown = atKnob(withKnob({ route: 'direct', boldness: 11 }), 'boldness');
+    expect(unknown.map((v) => v.ruleId)).toEqual(['COMPOSED-KNOB']);
+    const range = variant((r) => {
+      const d3 = (r.stages as { body: { steps: Record<string, unknown>[] } }[])[2]!;
+      d3.body.steps = d3.body.steps.map((s) => (s.id === 'tells-sweep' ? { ...s, knobs: { catalog: 'everything' } } : s));
+    });
+    expect(atKnob(range, 'catalog').map((v) => v.ruleId)).toEqual(['COMPOSED-KNOB']);
   });
 
   it('allows only prompt templates the catalog uses for the same role, and that exist', async () => {

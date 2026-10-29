@@ -169,5 +169,14 @@ describe('text helpers', () => {
     expect(exportFileName('Ideas', 'application/json')).toBe('ideas.json');
     expect(exportFileName('Fix', 'text/x-diff')).toBe('fix.patch');
     expect(exportFileName('Frame', 'image/png')).toBe('frame.png');
+    // Every kind mediaServing serves keeps its own extension, not .txt (WEB-3).
+    expect(exportFileName('Clip', 'video/mp4')).toBe('clip.mp4');
+    expect(exportFileName('Clip', 'video/webm')).toBe('clip.webm');
+    expect(exportFileName('Loop', 'image/gif')).toBe('loop.gif');
+    expect(exportFileName('Frame', 'image/avif')).toBe('frame.avif');
+    expect(exportFileName('Voice', 'audio/mpeg')).toBe('voice.mp3');
+    expect(exportFileName('Voice', 'audio/wav')).toBe('voice.wav');
+    expect(exportFileName('Voice', 'audio/ogg')).toBe('voice.ogg');
+    expect(exportFileName('Other', 'application/x-unknown')).toBe('other.txt');
   });
 });

@@ -93,6 +93,8 @@ export interface EngineStartReport {
   lost: string[];
   /** Run by the engine, missing from the store (R4: a store older than the engine): their workflows were terminated. */
   orphaned: string[];
+  /** Only from the pass repeated while the engine runs: workflows whose task kept failing, stopped, their runs failed. */
+  stuck?: string[];
 }
 
 /**
@@ -105,6 +107,7 @@ export function engineStartLines(report: EngineStartReport): string[] {
     ...(report.retired.length > 0 ? [`ended ${runs(report.retired.length)} started by an older version of byway, which cannot continue`] : []),
     ...(report.lost.length > 0 ? [`ended ${runs(report.lost.length)} the engine no longer has, which cannot continue`] : []),
     ...(report.orphaned.length > 0 ? [`stopped ${runs(report.orphaned.length)} that byway's records do not have (the data directory was probably restored from an older backup)`] : []),
+    ...(report.stuck?.length ? [`ended ${runs(report.stuck.length)} whose next step the engine failed to take each time it tried, which cannot continue`] : []),
   ];
 }
 
@@ -122,14 +125,16 @@ export async function settleBeforePolling(client: Client, worker: RunnerWorker, 
 
 /**
  * The lost-run pass the engine repeats while its worker polls (lost-runs.ts): the one it ran at start, in both
- * directions, except that queued runs are left alone, because the app may be starting one (Runner.start writes the run
- * before its workflow). A run whose workflow Temporal closed without byway closing it, at one of Temporal's limits or
- * from outside, is then failed plainly within minutes instead of reading "running" until byway next starts. Runs from
+ * directions, except that a queued run Temporal has no workflow for is left alone, because the app may be starting it
+ * (Runner.start writes the run before its workflow). A run whose workflow Temporal closed without byway closing it, at
+ * one of Temporal's limits or from outside, is then failed plainly within minutes instead of reading "running" until
+ * byway next starts, and so is a run whose workflow Temporal keeps running while its workflow task keeps failing, whose
+ * workflow is stopped (whilePolling in lost-runs.ts). Runs from
  * another workflow bundle are not looked for again: the worker retired them all at start, and it starts runs under its
  * own bundle only. Exported so the tests run it directly, without waiting for its timer.
  */
 export async function reconcileWhilePolling(client: Client, worker: RunnerWorker, store: Store): Promise<Reconciled> {
-  return reconcileLostRuns(client, store, [(await store.ensureDefaultWorkspace()).id], { taskQueue: worker.taskQueue, skipQueued: true });
+  return reconcileLostRuns(client, store, [(await store.ensureDefaultWorkspace()).id], { taskQueue: worker.taskQueue, whilePolling: true });
 }
 
 /**
@@ -187,13 +192,36 @@ export function repeatEvery(everyMs: number, pass: () => Promise<void>, onError:
 export const portInUseMessage = (port: number): string =>
   `Port ${port} on 127.0.0.1 is already in use, so byway cannot start its engine there. Another Temporal server, or one left over from an earlier byway that did not stop cleanly, may be holding it. Stop that process, or choose another port with BYWAY_TEMPORAL_PORT.`;
 
-/** Resolves when nothing listens on 127.0.0.1:port; rejects with a plain message when something does. */
-export function assertPortFree(port: number): Promise<void> {
+/** Resolves when nothing listens on 127.0.0.1:port; rejects with a plain message (the engine's by default) when something does. */
+export function assertPortFree(port: number, message: (port: number) => string = portInUseMessage): Promise<void> {
   return new Promise((resolve, reject) => {
     const probe = createServer();
-    probe.once('error', (e: NodeJS.ErrnoException) => reject(e.code === 'EADDRINUSE' || e.code === 'EACCES' ? new Error(portInUseMessage(port)) : e));
+    probe.once('error', (e: NodeJS.ErrnoException) => reject(e.code === 'EADDRINUSE' || e.code === 'EACCES' ? new Error(message(port)) : e));
     probe.listen({ port, host: '127.0.0.1', exclusive: true }, () => probe.close(() => resolve()));
   });
+}
+
+/**
+ * Whether a failed start is Temporal's own wait running out: its core gives the dev server 5 s to answer (a fixed wait in
+ * @temporalio/core-bridge 1.24.0, which the SDK's options do not set) and, when it says so, has already killed and
+ * awaited the server. A server that could not bind its port ends the same way.
+ */
+export const startedTooSlowly = (e: unknown): boolean => e instanceof Error && /did not start within/.test(e.message);
+
+/**
+ * Starts Temporal's dev server with `start`, and once more when it missed Temporal's 5 s (startedTooSlowly), after
+ * `beforeRetry` has made sure the first is gone (the owner's "Retry once, tests and byway's start, on the follow-up
+ * branch (Recommended)", 2026-10-23 10:10; backlog row B-117). Any other failure, or a second miss, is thrown as it came.
+ * Used by byway's own engine start and by the runner tests' harness.
+ */
+export async function startOnceMore<T>(start: () => Promise<T>, beforeRetry: () => Promise<void> = async () => undefined): Promise<T> {
+  try {
+    return await start();
+  } catch (e) {
+    if (!startedTooSlowly(e)) throw e;
+    await beforeRetry();
+    return start();
+  }
 }
 
 export async function startDevEngine(opts: DevEngineOptions): Promise<DevEngine> {
@@ -202,15 +230,20 @@ export async function startDevEngine(opts: DevEngineOptions): Promise<DevEngine>
   const cacheDir = path.join(opts.dataDir, TEMPORAL_BIN_DIR);
   mkdirSync(cacheDir, { recursive: true, mode: 0o700 });
   const dbFilename = path.join(opts.dataDir, TEMPORAL_DB_FILENAME);
-  const env = await TestWorkflowEnvironment.createLocal({
-    server: {
-      dbFilename,
-      port,
-      ip: '127.0.0.1',
-      executable: temporalExecutable({ cacheDir, tmpDir: tmpdir(), version: sdkVersion() }),
-      extraArgs: devServerArgs(opts.httpPort !== undefined ? { httpPort: opts.httpPort } : {}),
-    },
-  });
+  // The port is byway's own (OPS-1), so the second start uses it too, once nothing listens there: the first server is gone.
+  const env = await startOnceMore(
+    () =>
+      TestWorkflowEnvironment.createLocal({
+        server: {
+          dbFilename,
+          port,
+          ip: '127.0.0.1',
+          executable: temporalExecutable({ cacheDir, tmpDir: tmpdir(), version: sdkVersion() }),
+          extraArgs: devServerArgs(opts.httpPort !== undefined ? { httpPort: opts.httpPort } : {}),
+        },
+      }),
+    () => assertPortFree(port),
+  );
   try {
     // The server we reached keeps its state in this data directory, so it is the one we started.
     if (!existsSync(dbFilename)) throw new Error(`The Temporal server on port ${port} is not the one byway started (it does not use ${dbFilename}). ${portInUseMessage(port)}`);
@@ -224,14 +257,14 @@ export async function startDevEngine(opts: DevEngineOptions): Promise<DevEngine>
     }
     const running = worker.run();
     const runner = createRunnerClient({ client: env.client, store: opts.store });
-    // The lost-run pass again every few minutes while the worker polls, without its queued runs; what it ends, or why
-    // it could not run, is said, and never stops the engine.
+    // The lost-run pass again every few minutes while the worker polls, leaving alone queued runs with no workflow yet;
+    // what it ends, or why it could not run, is said, and never stops the engine.
     const warn = opts.warn ?? ((message: string) => console.warn(message));
     const whileRunning = (opts.repeat ?? repeatEvery)(
       RECONCILE_EVERY_MS,
       async () => {
-        const { lost, orphaned } = await reconcileWhilePolling(env.client, worker, opts.store);
-        for (const line of engineStartLines({ retired: [], lost, orphaned })) warn(`  engine     ${line}`);
+        const { lost, orphaned, stuck } = await reconcileWhilePolling(env.client, worker, opts.store);
+        for (const line of engineStartLines({ retired: [], lost, orphaned, stuck })) warn(`  engine     ${line}`);
       },
       (e) => warn(`  engine     could not look for runs the engine no longer has (${e instanceof Error ? e.message : String(e)}); it looks again in ${RECONCILE_EVERY_MS / 60_000} minutes`),
     );

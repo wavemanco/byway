@@ -14,6 +14,8 @@ import {
   audit,
   BLOCK_OF_ROLE,
   blockAgrees,
+  canPrecede,
+  canRunAfter,
   changesWork,
   checkpoints,
   covers,
@@ -420,6 +422,40 @@ describe('run order: what can run after a step', () => {
     expect(after(loop('l', seq(fix('b'), critic('a')), gate('human')))).toBe(false);
   });
 
+  it('a step in another branch of a route never runs before or after it, unless a loop or relay around the route runs both (B-057)', () => {
+    const order = (body: Node) => {
+      const o = runOrder(recipeOf(body, 'media'));
+      const at = (id: string) => o.steps.find((x) => x.step.id === id)!;
+      return { o, at };
+    };
+    const two = route('who', 'who writes it', [
+      { name: 'yours', body: script('vo') },
+      { name: 'theirs', body: authorDraft('own', 'fix') },
+    ]);
+    const { o, at } = order(seq(two, onScreen('words')));
+    expect(canPrecede(at('vo'), at('own'))).toBe(false);
+    expect(canPrecede(at('own'), at('vo'))).toBe(false);
+    expect(canRunAfter(o, at('vo'), at('own'))).toBe(false);
+    // Both are before the step after the route.
+    expect(canPrecede(at('vo'), at('words'))).toBe(true);
+    expect(canPrecede(at('own'), at('words'))).toBe(true);
+    // So the script is locked: the author's draft in the other branch cannot change it.
+    expect(locked(recipeOf(seq(two, onScreen('words')), 'media'))).toEqual(['vo']);
+    // A loop around the route can take the other branch on its next round.
+    const looped = order(loop('l', seq(two, onScreen('words')), gate('human')));
+    expect(canPrecede(looped.at('own'), looped.at('vo'))).toBe(true);
+    expect(locked(recipeOf(loop('l', seq(two, onScreen('words')), gate('human')), 'media'))).toEqual([]);
+    // A final check in the other branch cannot send the run back from this one.
+    const check = oneShotGate('final', critic('fc'), { metric: 'critic-rank', threshold: 3, hidden: true, holder: 'harness' }, { stage: 'D2', times: 1 });
+    const ends = route('end', 'how it ends', [{ name: 'plain', body: script('vo') }, { name: 'checked', body: seq(render('fr'), check) }]);
+    const gated = order(seq(ends, onScreen('words')));
+    expect(canRunAfter(gated.o, gated.at('vo'), gated.at('vo'))).toBe(false);
+    expect(locked(recipeOf(seq(ends, onScreen('words')), 'media'))).toEqual(['vo']);
+    // After the route, the check can send the run back to the script.
+    const after = order(seq(script('vo'), render('fr'), check));
+    expect(canRunAfter(after.o, after.at('vo'), after.at('vo'))).toBe(true);
+  });
+
   it('fans out in separate sessions only inside each or a replicate of more than one, and knows a relay link', () => {
     const order = runOrder(recipeOf(seq(replicate('one', 1, critic('a')), replicate('four', 4, critic('b')), each('e', critic('c')), relay('chain', 2, critic('d')))));
     expect(order.steps.map((o) => [o.step.id, o.fanOut, o.inRelay])).toEqual([
@@ -662,7 +698,7 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     expect(unapplied(seq(render('r'), personCut('cut'), replicate('x', 2, seq(fix('f0'), render('r2'), keep))))).toEqual(['cut']);
   });
 
-  it('an empty answer in a lens or a final check’s body is dropped there: the operator hands on what came before it, not an earlier answer in its body', () => {
+  it('an empty answer in a lens is dropped there: the audit hands on what came before it, not an earlier answer in its body; a final check hands the empty answer on', () => {
     const yourCheck = (id: string): Step => step({ id, role: 'check', actor: 'human', consumes: ['view'], produces: ['critique'] });
     const pass = { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' } as const;
     // Your CUT, then another answer of yours in its lens, beside a lens of yours: listed, the later answer takes the
@@ -675,7 +711,9 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     // reaches the fix after it when the answers in it are left empty.
     expect(unapplied(seq(render('r'), personCut('before'), audit('au', [{ name: 'yours', body: yourCritique('o') }]), fix('f')))).toEqual([]);
     expect(unapplied(seq(render('r'), personCut('before'), audit('au', [{ name: 'maybe', body: optional('o', 'needed', critic('c')) }]), fix('f')))).toEqual([]);
-    expect(unapplied(seq(render('r'), personCut('before'), oneShotGate('g', seq(critic('g1'), yourCheck('gc')), pass), fix('f')))).toEqual([]);
+    // A final check's body that ends with your answer hands it on as the critique, empty or not, with its mark (since
+    // R-GATE-MARK, cfa059a): the critique from before the gate never reaches the fix after it (B-064 (a)).
+    expect(unapplied(seq(render('r'), personCut('before'), oneShotGate('g', seq(critic('g1'), yourCheck('gc')), pass), fix('f')))).toEqual(['before']);
     expect(unapplied(seq(render('r'), personCut('before'), audit('au', [{ name: 'k', body: seq(critic('lc'), yourCheck('lk')) }]), fix('f')))).toEqual([]);
     // Not where a lens always notes something new: the audit then hands on the lenses' critiques alone.
     expect(unapplied(seq(render('r'), personCut('before'), audit('au', [{ name: 'k', body: check('k') }, { name: 'maybe', body: optional('o', 'needed', critic('c')) }]), fix('f')))).toEqual(['before']);
@@ -866,6 +904,41 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     expect(unapplied(seq(d, audit('au', [{ name: 'l', body: loop('l', seq(build, render('r'), briefCritic), gate('critic-score')) }])))).toEqual(['d']);
   });
 
+  it('followed to the work the run delivers: a later writer that drafts from scratch, or a pick of candidates made before the writer, replaces it (F01 (b))', () => {
+    const fresh = step({ id: 'fresh', role: 'build', actor: 'model', tier: 'mid', consumes: ['intent'], produces: ['artifact'], writes: true });
+    const seed = step({ id: 'seed', role: 'seed', block: 'SEED', actor: 'model', tier: 'mid', consumes: ['intent'], produces: ['artifact'], writes: true });
+    const onWork = step({ ...fresh, id: 'on-work', consumes: ['intent', 'artifact'] });
+    const trim = seq(render('r'), personCut('cut'), fix('f'));
+    // A draft from the intent alone, or a seed, after the fix: the version it writes holds nothing of the list.
+    expect(unapplied(seq(trim, fresh))).toEqual(['cut']);
+    expect(unapplied(seq(trim, seed))).toEqual(['cut']);
+    // A writer that takes the work in keeps what it held, and so does an ASSET placing images in it.
+    expect(unapplied(seq(trim, onWork))).toEqual([]);
+    expect(unapplied(seq(trim, step({ id: 'img', role: 'asset', block: 'ASSET', actor: 'model', tier: 'mid', consumes: ['brief'], produces: ['artifact'], writes: true })))).toEqual([]);
+    // A from-scratch writer you may skip leaves a path on which the list is delivered.
+    expect(unapplied(seq(trim, optional('o', 'start again', fresh)))).toEqual([]);
+    // A pick of candidates made before the fix: the work becomes one of them (the round-9 verification's idx 16404).
+    expect(unapplied(seq(replicate('x', 2, fresh), trim, pick('p', 'H', 1, 'human')))).toEqual(['cut']);
+    // Candidates built on the fixed work carry the list into the pick.
+    expect(unapplied(seq(trim, replicate('x', 2, onWork), pick('p', 'H', 1, 'human')))).toEqual([]);
+    // In a loop you hold whose round ends with a seed: the next round's fix applies the list, and the seed replaces it.
+    expect(unapplied(loop('l', seq(trim, seed), gate('human')))).toEqual(['cut']);
+  });
+
+  it('followed through the candidates: an AI step that reads them, by the options or a pool view, carries what they hold (F01 (c))', () => {
+    const renderPool = step({ id: 'pool', role: 'render', glue: 'RENDER', actor: 'tool', consumes: ['option_set<artifact>'], produces: ['view'] });
+    const trimmed = replicate('x', 2, seq(render('r'), personCut('cut'), fix('f')));
+    const poolCritic = step({ ...critic('pc'), consumes: ['view'] });
+    const optionsCheck = step({ ...check('oc'), consumes: ['option_set<artifact>'] });
+    // Each candidate applies your list; a critic of their pool, or a check of the options, makes a critique from them,
+    // and the fix after it applies that to the work.
+    expect(unapplied(seq(trimmed, renderPool, poolCritic, fix('apply')))).toEqual([]);
+    expect(unapplied(seq(trimmed, optionsCheck, fix('apply')))).toEqual([]);
+    // Not where nothing takes that critique in, nor where the view is of the work, not of the candidates.
+    expect(unapplied(seq(trimmed, renderPool, poolCritic))).toEqual(['cut']);
+    expect(unapplied(seq(trimmed, render('w'), poolCritic, fix('apply')))).toEqual(['cut']);
+  });
+
   it('followed through as many rounds as it takes: a list carried on in the next round reaches your draft in the round after', () => {
     // Your check at the end of each round you hold; the next round's AI sweep takes it in, and its flags are shown beside
     // your draft the round after that (the differential's C6a variant). Two walks of the body never see the third round.
@@ -930,7 +1003,25 @@ describe('whose directions your next VISION is shown (directionsReactedTo)', () 
     expect(reacted(recipeOf(seq(ai('v'), audit('au', [{ name: 'c', body: critic('c') }]), yours('p'))))).toEqual([]);
     // Directions made inside a candidate stay there.
     expect(reacted(recipeOf(seq(replicate('x', 2, ai('v')), yours('p'))))).toEqual([]);
-    expect(reacted(recipeOf(seq(audit('au', [{ name: 'v', body: ai('v') }]), yours('p'))))).toEqual([]);
+    // Made in a lens, they are among the notes the audit hands on (B-060).
+    expect(reacted(recipeOf(seq(audit('au', [{ name: 'v', body: ai('v') }]), yours('p'))))).toEqual(['v']);
+    expect(reacted(recipeOf(seq(audit('au', [{ name: 'v', body: ai('v') }, { name: 'c', body: critic('c') }]), yours('p'))))).toEqual(['v']);
+    expect(reacted(recipeOf(seq(audit('au', [{ name: 'v', body: seq(ai('v'), critic('c')) }]), yours('p'))))).toEqual([]);
+  });
+
+  it('directions inside a lens, a candidate that runs alone or a final check, reacted to there (B-060)', () => {
+    // A VISION of yours after them in the same lens, or in a replicate of one, is shown them.
+    expect(reacted(recipeOf(seq(audit('au', [{ name: 'v', body: seq(ai('v'), yours('p')) }]), critic('c'))))).toEqual(['v']);
+    expect(reacted(recipeOf(seq(replicate('one', 1, seq(ai('v'), yours('p'))), critic('c'))))).toEqual(['v']);
+    const pass = { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' } as const;
+    expect(reacted(recipeOf(oneShotGate('g', seq(ai('v'), yours('p'), critic('gc')), pass)))).toEqual(['v']);
+    expect(reacted(recipeOf(seq(oneShotGate('g', seq(ai('v'), critic('gc')), pass), yours('p'))))).toEqual([]);
+    // Not where they wait past the candidate: the replicate hands on the notes it started with.
+    expect(reacted(recipeOf(seq(replicate('one', 1, ai('v')), yours('p'))))).toEqual([]);
+    // Nor beside candidates or lenses where you react, run side by side: your next VISION may be another one's.
+    expect(reacted(recipeOf(replicate('two', 2, seq(ai('v'), yours('p')))))).toEqual([]);
+    expect(reacted(recipeOf(seq(render('r'), each('per', seq(ai('v'), yours('p'))))))).toEqual([]);
+    expect(reacted(recipeOf(audit('au', [{ name: 'v', body: seq(ai('v'), yours('p')) }, { name: 'q', body: yours('q') }])))).toEqual([]);
   });
 
   it("a final check that re-runs the directions' stage starts it again without them", () => {

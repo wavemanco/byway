@@ -8,11 +8,13 @@ import { randomUUID } from 'node:crypto';
 import { WorkflowExecutionAlreadyStartedError, WorkflowUpdateFailedError, type Client } from '@temporalio/client';
 import { WorkflowNotFoundError } from '@temporalio/common';
 import { CANCEL_SIGNAL, PAUSE_SIGNAL, RecipeRefusedError, RESOLVE_UPDATE, RESUME_SIGNAL, TASK_QUEUE, type CheckpointResolution, type RunRecord, type RunStatus, type RunView, type Runner, type StartRunInput, type Store } from '@byway/contracts';
-import { engineProblems, parseRecipe, recipeHash } from '@byway/recipe';
+import { CATALOG } from '@byway/catalog';
+import { engineProblems, parseRecipe, recipeHash, type Recipe } from '@byway/recipe';
+import { validate } from '@byway/validator';
 import { LOST_RUN_MESSAGE, settleLostRun } from './lost-runs.ts';
 import { startFailureMessage, type WorkflowAfterFailedStart } from './start-failure.ts';
 import { storeRunInputs } from './stored-inputs.ts';
-import { RUN_WORKFLOW, workflowIdFor, type RunInput } from './types.ts';
+import { ENDED_STATUSES as ENDED, RUN_WORKFLOW, workflowIdFor, type RunInput } from './types.ts';
 
 export interface RunnerClientOptions {
   client: Client;
@@ -26,8 +28,6 @@ export function titleOf(text: string): string {
   if (line.length <= 72) return line || 'Untitled run';
   return `${line.slice(0, 72).replace(/\s+\S*$/, '')}…`;
 }
-
-const ENDED: ReadonlySet<RunStatus> = new Set(['done', 'failed', 'cancelled']);
 
 /** What the app shows for an answer to a question its run withdrew (contracts v4 CheckpointRecord.status). */
 const WITHDRAWN = 'This question was withdrawn: its run was cancelled or failed.';
@@ -49,6 +49,31 @@ export class RunStartInvalidError extends Error {
 
 /** A run id a caller may choose: a lowercase UUID, as crypto.randomUUID() makes. */
 const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * How long a run start asks Temporal for the run's workflow after its workflow start failed. A running engine answers a
+ * describe in milliseconds; an engine that is down would take the client's retries, about 20 s (measured 2026-10-21).
+ */
+export const DESCRIBE_AFTER_FAILED_START_MS = 5_000;
+
+/**
+ * byway's own recipes, by hash: the catalog and the research recipes, which the conformance tests hold to the rules. A
+ * hash, not a kind or channel, says a recipe is one of them: those are the recipe's own words.
+ */
+const OWN = new Set(CATALOG.map((r) => r.hash));
+
+/**
+ * What the product rules refuse in a recipe that is not one of byway's (F01 (d)): a pick, keep-or-revert or scored-loop
+ * exit that could put back what was made before a person's write (ST5 and ST12 'set-aside', ADR-0092), and a loop that
+ * hands a person's or a critic's last round to a policy (LS1, ADR-0093). Read from the validator's verdict, so an
+ * exception the recipe may cite (a study's SM-2) relaxes them as it does at admission.
+ */
+export function productRuleProblems(recipe: Recipe, hash: string): string[] {
+  if (OWN.has(hash)) return [];
+  return validate(recipe)
+    .violations.filter((v) => v.ruleId === 'LS1' || v.clause === 'set-aside')
+    .map((v) => `${v.ruleId}: ${v.message}`);
+}
 
 /** The code the store's errors carry (StoreError), read by shape: the client does not depend on @byway/store. */
 const storeCode = (e: unknown): unknown => (e as { code?: unknown } | null)?.code;
@@ -104,11 +129,12 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
    * Whether Temporal has a workflow under a run's id, asked after that run's workflow start failed: it 'exists' (the
    * start reached Temporal after all, or another delivery's did), it is 'absent' (the run did not start, and a start
    * that lands later finds the run failed, so its calls are refused), or byway could not ask ('unknown'). This second RPC
-   * is made only after a start that failed.
+   * is made only after a start that failed, and within DESCRIBE_AFTER_FAILED_START_MS: with the engine down, the start
+   * has already spent the Temporal client's retries, and the describe would spend them again (B-041).
    */
   const workflowAfterFailedStart = async (runId: string): Promise<'exists' | WorkflowAfterFailedStart> => {
     try {
-      await handle(runId).describe();
+      await client.withDeadline(Date.now() + DESCRIBE_AFTER_FAILED_START_MS, () => handle(runId).describe());
       return 'exists';
     } catch (e) {
       return e instanceof WorkflowNotFoundError ? 'absent' : 'unknown';
@@ -123,17 +149,21 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       const medium = recipe.medium;
       if (!medium) throw new Error(`Recipe "${recipe.id}" names no medium, so it cannot run.`);
       // What the engine cannot run, whoever admitted it (F02): past its limits, a C pick nobody decides, a retrying gate
-      // in a fan-out, an ASSET step's slots knob below 1 or between whole numbers. No product policy here (VOICE,
-      // composed limits): that is the advisor's and web start's. It is refused before any run record exists, so a start
+      // in a fan-out, an ASSET step's slots knob below 1 or between whole numbers. The composed profile (VOICE kept,
+      // composed limits) is the advisor's and web start's. It is refused before any run record exists, so a start
       // naming its run id leaves nothing behind.
       const problems = engineProblems(recipe);
       if (problems.length) throw new RecipeRefusedError(recipe.id, problems.map((p) => p.message));
+      const hash = recipeHash(recipe);
+      // And the product rules, for a product recipe that is not one of byway's (F01 (d)): web start admits a composed
+      // recipe again, but another entry point (a CLI, the agent channel, a hosted API) must not run one without them.
+      const rules = productRuleProblems(recipe, hash);
+      if (rules.length) throw new RecipeRefusedError(recipe.id, rules);
       // The brief and the person's own inputs are stored once, before the run exists, and the workflow is handed their
       // ids (P2, stored-inputs.ts): a write that fails leaves no run behind, and a start sent twice writes the same bytes
       // to the same files.
       const stored = await storeRunInputs(store.artifacts, input);
       const id = input.runId ?? randomUUID();
-      const hash = recipeHash(recipe);
       let record: RunRecord;
       let created = true;
       try {

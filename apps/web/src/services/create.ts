@@ -14,7 +14,7 @@
  */
 import path from 'node:path';
 import type { QuestionEstimate } from '@byway/advisor';
-import type { Advisor, Gateway, ModelWait, PromptRenderer, Runner, Store } from '@byway/contracts';
+import type { Advisor, Gateway, ModelWait, ProblemBrief, PromptRenderer, Runner, Store } from '@byway/contracts';
 import type { Env as GatewayEnv } from '@byway/gateway';
 import type { Recipe } from '@byway/recipe';
 import { effectiveMode } from './config.ts';
@@ -39,6 +39,19 @@ export interface ServiceHostOptions {
   connect?: (store: Store, address: string) => Promise<Runner>;
 }
 
+/** What is known when a question opens: the run's problem and the texts of the work beside the question. */
+export interface QuestionSizes {
+  problem?: ProblemBrief;
+  work?: readonly string[];
+}
+
+/**
+ * A question's estimate. For a critic or check loop's and a gate's it also has the words of the questions it is for
+ * (the runner's wording), each with the answer that buys the work: the loop asks two on its id, and a budget question
+ * about a call of the loop carries that id too, so a question whose words are not here gets no figure.
+ */
+export type PricedQuestion = QuestionEstimate & { answers?: Readonly<Record<string, 'Yes' | 'No'>> };
+
 export interface ServiceHost {
   readonly store: Store;
   readonly prompts: PromptRenderer;
@@ -58,8 +71,11 @@ export interface ServiceHost {
    * demo`, or no provider key), else with the run's profile, whatever Settings' demo switch says now, since that switch
    * changes the profile of runs started after it, not the calls of a run under way. Empty when that profile has no
    * status or no price: the figures are only shown, so a run's screen never fails for want of one.
+   *
+   * Sized by what is known (B-106, B-108): the person's problem, which the prompts that show it carry, and the texts
+   * beside the question, the work it asks about, whose largest gives the size of the work in place of the planning one.
    */
-  questionEstimates(recipe: Recipe, profileId: string): Record<string, QuestionEstimate>;
+  questionEstimates(recipe: Recipe, profileId: string, known?: QuestionSizes): Record<string, PricedQuestion>;
   /**
    * The day byway's prices were last checked (YYYY-MM-DD): the gateway's PRICES_CHECKED, the last full read of its price
    * table, which Settings and the Recommendation's estimated cost show (view/prices.ts; PRICE-CADENCE, block 2). Read
@@ -80,7 +96,7 @@ export function createServiceHost(engine: EngineModules, opts: ServiceHostOption
   const store = engine.store.createStore({ dataDir: opts.dataDir });
   const prompts = engine.prompts.createPromptRenderer();
   const connect = opts.connect ?? (async (s: Store, address: string) => (await engine.runner.connectRunner({ store: s, address })).runner);
-  const runner = engineRunner(store, () => connect(store, opts.temporalAddress));
+  const runner = engineRunner(store, () => connect(store, opts.temporalAddress), (e) => engine.runner.isTransportFailure(e) || engine.runner.isTimeout(e));
   const pairs = new Map<boolean, { gateway: Gateway; advisor: Advisor }>();
 
   const pair = (demo: boolean) => {
@@ -115,14 +131,23 @@ export function createServiceHost(engine: EngineModules, opts: ServiceHostOption
     // An arrow, so routes can pass it on unbound. Reads the environment on every call, as the gateway does.
     heldKeyIn: (value: unknown) => engine.gateway.findHeldKey(opts.env, stringsIn(value)),
     // An arrow too, for the same reason.
-    questionEstimates: (recipe: Recipe, profileId: string) => {
+    questionEstimates: (recipe: Recipe, profileId: string, known: QuestionSizes = {}) => {
       // The gateway set up as the worker's is: demo only when `pnpm demo` forced it or no key is set.
       const { gateway } = pair(opts.demo);
       const priced = gateway.demo ? engine.gateway.DEMO_PROFILE_ID : profileId;
       const status = gateway.profileStatus().find((s) => s.profile.id === priced);
       if (!status) return {};
+      const work = known.work?.length ? Math.max(...known.work.map(engine.gateway.textTokens)) : undefined;
+      const { BEST_SO_FAR_PROMPT, NOT_CONVERGING_PROMPT, GATE_FAILED_PROMPT, GATE_FAILED_NO_RETRY_PROMPT } = engine.runner;
+      const asked: Partial<Record<QuestionEstimate['asks'], PricedQuestion['answers']>> = {
+        cap: { [BEST_SO_FAR_PROMPT]: 'No', [NOT_CONVERGING_PROMPT]: 'Yes' },
+        // A gate with a retry asks the first after its tries; a one-shot gate, the second (B-136). Yes goes on in both.
+        gate: { [GATE_FAILED_PROMPT]: 'Yes', [GATE_FAILED_NO_RETRY_PROMPT]: 'Yes' },
+      };
       try {
-        return engine.advisor.estimateQuestions(recipe, { profile: status.profile, images: status.images, video: status.video, otherFamily: status.otherFamily, at: new Date() });
+        const ctx = { profile: status.profile, images: status.images, video: status.video, otherFamily: status.otherFamily, at: new Date() };
+        const estimates = engine.advisor.estimateQuestions(recipe, { ...ctx, ...(known.problem ? { problem: known.problem } : {}), ...(work !== undefined ? { workTokens: work } : {}) });
+        return Object.fromEntries(Object.entries(estimates).map(([id, q]) => [id, asked[q.asks] ? { ...q, answers: asked[q.asks] } : q]));
       } catch (err) {
         // A model with no price (AdvisorError 'unknown-profile'): no figures, rather than no Run screen.
         if (err instanceof engine.advisor.AdvisorError) return {};

@@ -10,7 +10,7 @@ export { PRICES, PRICES_CHECKED, priceFor, tokenCost, type LongContextTier, type
 export { DEFAULT_WAIT_MINUTES, minutesMs, modelWaits, WAIT_CHOICES, waitMinutesFor } from './waits.ts';
 export { waitedError, waitedOf, waitedWords, type WaitedError } from './waited.ts';
 export { estimateInputTokens, imageTokens, maxCompletionCost, maxImageCost, maxVideoCost, textTokens } from './estimate.ts';
-export { absorbable, entryHash, GENESIS_HASH, Ledger, LEDGER_START, readLedgerLine, setAsideTails, type GatewayLedgerEntry, type LedgerDraft, type LedgerOptions, type LockedLedger } from './ledger.ts';
+export { entryHash, GENESIS_HASH, Ledger, LEDGER_START, readLedgerLine, setAsideTails, type GatewayLedgerEntry, type LedgerDraft, type LedgerOptions, type LockedLedger } from './ledger.ts';
 export { MemorySpendBook, memorySpendBook } from './memory-book.ts';
 export { budgetError, PaidCalls, type PaidCallsOptions } from './paid.ts';
 export { makeRedactor, type Redactor } from './redact.ts';
@@ -21,5 +21,5 @@ export { composedRecipe } from './mock/compose.ts';
 export { withoutMarks } from './mock/revision.ts';
 export { EXPOSURE_FILENAME, ExposureRegister, exposurePath, familyOf, isJudgingPurpose, readExposure, type ExposureEntry } from './exposure.ts';
 export { mockAdapter } from './providers/mock.ts';
-export { cancelJob, createFalClient, EXTRACT_FRAME_SECONDS_BOUND, FAL_EXTRACT_FRAME, FAL_VIDEO_MODELS, falAdapter, falVideoSeconds, type FalCancel, type FalClientLike } from './providers/fal.ts';
+export { cancelJob, createFalClient, EXTRACT_FRAME_SECONDS_BOUND, FAL_EXTRACT_FRAME, FAL_VIDEO_EXTRAS, FAL_VIDEO_MODELS, falAdapter, falVideoSeconds, type FalCancel, type FalClientLike } from './providers/fal.ts';
 export type { ProviderAdapter } from './providers/types.ts';

@@ -157,6 +157,24 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
     );
 
     it(
+      'sweeps at admission, so a late renew from a holder that slept revives none of its open, sent or accepted rows',
+      withBook(async ({ a, b, advance }) => {
+        const roomy = { workspaceUsd: 10, runUsd: 10 };
+        const open = admitRequest({ reserveUsd: 0.1, caps: roomy });
+        const sent = admitRequest({ reserveUsd: 0.2, caps: roomy });
+        const accepted = admitRequest({ reserveUsd: 0.3, kind: 'video', provider: 'fal', model: 'fal-ai/kling', caps: roomy });
+        for (const r of [open, sent, accepted]) await a.admit(r);
+        for (const r of [sent, accepted]) await a.markSent(r.opId, 'owner-a');
+        await a.accept(accepted.opId, 'generation', 'req-gen');
+        advance(LEASE + 1);
+        expect(await b.admit(admitRequest({ reserveUsd: 0.05, owner: 'owner-b', caps: roomy }))).toEqual({ admitted: true });
+        await a.renew([open.opId, sent.opId, accepted.opId], 'owner-a', LEASE);
+        expect(await a.markSent(open.opId, 'owner-a')).toBe(false);
+        expect(await a.spend('ws')).toMatchObject({ inFlightUsd: 0.05, uncertainUsd: 0.5 });
+      }),
+    );
+
+    it(
       'ends one owner’s leases at once (a clean stop): its sent and accepted calls may have been billed, against the workspace only; its open ones count nothing',
       withBook(async ({ a, b }) => {
         const roomy = { workspaceUsd: 10, runUsd: 10 };
@@ -438,6 +456,26 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
     );
 
     it(
+      'keeps the first job a role was accepted with: another id for it is refused, and the same id again changes nothing (B-071)',
+      withBook(async ({ a, b, advance }) => {
+        const r = admitRequest({ kind: 'video', provider: 'fal', model: 'fal-ai/kling', reserveUsd: 0.7, operationKey: 'k-accept' });
+        await a.admit(r);
+        await a.markSent(r.opId, 'owner-a');
+        await a.accept(r.opId, 'generation', 'req-gen');
+        const first = (await a.records('ws')).inFlight;
+        await expect(b.accept(r.opId, 'generation', 'req-other')).rejects.toThrow(/req-gen/);
+        advance(1000);
+        await b.accept(r.opId, 'generation', 'req-gen');
+        await b.accept(r.opId, 'extract', 'req-frame');
+        expect((await a.records('ws')).inFlight).toEqual(first);
+        advance(LEASE + 1);
+        // The resumed call is handed the first job, and the time it was first accepted.
+        const resumed = await b.admit(admitRequest({ owner: 'owner-b', operationKey: 'k-accept' }));
+        expect(resumed).toMatchObject({ resume: { opId: r.opId, jobs: { generation: 'req-gen', extract: 'req-frame' }, acceptedAt: { generation: '2026-10-08T12:00:00.000Z' } } });
+      }),
+    );
+
+    it(
       'records accepted queue jobs; an accepted call whose caller is gone may have been billed, with its job ids listed',
       withBook(async ({ a, advance }) => {
         const r = admitRequest({ kind: 'video', provider: 'fal', model: 'fal-ai/kling', reserveUsd: 0.7 });
@@ -474,6 +512,41 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
         expect(await b.clearUncertain('ws', [gone.opId])).toBe(0);
       }),
     );
+
+    // A call being sent again stays listed with what its earlier send retained, but Clear waits until the call ends
+    // (the owner's choice of 2026-10-24, F03 (f)): clearing it in flight lost the later "may have been billed" cost.
+    for (const end of ['abandon', 'endLeases', 'lease runs out', 'retain again and settle'] as const) {
+      it(
+        `does not clear a call while it is being sent again; once it ends (${end}), its cost is counted and Clear clears it`,
+        withBook(async ({ a, b, advance }) => {
+          const r = admitRequest({ reserveUsd: 0.4 });
+          await a.admit(r);
+          await a.markSent(r.opId, 'owner-a');
+          await a.retain(r.opId, 0.4, 10);
+          expect((await a.records('ws')).uncertain).toEqual([expect.objectContaining({ opId: r.opId, reason: 'resent', usd: 0.4, retainedUsd: 0.4 })]);
+          expect(await b.clearUncertain('ws', [r.opId])).toBe(0);
+          expect(await a.spend('ws')).toMatchObject({ inFlightUsd: 0.4, uncertainUsd: 0.4 });
+          if (end === 'abandon') await a.abandon(r.opId, 'waited', { minutes: 15, how: 'silence' });
+          else if (end === 'endLeases') await a.endLeases('owner-a');
+          else if (end === 'lease runs out') advance(LEASE + 1);
+          else {
+            await a.retain(r.opId, 0.4, 10);
+            await a.settle(r.opId, settlement(0.1));
+          }
+          if (end === 'retain again and settle') {
+            expect(await a.spend('ws')).toMatchObject({ spentUsd: 0.1, uncertainUsd: 0.8 });
+            expect((await a.records('ws')).uncertain).toEqual([expect.objectContaining({ opId: r.opId, reason: 'resent', usd: 0.8, retainedUsd: 0.8 })]);
+          } else {
+            expect(await a.spend('ws')).toMatchObject({ inFlightUsd: 0, uncertainUsd: 0.8 });
+            const reason = end === 'abandon' ? 'waited' : 'interrupted';
+            expect((await a.records('ws')).uncertain).toEqual([expect.objectContaining({ opId: r.opId, reason, usd: 0.8, retainedUsd: 0.4 })]);
+          }
+          expect(await b.clearUncertain('ws', [r.opId])).toBe(1);
+          expect(await a.spend('ws')).toMatchObject({ uncertainUsd: 0 });
+          expect((await a.records('ws')).uncertain).toEqual([]);
+        }),
+      );
+    }
 
     it(
       'absorbs legacy entries once, by entry id: re-reading the whole file from the start changes nothing',
@@ -836,6 +909,29 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
           await b.settle(first.opId, settlement(0.66));
           expect(await a.spend('ws')).toMatchObject({ spentUsd: 0.66, inFlightUsd: 0, uncertainUsd: 0 });
           expect((await a.unledgered(10)).map((u) => u.opId)).toEqual([first.opId]);
+        }),
+      );
+
+      // MONEY-1, the check of fix/fx-landnow: the attempt that lost its row asks before each later queue job.
+      it(
+        'says which owner holds a call: its admitter until another owner resumes it, then that owner only, settled or not, and nobody for a call it does not have',
+        withBook(async ({ a, b, advance }) => {
+          const first = keyed('k-holds', { kind: 'video', provider: 'fal', model: 'fal-ai/kling', reserveUsd: 0.7 });
+          await a.admit(first);
+          expect(await b.holds(first.opId, 'owner-a')).toBe(true);
+          expect(await a.holds(first.opId, 'owner-b')).toBe(false);
+          await a.markSent(first.opId, 'owner-a');
+          await a.accept(first.opId, 'generation', 'req-gen');
+          // Its lease has run out, but no other owner has it: still the admitter's.
+          advance(LEASE + 1);
+          expect(await a.holds(first.opId, 'owner-a')).toBe(true);
+          expect(await b.admit(keyed('k-holds', { owner: 'owner-b', kind: 'video', provider: 'fal', model: 'fal-ai/kling', reserveUsd: 0.7 }))).toMatchObject({ resume: { opId: first.opId } });
+          expect(await a.holds(first.opId, 'owner-a')).toBe(false);
+          expect(await a.holds(first.opId, 'owner-b')).toBe(true);
+          await b.settle(first.opId, settlement(0.66));
+          expect(await b.holds(first.opId, 'owner-a')).toBe(false);
+          expect(await b.holds(first.opId, 'owner-b')).toBe(true);
+          expect(await a.holds('no-such-call', 'owner-a')).toBe(false);
         }),
       );
 

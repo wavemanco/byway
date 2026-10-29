@@ -2,6 +2,7 @@ import { canonicalize, sha256Hex } from '@byway/canonical';
 import {
   GatewayError,
   MAX_PLAUSIBLE_CALL_USD,
+  PROVIDER_JOB_ROLES,
   type ArtifactRecord,
   type ArtifactStore,
   type BrokenLine,
@@ -21,6 +22,7 @@ import {
   type ProfileStatus,
   type PromptRef,
   type ProviderId,
+  type ProviderJobRole,
   type ProviderStatus,
   type SettledCall,
   type SpendBook,
@@ -33,7 +35,7 @@ import {
 } from '@byway/contracts';
 import { cleanReason, declineAdvice, declineStory, notMadeProblem, stoppedBeforeRetry } from './declines.ts';
 import { configuredProviders, isConfigured, KEY_VARS, keyFor, loadEnvFile, type Env } from './env.ts';
-import { billingOf, cutOffError, isCutOff, toGatewayError, type ClassifiedError } from './errors.ts';
+import { billingOf, cutOffError, isCutOff, toGatewayError, type ClassifiedError, type TakenOver } from './errors.ts';
 import { estimateInputTokens, imageSize, maxCompletionCost, maxImageCost, maxVideoCost, textTokens } from './estimate.ts';
 import { ExposureRegister, exposurePath } from './exposure.ts';
 import { findHeldKey, heldKeyError } from './held-key.ts';
@@ -132,8 +134,8 @@ const IMAGE_SIZES = new Set(['1024x1024', '1536x1024', '1024x1536']);
 const MOCK_MODELS = { big: 'mock-big', mid: 'mock-mid', image: 'mock-image', video: 'mock-video' } as const;
 /** Relay links are a few seconds each (03 C5); a request far beyond that is a mistake, not a clip. */
 const MAX_VIDEO_SECONDS = 60;
-/** The clip types VideoResult.mediaType can name: real providers' MP4, and the demo mock's labelled SVG placeholder. */
-const CLIP_TYPES = new Set<VideoResult['mediaType']>(['video/mp4', 'image/svg+xml']);
+/** The clip types VideoResult.mediaType can name: real providers' MP4 and WebM, and the demo mock's labelled SVG placeholder. */
+const CLIP_TYPES = new Set<VideoResult['mediaType']>(['video/mp4', 'video/webm', 'image/svg+xml']);
 const FIDELITIES = new Set<PromptRef['fidelity']>(['verbatim', 'paraphrase', 'project']);
 const SHA256_ID = /^sha256:[0-9a-f]{64}$/;
 
@@ -331,7 +333,7 @@ export class ModelGateway implements Gateway {
         },
         this.retry,
         BILLABLE_CALL,
-        { ...this.retainBeforeResend(op, req.workspaceId, estimate), ...(stop ? { stop } : {}) },
+        { ...this.retainBeforeResend(op, req.workspaceId, estimate), ...haltOn(stop, req.operation?.cancel) },
       );
       const { completion: out, replaced } = finiteCompletion(reported, { inputTokens, outputTokens: maxOutputTokens });
       const { costUsd, assumed } = this.completionCost(ref, out);
@@ -461,7 +463,7 @@ export class ModelGateway implements Gateway {
         },
         this.retry,
         BILLABLE_CALL,
-        { ...this.retainBeforeResend(op, req.workspaceId, estimate), ...(stop ? { stop } : {}) },
+        { ...this.retainBeforeResend(op, req.workspaceId, estimate), ...haltOn(stop, req.operation?.cancel) },
       );
       const usage = finiteUsage(reported.usage, { inputTokens: textTokens(req.prompt), outputTokens: price.estimatedOutputTokensPerImage ?? 0, units: 1 });
       const out = { ...reported, usage: usage.usage };
@@ -611,9 +613,10 @@ export class ModelGateway implements Gateway {
 
   /**
    * One relay link (ADR-0069): a clip from the start frame, stored at once with its last frame (the next link's
-   * anchor). It fails with 'no-credentials' when the profile has no video model or its provider has no key. The
-   * budget check uses the clip's seconds at the model's price plus the provider's helper calls at their bound. A clip
-   * that was generated is ledgered even when keeping it or its last frame then fails: it was billed.
+   * anchor) and, best effort, a frame from its middle for the shot check (F10 (a)). It fails with 'no-credentials' when
+   * the profile has no video model or its provider has no key. The budget check uses the clip's seconds at the model's
+   * price plus the provider's helper calls at their bound. A clip that was generated is ledgered even when keeping it or
+   * its last frame then fails: it was billed; a middle frame that cannot be kept is left out.
    */
   async video(req: VideoRequest): Promise<VideoResult> {
     validateSpend(req);
@@ -648,7 +651,22 @@ export class ModelGateway implements Gateway {
     // The run is ending (ADR-0111): no more jobs and no more retries, and an adapter that can cancel its job does.
     const stop = req.operation?.stop;
     const signal = stop && adapter.cutsOff?.video ? stop : undefined;
-    const stopping = stop ? { stop } : {};
+    // Temporal's cancel of this attempt ends its retries and its submissions too (F03 (g)): a later attempt takes the
+    // call over, so this one sends nothing again (MONEY-2, the check of fix/fx-landnow). The cut-off, the adapter's
+    // cancel of its job, stays on the stop alone (ADR-0111 item 1).
+    const cancel = req.operation?.cancel;
+    const stopping = haltOn(stop, cancel);
+    // But a frame job (last frame, middle frame) for a clip already made goes on after a cancel, while, and only while,
+    // this attempt still holds the call's row (R-MONEY-1, the re-check of fix/fx-landnow; the owner's "Third round: frame
+    // jobs go on (Recommended)"): refused, its clip settled as made without frames, and the next attempt, finding the
+    // row settled, bought the clip again. Once such a job is out, its retries and every read after it (its status, its
+    // result, the frames' downloads) end on the stop alone, so the made clip is completed once and kept. The clip itself
+    // is never sent again after a cancel: its submission's retries stay under `stopping`, a submission before the clip
+    // job was accepted is refused, and a status poll of the clip before the provider reports it done stays under
+    // `stopping` too (the reads of a done clip go on: `attempt`'s `done`, below).
+    const finishing = haltOn(stop, undefined);
+    let framing = false;
+    let clipAccepted = false;
     try {
       const mapped = <T>(fn: () => Promise<T>) => async () => {
         try {
@@ -666,22 +684,54 @@ export class ModelGateway implements Gateway {
           ...(req.shot !== undefined ? { shot: req.shot } : {}),
           ...(startFrame ? { startFrame } : {}),
           context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, profileId: req.profileId },
-          attempt: (fn) => withRetries(mapped(fn), this.retry, FREE_READ, stopping),
+          // A read of a job the provider reported done (the made clip's result and download) is retried on the stop
+          // alone too, so a cancel never loses a clip that is paid for to one failed read: a read sends nothing again.
+          attempt: (fn, o) => withRetries(mapped(fn), this.retry, FREE_READ, framing || o?.done ? finishing : stopping),
           submit: async (fn, what) => {
             // Nothing more is submitted once the run is ending: this job was not sent, so nothing was billed for it.
             if (stop?.aborted) throw cutOffError(ref.provider, 'none', `${what} was not submitted`);
+            const later = op.wasSent;
+            // Nor, once Temporal has cancelled this attempt (F03 (g)), the clip, or anything before its job was accepted:
+            // the attempt that takes the call over makes it. A frame job for a clip already made goes on (see above),
+            // under the row check below.
+            const made = clipAccepted || op.resumed?.generation !== undefined;
+            if (cancel?.aborted && !(later && made)) throw notSubmitted(ref.provider, what, 'Temporal cancelled this attempt of the step, and a later attempt takes the call over');
             // The submission is the call's first billable request: the spend book marks the call sent before it.
             const fresh = op.resumed === undefined;
             await op.markSent();
             // Marking it sent found another attempt's jobs the provider had already accepted (PaidCall.markSent: this
             // call's lease ran out while it got the job ready, and it was admitted again onto that attempt's row). The
             // job is not submitted again, since a second would be billed again, and its acceptance would write over the
-            // first job's id, which would then be counted nowhere (MONEY-3, Block 2's check). The call ends here, as may
-            // have been billed, listed with that job's id. (A call resumed from the start polls its jobs instead, and
-            // submits only the ones not listed: `resume` below.)
-            if (fresh && op.resumed) throw takenOver(ref.provider, what, op.resumed, redact);
+            // first job's id, which would then be counted nowhere (MONEY-3, Block 2's check). The error carries those jobs:
+            // an adapter that polls jobs by id polls them in this call (takenOverOf; B-071); with any other, the call ends
+            // here, as may have been billed, listed with that job's id. (A call resumed from the start polls its jobs
+            // instead, and submits only the ones not listed: `resume` below.)
+            if (fresh && op.resumed) throw takenOver(ref.provider, what, op.resumed, op.resumedAt, redact);
+            // A submission after the call's first (a last-frame or middle-frame job) goes out only while this call still
+            // holds its row in the spend book. An attempt that took the row over (this one's lease ran out while its
+            // process slept, or after a cancel, which renews nothing) polls the same clip and submits its own frame jobs,
+            // so this one submits nothing more, and its clip settles as made (MONEY-1, the check of fix/fx-landnow; F03
+            // (e)). A book that cannot say submits nothing. The row is asked about before every try of such a job, its
+            // resends after a certainly-not-billed refusal (503, 429) included: the lease can lapse during the wait before
+            // a resend, and a resend then would be a second job billed beside the other attempt's, counted in no row
+            // (R3-MONEY-1). The refusal is not retried: it is byway's, and nothing was sent.
+            const holdsRow = async () => {
+              const holds = await op.holdsRow().catch(() => undefined);
+              if (holds === undefined) throw notSubmitted(ref.provider, what, 'byway could not read its spending records to see that this attempt of the step still holds the call');
+              if (!holds) throw notSubmitted(ref.provider, what, 'another attempt of this step took the call over, and it makes this job');
+            };
+            if (later) {
+              await holdsRow();
+              // This attempt holds the row: the made clip's frames are its to finish, cancel or not.
+              framing = true;
+            }
+            const send = mapped(fn);
+            const tryOnce = async (n: number) => {
+              if (later && n > 0) await holdsRow();
+              return send();
+            };
             try {
-              return await withRetries(mapped(fn), this.retry, BILLABLE_JOB, stopping);
+              return await withRetries(tryOnce, this.retry, BILLABLE_JOB, framing ? finishing : stopping);
             } catch (e) {
               if ((e as ClassifiedError).billing !== 'maybe') throw e;
               // Not sent again (ADR-0091): a second submission is a second job, billed again.
@@ -694,7 +744,10 @@ export class ModelGateway implements Gateway {
               throw err;
             }
           },
-          accepted: (role, requestId) => op.accepted(role, requestId),
+          accepted: async (role, requestId) => {
+            await op.accepted(role, requestId);
+            if (role === 'generation') clipAccepted = true;
+          },
           // An earlier attempt's jobs the provider accepted (stage 3): polled by their ids, never submitted again, and
           // waited for from when they were accepted, so the clip keeps its clock.
           ...(op.resumed ? { resume: op.resumed, ...acceptedTimes(op.resumedAt) } : {}),
@@ -720,6 +773,9 @@ export class ModelGateway implements Gateway {
       const keptFrame = madeFrame ? await keep(() => this.artifacts.put(madeFrame.bytes, madeFrame.mediaType)) : undefined;
       const clip = keptClip?.record;
       const lastFrame = keptFrame?.record;
+      // The middle frame is best effort (F10 (a)): one that cannot be stored, or of a type a run cannot show, is left out.
+      const madeMiddle = out.middleFrame;
+      const keptMiddle = madeMiddle && MEDIA_TYPES.has(madeMiddle.mediaType as MediaType) ? (await keep(() => this.artifacts.put(madeMiddle.bytes, madeMiddle.mediaType))).record : undefined;
       const failure = out.failure !== undefined ? toGatewayError(out.failure, ref.provider, redact) : undefined;
       const entry = await this.record(
         op,
@@ -742,6 +798,7 @@ export class ModelGateway implements Gateway {
           usage: { units: units.value },
           ...(clip ? { artifactId: clip.id } : {}),
           ...(lastFrame ? { lastFrameArtifactId: lastFrame.id } : {}),
+          ...(keptMiddle ? { middleFrameArtifactId: keptMiddle.id } : {}),
           ...(failure ? { failure: failure.message } : {}),
           wire: out.responseBody,
         },
@@ -761,17 +818,18 @@ export class ModelGateway implements Gateway {
         // Not retryable: a retry would generate (and bill) another clip; the run decides what to do instead.
         throw new GatewayError(failure?.code ?? 'provider-error', redact(`${ref.provider} made the clip and billed it, but ${what}: ${failure?.message ?? 'no media arrived'}`), false, { billed: true });
       }
-      // The contract names two clip types (MP4, and the demo's SVG placeholder) and three frame types. Anything else is
-      // kept and ledgered above (it was billed) but not handed to a run that could not show or relay it.
+      // The contract names three clip types (MP4, WebM, and the demo's SVG placeholder) and three frame types. Anything
+      // else is kept and ledgered above (it was billed) but not handed to a run that could not show or relay it.
       const mediaType = clip.mediaType as VideoResult['mediaType'];
       if (!CLIP_TYPES.has(mediaType)) {
-        throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but it is ${clip.mediaType}, not MP4 (the clip is kept as ${clip.id})`, false, { billed: true });
+        throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but it is ${clip.mediaType}, not MP4 or WebM (the clip is kept as ${clip.id})`, false, { billed: true });
       }
       const lastFrameMediaType = lastFrame.mediaType as MediaType;
       if (!MEDIA_TYPES.has(lastFrameMediaType)) {
         throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but returned a last frame of type ${lastFrame.mediaType}, not PNG, JPEG or WebP (the clip is kept as ${clip.id})`, false, { billed: true });
       }
-      return { artifactId: clip.id, mediaType, lastFrameArtifactId: lastFrame.id, lastFrameMediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd: entry.costUsd, ledgerEntryId: entry.id };
+      const middle = keptMiddle ? { middleFrameArtifactId: keptMiddle.id, middleFrameMediaType: keptMiddle.mediaType as MediaType } : {};
+      return { artifactId: clip.id, mediaType, lastFrameArtifactId: lastFrame.id, lastFrameMediaType, ...middle, servedModel: entry.servedModel, provider: ref.provider, costUsd: entry.costUsd, ledgerEntryId: entry.id };
     } finally {
       await op.end();
     }
@@ -817,7 +875,7 @@ export class ModelGateway implements Gateway {
     await this.paid.absorb();
     const brokenAt = await this.ledger.verify();
     const written = new Map<string, number>();
-    for (const e of await this.ledger.entries()) if (typeof e.id === 'string') written.set(e.id, e.costUsd);
+    for (const e of await this.ledger.entries()) if (typeof e?.id === 'string') written.set(e.id, e.costUsd);
     const missing = (await this.book.ledgeredCalls()).filter((c) => {
       const cost = written.get(c.entryId);
       return cost === undefined || Math.abs(cost - c.costUsd) > 1e-9;
@@ -1115,13 +1173,16 @@ function stopIfEnding(op: PaidCall, stop: AbortSignal | undefined, provider: Pro
   throw err;
 }
 
+/** A queue job by its role, as the words name it. */
+const JOB_NAMES: Record<ProviderJobRole, string> = { generation: 'clip', extract: 'last-frame', middle: 'middle-frame' };
+
 /**
  * A queue call that, as it came to submit `what`, found another attempt's jobs the provider had already accepted
  * (PaidCall.markSent's takeover): not submitted, not retryable, and counted as may have been billed, since those jobs
  * may be, with their ids in the words as in the spend book, where the person can look them up.
  */
-function takenOver(provider: ProviderId, what: string, jobs: Partial<Record<'generation' | 'extract', string>>, redact: Redactor): ClassifiedError {
-  const listed = Object.entries(jobs).map(([role, id]) => `${role === 'extract' ? 'last-frame' : 'clip'} job ${id}`);
+function takenOver(provider: ProviderId, what: string, jobs: Partial<Record<ProviderJobRole, string>>, at: Partial<Record<ProviderJobRole, string>> | undefined, redact: Redactor): ClassifiedError {
+  const listed = Object.entries(jobs).map(([role, id]) => `${JOB_NAMES[role as ProviderJobRole] ?? 'clip'} job ${id}`);
   const them = listed.length > 1 ? 'Those jobs may have been billed: they are listed with their ids' : 'That job may have been billed: it is listed with its id';
   const err: ClassifiedError = new GatewayError(
     'provider-error',
@@ -1131,13 +1192,24 @@ function takenOver(provider: ProviderId, what: string, jobs: Partial<Record<'gen
     false,
   );
   err.billing = 'maybe';
+  const taken: TakenOver = { resume: { ...jobs }, ...acceptedTimes(at) };
+  return Object.assign(err, { takenOver: taken });
+}
+
+/**
+ * A queue job byway did not submit because this attempt is no longer the call's (Temporal cancelled it, or another
+ * attempt took its row over): nothing was sent for it, so nothing was billed for it, and it is not retried.
+ */
+function notSubmitted(provider: ProviderId, what: string, why: string): ClassifiedError {
+  const err: ClassifiedError = new GatewayError('byway-failure', `byway did not submit ${what} to ${provider}: ${why}.`.slice(0, 2000), false, { billed: false });
+  err.billing = 'none';
   return err;
 }
 
 /** When a resumed call's jobs were accepted (the spend book's ISO times), in milliseconds, for the adapter; a time that cannot be read is left out. */
-function acceptedTimes(at: Partial<Record<'generation' | 'extract', string>> | undefined): { acceptedAt?: Partial<Record<'generation' | 'extract', number>> } {
-  const out: Partial<Record<'generation' | 'extract', number>> = {};
-  for (const role of ['generation', 'extract'] as const) {
+function acceptedTimes(at: Partial<Record<ProviderJobRole, string>> | undefined): { acceptedAt?: Partial<Record<ProviderJobRole, number>> } {
+  const out: Partial<Record<ProviderJobRole, number>> = {};
+  for (const role of PROVIDER_JOB_ROLES) {
     const ms = at?.[role] === undefined ? Number.NaN : Date.parse(at[role]);
     if (Number.isFinite(ms)) out[role] = ms;
   }
@@ -1259,6 +1331,15 @@ const UNREAD_MESSAGE = 'byway could not read this error’s message as text.';
  * (a number, an object) is redacted as its text rather than making the redactor throw (B1R2-CODE-6, the re-check of
  * block 1's second fix round), and one whose message cannot be read as text at all is copied with UNREAD_MESSAGE.
  */
+/**
+ * What ends a call's retries: its stop, or Temporal's cancel of its attempt (F03 (g)). Once the attempt is cancelled a
+ * later attempt takes the call over, so this one sends nothing again. The cut-off stays on the stop alone (ADR-0111).
+ */
+function haltOn(stop: AbortSignal | undefined, cancel: AbortSignal | undefined): { stop?: AbortSignal } {
+  const halt = stop && cancel ? AbortSignal.any([stop, cancel]) : (stop ?? cancel);
+  return halt ? { stop: halt } : {};
+}
+
 function redactMessage(e: unknown, redact: Redactor): unknown {
   if (!(e instanceof Error)) return e;
   const message = { value: UNREAD_MESSAGE, writable: true, configurable: true, enumerable: false };

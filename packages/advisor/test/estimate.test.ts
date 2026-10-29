@@ -1,7 +1,7 @@
 import { c1, c2, c3, c4, c5, c6a, c7, PROTOCOL_CONFIGS } from '@byway/catalog';
 import type { CostEstimate } from '@byway/contracts';
-import { PRICES, PROFILES } from '@byway/gateway';
-import { withHash, type Node, type Recipe } from '@byway/recipe';
+import { EXTRACT_FRAME_SECONDS_BOUND, FAL_EXTRACT_FRAME, PRICES, PROFILES } from '@byway/gateway';
+import { loop, oneShotGate, seq, step, withHash, type Node, type Recipe, type Step } from '@byway/recipe';
 import { describe, expect, it } from 'vitest';
 import { createAdvisor, estimateRecipe, HUMAN_MINUTES, TOKEN_ASSUMPTIONS } from '../src/index.ts';
 import { demoAdvisor, demoGateway, recordingPrompts } from './helpers.ts';
@@ -115,10 +115,65 @@ describe('estimate: the structure of a recipe times the profile prices', () => {
     // At least three links of five seconds each, at Kling 2.5 Turbo's price.
     expect(withVideo.lowUsd - without.lowUsd).toBeGreaterThanOrEqual(3 * 5 * perSecond - 1e-9);
     expect(withVideo.highUsd).toBeGreaterThan(without.highUsd);
-    expect(withVideo.modelCalls).toEqual(without.modelCalls);
+    // A clip a link, at least three links, and the one rendered in its scene after the chain.
+    expect(withVideo.clips!.low).toBeGreaterThanOrEqual(4);
+    expect(without.clips).toEqual({ low: 0, high: 0 });
     // The openai profile has no video model at all.
     const openai = keyed({ OPENAI_API_KEY: 'sk-test-not-a-real-key-000000000' }).estimate(c5, 'openai');
     expect(openai.highUsd).toBeGreaterThan(0);
+  });
+
+  /**
+   * B-050: a relay link that cannot make its clip finishes skipped with no call (relay.ts), and the check of its view
+   * is not asked, so its shot-repair loop ends after one round with no cap question (interpreter.ts, F10). With no video
+   * model, or no image model to make the frame the chain starts from, C5's chain costs nothing but what runs after it.
+   */
+  it('counts no relay call, shot check or repair for a link that cannot make its clip (B-050)', () => {
+    const withVideo = advisor.estimate(c5, 'balanced');
+    const noVideo = keyed({ ...ANTHROPIC, ...GEMINI }).estimate(c5, 'balanced');
+    // The same recipe with neither the chain nor render-in-scene, the relay step after it, which is skipped too.
+    const nothing = () => ({ op: 'seq', steps: [] }) as Node;
+    const noRelay = edit(edit(c5, 'shot-chain', nothing), 'render-in-scene', nothing);
+    expect(noVideo.modelCalls).toEqual(keyed({ ...ANTHROPIC, ...GEMINI }).estimate(noRelay, 'balanced').modelCalls);
+    expect(noVideo.modelCalls.high).toBeLessThan(withVideo.modelCalls.high);
+    expect(noVideo.modelCalls.low).toBeLessThan(withVideo.modelCalls.low);
+    // With video but no image model the chain has no frame to start from: the same.
+    const noImages = keyed({ ...ANTHROPIC, ...FAL }).estimate(c5, 'balanced');
+    expect(noImages.modelCalls).toEqual(keyed({ ...ANTHROPIC, ...FAL }).estimate(noRelay, 'balanced').modelCalls);
+    expect([noVideo.clips, noImages.clips]).toEqual([{ low: 0, high: 0 }, { low: 0, high: 0 }]);
+  });
+
+  /**
+   * B-106: each prompt that shows the problem is sized with it, attachments included, as the gateway sizes the call, so
+   * a long brief raises the figure (and the default budget, a quarter above it) where a short one leaves it as planned.
+   */
+  it("sizes each prompt that shows the problem with the person's brief and attachments (B-106)", () => {
+    const balanced = PROFILES.find((p) => p.id === 'balanced')!;
+    const at = new Date('2026-10-07T12:00:00Z');
+    const ctx = { profile: balanced, images: true, video: true, at };
+    const planned = estimateRecipe(c4, ctx);
+    expect(estimateRecipe(c4, { ...ctx, problem: { text: 'A memo about the offsite' } })).toEqual(planned);
+    const attachment = { name: 'notes.md', text: 'The offsite moves to May. '.repeat(8000) };
+    const long = estimateRecipe(c4, { ...ctx, problem: { text: 'A memo about the offsite', attachments: [attachment] } });
+    // About 52,000 tokens more in the draft's prompt and the framings' (C4's two that show the problem).
+    expect(long.highUsd).toBeGreaterThan(planned.highUsd + 0.3);
+    expect(long.lowUsd).toBeGreaterThan(planned.lowUsd);
+    expect(long.modelCalls).toEqual(planned.modelCalls);
+    // Only the prompts that show the problem grow: a recipe whose prompts never show it is priced as planned.
+    const hidden = edit(c4, 'draft', (n) => (n.op === 'step' ? { ...n, consumes: n.consumes.filter((p) => p !== 'intent') } : n));
+    const framings = edit(hidden, 'framings', (n) => (n.op === 'step' ? { ...n, consumes: n.consumes.filter((p) => p !== 'intent') } : n));
+    const g = estimateRecipe(framings, { ...ctx, problem: { text: 'x', attachments: [attachment] } });
+    expect(g.highUsd).toBeLessThan(long.highUsd);
+  });
+
+  it('passes the brief through the advisor: a recommendation for a long brief is dearer than for a short one (B-106)', async () => {
+    const { advisor: demo } = demoAdvisor();
+    const short = { text: 'A memo about the offsite' };
+    const long = { ...short, attachments: [{ name: 'notes.md', text: 'The offsite moves to May. '.repeat(8000) }] };
+    const anthropic = keyed(ANTHROPIC);
+    expect(anthropic.estimate(c4, 'balanced', long).highUsd).toBeGreaterThan(anthropic.estimate(c4, 'balanced', short).highUsd);
+    // Demo mode reads $0 whatever the brief.
+    expect(demo.estimate(c4, 'balanced', long).highUsd).toBe(0);
   });
 
   it("prices a different-family critic at the other family's model when its key is set up (C3), else at the profile's own", () => {
@@ -193,6 +248,21 @@ describe('estimate: the structure of a recipe times the profile prices', () => {
     for (const role of ['build', 'fix', 'critic', 'judge', 'check', 'cut', 'tells-sweep', 'vision', 'relay', 'asset.briefs']) {
       expect(TOKEN_ASSUMPTIONS[role]).toBeDefined();
     }
+  });
+
+  it('prices each clip with both of its frame extractions, the last and the middle frame, at their bound (F10 (a))', () => {
+    const balanced = PROFILES.find((p) => p.id === 'balanced')!;
+    const at = new Date('2026-10-07T12:00:00Z');
+    const rows = (over: (row: (typeof PRICES)[number]) => Partial<(typeof PRICES)[number]>) => PRICES.map((row) => ({ ...row, ...over(row) }));
+    const est = (prices: readonly (typeof PRICES)[number][]) => estimateRecipe(c5, { profile: balanced, images: true, video: true, at, prices });
+    const isClip = (row: (typeof PRICES)[number]) => row.provider === 'fal' && row.model === balanced.video!.model;
+    const isFrame = (row: (typeof PRICES)[number]) => row.provider === 'fal' && row.model === FAL_EXTRACT_FRAME;
+    const none = est(rows((r) => (isClip(r) || isFrame(r) ? { perSecondUsd: 0 } : {})));
+    // At $1 a second, clips of CLIP_SECONDS.low (5 s, a length the model makes) say how many clips the low end counts.
+    const clips = (est(rows((r) => (isClip(r) ? { perSecondUsd: 1 } : isFrame(r) ? { perSecondUsd: 0 } : {}))).lowUsd - none.lowUsd) / 5;
+    expect(clips).toBeGreaterThanOrEqual(3);
+    const frames = est(rows((r) => (isFrame(r) ? { perSecondUsd: 1 } : isClip(r) ? { perSecondUsd: 0 } : {}))).lowUsd - none.lowUsd;
+    expect(frames).toBeCloseTo(clips * 2 * EXTRACT_FRAME_SECONDS_BOUND, 1);
   });
 
   it('rejects a profile the gateway does not know', () => {
@@ -290,5 +360,53 @@ describe('estimate in demo mode (Gateway.demo: every call goes to the mock)', ()
     expect([rec.estimate.lowUsd, rec.estimate.highUsd]).toEqual([0, 0]);
     const composed = await advisor.compose({ text: 'A detailed strategy memo on the billing migration' }, ws);
     expect([composed.estimate.lowUsd, composed.estimate.highUsd]).toEqual([0, 0]);
+  });
+});
+
+/**
+ * B-152 (the ponytail audit's RECIPES-5): the estimate's call counts held to what the interpreter runs, case by case;
+ * the runner's configurations harness holds whole runs to them (runner/test/e2e/estimate-bound.ts). Where the estimate
+ * is known to differ, the case says what the interpreter makes and is marked failing with the backlog row that holds
+ * the difference, which awaits the owner's choice; the day its fix lands the case fails here and is made a plain one.
+ */
+describe('the call counts the interpreter makes (B-152)', () => {
+  const at = new Date('2026-10-07T12:00:00Z');
+  const ctx = { profile: PROFILES.find((p) => p.id === 'balanced')!, images: true, video: true, at };
+  const calls = (r: Recipe, c: Partial<typeof ctx> = {}) => estimateRecipe(r, { ...ctx, ...c }).modelCalls;
+  const draft = step({ id: 'draft', role: 'build', actor: 'model', tier: 'mid', prompt: 'product.c4.draft', consumes: ['intent', 'brief'], produces: ['artifact'], writes: true });
+  const view = step({ id: 'render', role: 'render', actor: 'tool', consumes: ['artifact'], produces: ['view'] });
+  const critic = (knobs: Record<string, unknown>) =>
+    step({ id: 'recipient', role: 'critic', actor: 'model', tier: 'big', prompt: 'product.c4.recipient', consumes: ['view', 'refs'], produces: ['critique', 'score'], knobs: knobs as Step['knobs'] });
+  const revise = step({ id: 'revise', role: 'fix', actor: 'model', tier: 'mid', prompt: 'product.c4.revise', consumes: ['critique', 'artifact'], produces: ['artifact'], writes: true });
+  const recipe = (...stages: Node[]): Recipe => withHash({ ...c4, stages: stages.map((body, i) => ({ stage: `D${i + 1}`, body })) } as Recipe);
+  const pass = { metric: 'critic-rank', threshold: 3, hidden: true, holder: 'harness' } as const;
+
+  it('a build, then a one-shot gate with no retry: the build and the gate critic, once each', () => {
+    expect(calls(recipe(seq(draft, view, oneShotGate('gate', critic({ mode: 'OK' }), pass))))).toEqual({ low: 2, high: 2 });
+  });
+
+  it.fails('a GREAT critic with `shuffles` 2 makes two calls over the lineup (planCritic; known difference: B-149)', () => {
+    expect(calls(recipe(seq(draft, view, critic({ mode: 'GREAT', refs: 4, shuffles: 2 }))))).toEqual({ low: 2, high: 3 });
+  });
+
+  it.fails('a GREAT critic with no refs knob, or refs 0, reads up to ten references (MAX_REFS; known difference: B-149)', () => {
+    const priced = (knobs: Record<string, unknown>) => estimateRecipe(recipe(seq(draft, view, critic(knobs))), ctx).highUsd;
+    expect(priced({ mode: 'GREAT' })).toBe(priced({ mode: 'GREAT', refs: 10 }));
+    expect(priced({ mode: 'GREAT', refs: 0 })).toBe(priced({ mode: 'GREAT', refs: 10 }));
+  });
+
+  it.fails('a gate whose retry names an earlier stage re-runs every stage from it through its own (known difference: B-150)', () => {
+    // D1 builds; D2 revises and gates, retrying D1 once: at worst build, revise, critic, then build, revise, critic.
+    expect(calls(recipe(draft, seq(revise, view, oneShotGate('gate', critic({ mode: 'OK' }), pass, { stage: 'D1', times: 1 }))))).toEqual({ low: 3, high: 6 });
+  });
+
+  it.fails("a critic loop's fix runs only when its verdict does not end the loop (known difference: B-151)", () => {
+    // Under rankGate(3, 3, 1): at least the build and one passing critique; at most three critiques, two fixes and the re-rank.
+    const gate = { ...pass, holder: 'worker', probe: 1, max: 3, plateau: { minGain: 1, window: 2 }, onCap: 'human', onNoConverge: 'recalibrate-human' } as const;
+    expect(calls(recipe(seq(draft, loop('critic-loop', seq(view, critic({ mode: 'OK' }), revise), gate))))).toEqual({ low: 2, high: 7 });
+  });
+
+  it.fails('an ASSET step makes no call when the profile cannot make images (asset.ts; known difference: B-154)', () => {
+    expect(calls(c3, { images: false }).high).toBe(calls(c3).high - 2);
   });
 });

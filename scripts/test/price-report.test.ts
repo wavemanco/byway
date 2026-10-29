@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { PRICES, PRICES_CHECKED, type PriceRow } from '../../packages/gateway/src/prices.ts';
-import { decimal, OPENROUTER_MODELS, openRouterReport, pageScripts, plain, pricePages, REREAD_DUE_DAYS, report, rereadLine, samePerToken, type OpenRouterModels, type PriceReportOptions } from '../price-report.ts';
+import { decimal, OPENROUTER_MODELS, openRouterReport, pageScripts, pageText, plain, priceStretch, pricePages, REREAD_DUE_DAYS, report, rereadLine, samePerToken, type OpenRouterModels, type PriceReportOptions } from '../price-report.ts';
 
 const row = (provider: PriceRow['provider'], model: string, from?: string) => PRICES.find((r) => r.provider === provider && r.model === model && r.from === from)!;
 const $ = (n: number) => `$${n.toFixed(Math.max(2, (String(n).split('.')[1] ?? '').length))}`;
@@ -71,7 +71,7 @@ function openaiScript(rows = PRICES.filter((r) => r.provider === 'openai' && r.l
       .map((r) => {
         const t = r.longContext!;
         const at = (n: number) => lit(times(n, k * (scale[r.model] ?? 1)));
-        // A cached-input rate the row does not record is still in the script (gpt-6-luna's).
+        // A cached-input rate a row does not record would still be in the script.
         return `"${r.model}":{input:${at(t.inputPerMTok)},output:${at(t.outputPerMTok)},cachedInput:${at(t.cacheReadPerMTok ?? t.inputPerMTok / 10)},cacheWrite:${at(t.cacheWritePerMTok!)}}`;
       })
       .join(',');
@@ -92,7 +92,9 @@ function googlePage(rows: readonly PriceRow[] = PRICES.filter((r) => r.provider 
   const sections = [...byModel].map(([model, rs]) => {
     const long = rs[0]!.longContext;
     const image = rs[0]!.perImageUsd !== undefined ? ` Equivalent to ${$(rs[0]!.perImageUsd)} per 1K image.` : '';
-    return `<h3>${model}</h3><table><tr><td>Input price</td><td>Not available</td><td>${price(rs, (r) => r.inputPerMTok, long?.inputPerMTok)}</td></tr><tr><td>Output price</td><td>Not available</td><td>${price(rs, (r) => r.outputPerMTok, long?.outputPerMTok)}${image}</td></tr></table>`;
+    // The page's "Context caching price", where the row records one.
+    const cache = rs[0]!.cacheReadPerMTok !== undefined ? `<tr><td>Context caching price</td><td>Not available</td><td>${price(rs, (r) => r.cacheReadPerMTok!, long?.cacheReadPerMTok)}</td></tr>` : '';
+    return `<h3>${model}</h3><table><tr><td>Input price</td><td>Not available</td><td>${price(rs, (r) => r.inputPerMTok, long?.inputPerMTok)}</td></tr><tr><td>Output price</td><td>Not available</td><td>${price(rs, (r) => r.outputPerMTok, long?.outputPerMTok)}${image}</td></tr>${cache}</table>`;
   });
   return `<html><body>${first}${sections.join('')}</body></html>`;
 }
@@ -165,7 +167,7 @@ describe("the weekly run's price report (PRICE-CADENCE)", () => {
     const googleLines = async (now: Date) => (await run(web({ [GOOGLE]: after }).fetch, now)).lines.filter((l) => l.startsWith('Google'));
     expect(await googleLines(day('2027-01-05'))).toEqual([`Google: every figure byway records was found on ${GOOGLE}.`]);
     // Before then the introductory row is in force, so a page without its figures is flagged.
-    expect(await googleLines(CHECKED)).toEqual([`Google gemini-3.8-flash: not found after its name on the page: input $${intro.inputPerMTok}, output $${intro.outputPerMTok}.`]);
+    expect(await googleLines(CHECKED)).toEqual([`Google gemini-3.8-flash: not found after its name on the page: input $${intro.inputPerMTok}, output $${intro.outputPerMTok}, cache read $${intro.cacheReadPerMTok}.`]);
   });
 
   it('finds every figure on pages shaped as the providers write them, and flags nothing', async () => {
@@ -293,6 +295,22 @@ describe("the weekly run's price report (PRICE-CADENCE)", () => {
     const flash = row('google', 'gemini-3.8-flash');
     const tiered = PRICES.filter((r) => r.provider === 'google').map((r) => (r === flash ? { ...flash, longContext: { aboveInputTokens: 200_000, inputPerMTok: 1.5, outputPerMTok: 7.5 } } : r));
     expect((await run(web({ [GOOGLE]: googlePage(tiered) }).fetch)).lines).toContain("Google gemini-3.8-flash: the page prices it by prompt length after its name (\"prompts >\"), and byway's row has no long-context tier.");
+  });
+
+  it("ends a row's stretch at the next model id on the page, priced or not, so a model byway does not price is never read as the row's (B-032)", async () => {
+    const GOOGLE = 'https://ai.google.dev/gemini-api/docs/pricing?hl=en';
+    // A short section of a model with no row, priced by prompt length, just after the last priced one (a row with no tier).
+    const unpriced = '<h3>gemini-9-flash-lite</h3><table><tr><td>Input price</td><td>$0.10, prompts &lt;= 128k tokens<br>$0.20, prompts &gt; 128k tokens</td></tr></table>';
+    const page = googlePage().replace('</body>', `${unpriced}</body>`);
+    expect(pageText(page, 'html').indexOf('gemini-9-flash-lite') - pageText(page, 'html').lastIndexOf(PRICES.filter((r) => r.provider === 'google').at(-1)!.model)).toBeLessThan(700);
+    expect((await run(web({ [GOOGLE]: page }).fetch)).lines.filter((l) => l.startsWith('Google'))).toEqual(['Google: every figure byway records was found on https://ai.google.dev/gemini-api/docs/pricing?hl=en.']);
+    // OpenAI's ids end a stretch the same way; a name that only contains an id ("gpt-6-astra-2027") is another model.
+    expect(priceStretch('gpt-6-astra $1.00 o-series gpt-9-nano $9.00', 'gpt-6-astra', [], 'html', true)).toBe(' $1.00 o-series ');
+    expect(priceStretch('gpt-6-astra $1.00 gpt-6-astra-2027 $9.00', 'gpt-6-astra', [], 'html', true)).toBe(' $1.00 ');
+    // An id before the first price is the section's own: Google heads a section with its ids ("… and …-customtools").
+    expect(priceStretch('gemini-3.1-pro-preview and gemini-3.1-pro-preview-customtools Input $2.00 gemini-9-pro $9.00', 'gemini-3.1-pro-preview', [], 'html', true)).toBe(' and gemini-3.1-pro-preview-customtools Input $2.00 ');
+    // A page that names its models otherwise (fal's sentences) is read as before.
+    expect(priceStretch('will cost $1.00 gpt-9-nano $9.00', 'will cost', [], 'html')).toBe(' $1.00 gpt-9-nano $9.00');
   });
 
   it("compares OpenRouter's prices exactly, as decimals: any spelling of the same number matches, any other number does not", () => {

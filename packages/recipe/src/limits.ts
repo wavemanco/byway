@@ -16,11 +16,12 @@
  * gate may not sit inside a fan-out (ST10 'retry-scope'): there a retry would restart its stage while the sibling
  * branches kept running and spending.
  *
- * Pure: no Node built-ins, and nothing imported but types and semantics.ts, so workflow code can import it through
+ * Pure: no Node built-ins, and nothing imported but types, semantics.ts and walk.ts, so workflow code can import it through
  * `@byway/recipe/limits`.
  */
 import type { Gate, Node, OneShotGate, Pick as PickNode, Recipe, Stage, Step } from './schema.ts';
-import { PICK_JUDGE_ROLES } from './semantics.ts';
+import { PICK_JUDGE_ROLES, countWalkVisit } from './semantics.ts';
+import { children as childNodes } from './walk.ts';
 
 /** Automatic re-runs after a failed one-shot gate (02 §2 Retry: "bounded", e.g. once). */
 export const MAX_GATE_RETRIES = 3;
@@ -147,6 +148,7 @@ class Walker {
   }
 
   node(n: Node, at: Shape, path: string): Work {
+    countWalkVisit();
     const key = `${path}|${at.options}|${at.optionViews}|${at.view}`;
     const known = this.memo.get(key);
     if (known) return known;
@@ -254,23 +256,6 @@ function retryingGates(recipe: Recipe): { gate: OneShotGate; stage: Stage['stage
   for (const s of recipe.stages) visit(s.body, s.stage);
   return out;
 }
-
-const childNodes = (n: Node): Node[] => {
-  switch (n.op) {
-    case 'step':
-      return [];
-    case 'seq':
-      return n.steps;
-    case 'route':
-      return n.branches.map((b) => b.body);
-    case 'audit':
-      return n.lenses.map((l) => l.body);
-    case 'pick':
-      return n.judge ? [n.judge] : [];
-    default:
-      return [n.body];
-  }
-};
 
 function walkStages(recipe: Recipe): { w: Walker; runs: number; peak: number; bytes: number } {
   const w = new Walker();

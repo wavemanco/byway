@@ -9,6 +9,7 @@ import { useEffect, useId, useRef, useState, type ChangeEvent } from 'react';
 import { focusAfterRemoval } from '../view/focus.ts';
 import { MAX_REF_IMAGE_BYTES, MAX_REF_TEXT, MAX_REFS, REF_IMAGE_TYPES, REFS_NOTE, refsStatus, type RefImageType } from '../view/refs.ts';
 import { exampleHeldKeyRefusal, HELD_KEY_REFUSAL } from '../view/refusals.ts';
+import { ActionButton } from './ActionButton.tsx';
 import { ApiError, artifactUrl, post } from './api.ts';
 import { actionAttributes, blockActivation, useAction } from './useAction.ts';
 
@@ -180,9 +181,10 @@ export function Examples({ entries, onChange, disabled = false }: Props) {
         </ol>
       ) : null}
       <div className="ref-example-actions">
-        <button type="button" className="button" onClick={addText} disabled={full} ref={addButton}>
+        {/* At nine (MAX_REFS) it says it is unavailable and keeps focus, as every acting control does (R5; B-037). */}
+        <ActionButton className="button" onClick={addText} unavailable={full} ref={addButton}>
           Paste an example
-        </button>
+        </ActionButton>
         <label className="button file-button" data-disabled={full || adding.busy ? 'true' : undefined}>
           {adding.busy ? 'Adding…' : 'Add images'}
           <input

@@ -538,13 +538,25 @@ export interface Ordered {
   inRelay: boolean;
   /** In separate sessions, one per candidate: inside each, or inside a replicate of more than one. */
   fanOut: boolean;
+  /** The branch of each route around it: a run that reaches the route takes one branch. */
+  branches: readonly RouteBranch[];
 }
+
+/** A branch of a route: the route and the branch's place in it. */
+export interface RouteBranch {
+  route: Route;
+  at: number;
+}
+
+/** Whether two places sit in different branches of one route: a pass through the route runs only one of them. */
+const apart = (a: { branches: readonly RouteBranch[] }, b: { branches: readonly RouteBranch[] }): boolean => a.branches.some((x) => b.branches.some((y) => y.route === x.route && y.at !== x.at));
 
 /** A final check that can send the run back to a stage: where it sits, and the stage the run starts again from. */
 export interface Rerun {
   /** Its place in the walk: the steps before it have a lower index. */
   index: number;
   repeats: readonly Node[];
+  branches: readonly RouteBranch[];
   /** The place of the stage the run starts again from; that stage and every later one run again. */
   from: number;
 }
@@ -583,7 +595,7 @@ export function runOrder(recipe: Recipe): RunOrder {
         visit(n.body, at);
         return;
       case 'route':
-        n.branches.forEach((b) => visit(b.body, at));
+        n.branches.forEach((b, i) => visit(b.body, { ...at, branches: [...at.branches, { route: n, at: i }] }));
         return;
       case 'audit':
         n.lenses.forEach((l) => visit(l.body, { ...at, contained: true }));
@@ -592,7 +604,7 @@ export function runOrder(recipe: Recipe): RunOrder {
         // A fail with retries left starts the run again at the first stage of the retry's name, never a later one
         // (interpreter runStages: a later one fails the run).
         const from = n.retry && n.retry.times > 0 ? recipe.stages.findIndex((s) => s.stage === n.retry!.stage) : -1;
-        if (from >= 0 && from <= at.stage) reruns.push({ index: steps.length, repeats: at.repeats, from });
+        if (from >= 0 && from <= at.stage) reruns.push({ index: steps.length, repeats: at.repeats, branches: at.branches, from });
         visit(n.body, { ...at, contained: true });
         return;
       }
@@ -601,26 +613,26 @@ export function runOrder(recipe: Recipe): RunOrder {
         return;
     }
   };
-  recipe.stages.forEach((s, i) => visit(s.body, { stage: i, repeats: [], contained: false, inRelay: false, fanOut: false }));
+  recipe.stages.forEach((s, i) => visit(s.body, { stage: i, repeats: [], contained: false, inRelay: false, fanOut: false, branches: [] }));
   return { steps, reruns };
 }
 
 /**
  * Whether `a` can run before `b` on some run, with what `a` made still in the ports `b` starts from: earlier in the
- * walk, or both in the body of one loop or relay, whose next round or link runs `a` after `b` (a step there comes
- * before itself). A final check's re-run does not count: it starts its stage again from that stage's entry ports, so
- * nothing made after them carries over. Conservative: a step in another branch of a route counts as before, which can
- * only take a claim away.
+ * walk and not in another branch of a route (a pass through the route takes one), or both in the body of one loop or
+ * relay, whose next round or link runs `a` after `b` (a step there comes before itself; around a route, the next round
+ * can take the other branch). A final check's re-run does not count: it starts its stage again from that stage's entry
+ * ports, so nothing made after them carries over.
  */
-export const canPrecede = (a: Ordered, b: Ordered): boolean => a.index < b.index || a.repeats.some((r) => b.repeats.includes(r));
+export const canPrecede = (a: Ordered, b: Ordered): boolean => (a.index < b.index && !apart(a, b)) || a.repeats.some((r) => b.repeats.includes(r));
 
 /**
- * Whether `b` can run after `a` on some run, whatever became of what `a` made: canPrecede, or a final check after `a`
- * sends the run back to `a`'s stage or an earlier one, so every step from that stage on runs again, `a` itself among
- * them.
+ * Whether `b` can run after `a` on some run, whatever became of what `a` made: canPrecede, or a final check that can run
+ * after `a` sends the run back to `a`'s stage or an earlier one, so every step from that stage on runs again, `a` itself
+ * among them (the route asks again, so any branch).
  */
 export const canRunAfter = (order: RunOrder, a: Ordered, b: Ordered): boolean =>
-  canPrecede(a, b) || order.reruns.some((g) => (a.index < g.index || a.repeats.some((r) => g.repeats.includes(r))) && a.stage >= g.from && b.stage >= g.from);
+  canPrecede(a, b) || order.reruns.some((g) => ((a.index < g.index && !apart(a, g)) || a.repeats.some((r) => g.repeats.includes(r))) && a.stage >= g.from && b.stage >= g.from);
 
 /**
  * Whether `b` comes after each run of `a` before `a` runs again, as far as the loops and relays around `a` go: every one
@@ -785,6 +797,39 @@ export function withoutFlowMemo<T>(fn: () => T): T {
   }
 }
 
+/** A walk went past the budget withWalkLimit set. */
+export class WalkLimitError extends Error {
+  constructor(limit: number) {
+    super(`the recipe's walks visited more than ${limit} nodes`);
+    this.name = 'WalkLimitError';
+  }
+}
+
+/** Inside withWalkLimit, its limit and the visits counted; undefined outside it, where nothing is counted. */
+let walkBudget: { limit: number; visits: number } | undefined;
+
+/**
+ * Run `fn` with the nodes that the flow walk (flowRecipe) and the work bound's walk (workBound) visit counted, every visit
+ * a memo answers included, and throw WalkLimitError at the first visit past `limit`. It exists for the tests that hold
+ * those walks to a cost linear in the recipe (flow-memo.test.ts, limits.test.ts): they count visits rather than time,
+ * and a walk that lost its memo fails them when the budget runs out rather than running for ever, which a timer cannot
+ * stop in a synchronous test.
+ */
+export function withWalkLimit<T>(limit: number, fn: () => T): T {
+  const was = walkBudget;
+  walkBudget = { limit, visits: 0 };
+  try {
+    return fn();
+  } finally {
+    walkBudget = was;
+  }
+}
+
+/** One node visited, against withWalkLimit's budget when one is set. */
+export function countWalkVisit(): void {
+  if (walkBudget && ++walkBudget.visits > walkBudget.limit) throw new WalkLimitError(walkBudget.limit);
+}
+
 /**
  * Walk a recipe along its control flow, carrying a state: the one flow walk every path rule reads (PR6, ST12, DR7, the
  * composed profile's writer counts; ADR-0092) and the analyses here of what reaches a step. Routes and optionals fork
@@ -816,6 +861,7 @@ export function flowRecipe<S>(recipe: Recipe, initial: S, ops: FlowOps<S>): S {
 }
 
 function flowNode<S>(walk: FlowWalk<S>, node: Node, state: S, path: string, stage: Stage['stage'], contained: boolean, loop: LoopExits<S> | undefined): S {
+  countWalkVisit();
   if (!walk.memo) return flowOnce(walk, node, state, path, stage, contained, loop);
   const key = `${path}|${contained ? 1 : 0}|${loop?.metric ?? ''}|${walk.ops.key!(state)}`;
   const known = walk.memo.get(key);
@@ -1036,10 +1082,11 @@ interface CritiqueTaker {
  *   their names), and a one-shot gate its body's.
  * - A judge in a relay link may be skipped, with nothing to see, and the run goes on with the critique from before it,
  *   unless it reports to the loop around it, whose round then ends there (ADR-0090). A person's answer in a lens or a
- *   gate body may be empty, which is dropped (ADR-0098).
+ *   gate body may be empty (`EMPTY_ANSWER`): an audit drops a lens that ends with one and hands on the critique it was
+ *   handed (ADR-0098); a gate hands the empty answer on, so no step's critique is the latest after it (R-GATE-MARK).
  * - An optional the person declines whose body would have put its critique in place leaves the critique empty
- *   (R-DECLINED): no step's critique is the latest after it. In a lens or a gate body the one before it is kept beside
- *   none, since an audit drops a lens that ends with an empty critique and hands on the one it was handed.
+ *   (R-DECLINED): no step's critique is the latest after it. In a lens or a gate body it is read as a person's empty
+ *   answer is.
  *
  * A may-analysis over a walk that holds every run: "may be the latest" covers every run. The walk also leaves every
  * loop from the end of its body, as every other rule reads it, which can only take a claim of `critiqueSources` away.
@@ -1058,17 +1105,22 @@ function critiqueFlow(recipe: Recipe): { at: Map<string, Step>; takers: Map<stri
       }
       if (!replacesCritique(s)) return st;
       at.set(path, s);
-      // Not on every run: a judge skipped where the run goes on past it, or a person's empty answer that a lens or a
-      // gate drops.
-      if (skippable.get(path) === false || (s.actor === 'human' && contained)) return union(st, [path]);
-      return [path];
+      // Not on every run: a judge skipped where the run goes on past it.
+      if (skippable.get(path) === false) return union(st, [path]);
+      // A person's answer in a lens or a gate body may be empty.
+      return s.actor === 'human' && contained ? [EMPTY_ANSWER, path].sort() : [path];
     },
     join: unionAll,
     // Walk paths hold no '|'.
     key: (st) => st.join('|'),
-    after: (node, entry, inner) => (node.op === 'audit' || node.op === 'gate' ? inner : entry),
+    after: (node, entry, inner, parts) => {
+      // An audit drops a lens that ends with an empty answer; a gate hands it on as none.
+      if (node.op === 'audit') return unionAll(parts.map((p) => (p.includes(EMPTY_ANSWER) ? union(without(p, EMPTY_ANSWER), entry) : p)));
+      if (node.op === 'gate') return inner.includes(EMPTY_ANSWER) ? union(without(inner, EMPTY_ANSWER), ['']) : inner;
+      return entry;
+    },
     exit: (_s, path, before, after) => (skippable.get(path) ? union(before, after) : after),
-    declined: (node, st, contained) => (!replacesCritique(node.body) ? st : contained ? union(st, ['']) : ['']),
+    declined: (node, st, contained) => (!replacesCritique(node.body) ? st : contained ? [EMPTY_ANSWER] : ['']),
   });
   return { at, takers };
 }
@@ -1103,9 +1155,10 @@ export function critiqueSources(recipe: Recipe): Map<Step, Step> {
 
 /**
  * What the run hands on that can carry a person's answer: the text ports it fills, the notes beside the work, the work
- * of a candidate (what its steps have taken in), and the options (the candidates' work, and what a dedupe kept them by).
+ * (what its steps have taken in), the options (the candidates' work, and what a dedupe kept them by), and the view where
+ * it is a pool render of the options (`pool`: what those hold).
  */
-type Carrier = AnswerPort | 'notes' | 'work' | 'options';
+type Carrier = AnswerPort | 'notes' | 'work' | 'options' | 'pool';
 const ANSWER_PORTS: readonly AnswerPort[] = ['critique', 'brief', 'taste'];
 
 /** The option set: what a pick chooses from, and what an AI writer that takes it in drafts from. */
@@ -1118,9 +1171,18 @@ const OPTIONS: PortType = 'option_set<artifact>';
 const appliesOptions = (s: Step, contained: boolean, medium: Medium | undefined): boolean => !contained && machineWrites(s) && takesIn(s, OPTIONS, medium) && !hasNoExecutor(s);
 
 /**
- * Marks in what `answersReachingWork` follows through a lens or a gate body, never an answer's place (a walk path):
- * `HANDED` before a value the lens was handed and has not replaced, and `EMPTY_ANSWER` for a person's empty answer,
- * which carries nothing and is dropped with its lens or by its gate.
+ * An AI writer that drafts the work from scratch: its prompt never shows it the work (a seed, a draft from the intent
+ * alone, C2's option map), so the version it writes takes the place of the one before, and what that held is not in it
+ * (ADR-0098's residual, F01 (b)). An ASSET or RELAY step puts its images or clips into the work it is handed, whatever its
+ * prompt shows, and one that finishes skipped changes nothing.
+ */
+const fromScratch = (s: Step, contained: boolean, medium: Medium | undefined): boolean =>
+  !contained && s.actor === 'model' && machineWrites(s) && s.role !== 'asset' && s.role !== 'relay' && !takesIn(s, 'artifact', medium) && !hasNoExecutor(s);
+
+/**
+ * Marks in what `answersReachingWork` and `critiqueFlow` follow through a lens or a gate body, never an answer's place
+ * (a walk path): `HANDED` before a value the lens was handed and has not replaced, and `EMPTY_ANSWER` for a person's
+ * empty answer, which carries nothing: an audit drops it with its lens, and a gate hands it on (R-GATE-MARK).
  */
 const HANDED = '^';
 const EMPTY_ANSWER = '#empty';
@@ -1219,9 +1281,9 @@ function decidesWork(recipe: Recipe): Set<string> {
  * The places of a person's lists and critiques (`personCritique`) whose answer reaches the work on some path: something
  * that writes the work or picks which version it is takes it in (an AI writer, a draft of the person's own shown it, an
  * AI step that decides which version or option is the work: `decidesWork`), directly or as it is carried on, and what
- * it makes or decides is the work where it runs, not a candidate that nothing takes up. (A later writer that drafts from
- * scratch, or a later pick of candidates made before it, may still put another version in its place: ADR-0098 names
- * these as residuals.) An AI step takes a port in only where its prompt shows it (`takesIn`, `promptShows`, ADR-0097):
+ * it makes or decides is still the work the run delivers at its end: not a candidate that nothing takes up, nor a version
+ * that a later AI writer drafting from scratch (`fromScratch`), or a later pick of candidates made before it, puts
+ * another in place of (F01 (b)). An AI step takes a port in only where its prompt shows it (`takesIn`, `promptShows`, ADR-0097):
  * a writer, a decider or a step that makes text of its own whose template never renders the port is shown nothing of
  * what it holds. Read on the exit-aware flow walk, `exactLoops` and `untilStable`, with a state that says, for each text
  * port, the notes beside the work, the work of a candidate and the options, which of those answers what is there may
@@ -1230,8 +1292,9 @@ function decidesWork(recipe: Recipe): Set<string> {
  * - A person's answer fills the ports it fills (`answerPorts`): its own place, with whatever they were shown beside it
  *   (the latest notes) or in place (the port a reaction revises in place, `revisedInPlace`, which it fills on some runs
  *   only: it may go on as it was). Any other step that fills a port (`fillsPort`) puts there what it carries: an AI
- *   step that makes text of its own (`carriesOn`) carries what it took in by the text ports it takes in, into the ports
- *   it fills and its note; any other carries nothing. A step that leaves a note of its own (`leavesNote`) puts it in
+ *   step that makes text of its own (`carriesOn`) carries what it took in by the text ports it takes in, and what the
+ *   candidates hold where it reads them, by the options or a pool render of them (F01 (c)), into the ports it fills and
+ *   its note; what it reads of the work itself is not followed. Any other carries nothing. A step that leaves a note of its own (`leavesNote`) puts it in
  *   place of the notes before it: on every run, or, for a seed whose prompt asks for the fenced block alone, only on
  *   runs where it writes a direction anyway, so the notes before it may stay. A seed's direction carries nothing.
  * - An AI writer that applies a port (`appliesPort`) applies what that port carries, and one that takes the options in
@@ -1239,45 +1302,48 @@ function decidesWork(recipe: Recipe): Set<string> {
  *   body) is shown the latest notes, and so takes in what they carry. An AI step that decides which version or option is
  *   the work decides by what the ports it takes in carry; a dedupe decides only which options are kept, so the options
  *   carry it.
- * - Outside any candidate, what those take in reaches the work. Inside one (replicate or each) it reaches only that
- *   candidate's work, which replicate and each hand on as the options, and nothing else: each candidate of `each`
- *   starts from an option. The options reach the work where a pick takes one up, or an AI writer takes them in, outside
- *   a lens or a gate body; inside a candidate, that candidate's work.
+ * - What those take in is then in the work (`work`), and the run delivers what the work holds at its end. Inside a
+ *   candidate (replicate or each) it is only that candidate's work, which replicate and each hand on as the options:
+ *   a candidate of replicate starts from the work, and one of `each` from its option. A from-scratch writer leaves the
+ *   work holding only what it takes in itself; a pick, outside a lens or a gate body, makes the work the option it
+ *   chooses, holding what the options hold and what its judge decided by (inside a candidate, that candidate's work);
+ *   an AI writer that takes the options in drafts from what they hold. A one-shot gate's critic decides whether the
+ *   work passes, so the gate keeps what its body's work holds.
  * - An audit hands on its lenses' critique and notes (the interpreter's audit()): those of the lenses that made something
  *   new, joined, and where none did on some run, what it was handed. A lens that ended with what it was handed, or with
  *   a person's empty answer, made nothing new: the interpreter drops an empty answer with its lens. So a lens in which a
  *   step always notes something new (a critic's, a check's, a CUT's, a sweep's, an overlap flag's, a direction's, or
  *   the direction of a seed whose prompt asks for it first) always replaces what the audit was handed, and one whose
  *   only note is that of a seed whose prompt asks for the block alone may not. A one-shot gate hands on its body's
- *   critique, or the critique it was handed
- *   where the body ends with a person's empty answer. Both hand on the brief and the taste they started with.
+ *   critique, a person's empty answer included, which carries nothing (R-GATE-MARK). Both hand on the brief and the
+ *   taste they started with.
  * - A judge in a relay link may be skipped (`skippableJudges`): on those runs the port keeps what it had.
  * - An optional the person declines whose body would have put its critique in place leaves the critique empty
  *   (R-DECLINED), which carries nothing: the writer after it makes no change. In a lens or a gate body it is read as a
- *   person's empty answer is there, so an audit drops that lens.
+ *   person's empty answer is there, so an audit drops that lens, and a gate hands it on.
  */
 function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<string> {
   const askedAt = new Set(asked.map((p) => p.path));
   const medium = recipe.medium;
   const skippable = skippableJudges(recipe);
   const decides = decidesWork(recipe);
-  const reached = new Set<string>();
   /** For each carrier, the answers it may carry; `cand`: inside a candidate. */
   type State = Readonly<Record<Carrier, readonly string[]> & { cand: boolean }>;
-  const START: State = { critique: [], brief: [], taste: [], notes: [], work: [], options: [], cand: false };
-  const CARRIERS: readonly Carrier[] = [...ANSWER_PORTS, 'notes', 'work', 'options'];
+  const START: State = { critique: [], brief: [], taste: [], notes: [], work: [], options: [], pool: [], cand: false };
+  const CARRIERS: readonly Carrier[] = [...ANSWER_PORTS, 'notes', 'work', 'options', 'pool'];
   /** A state made carrier by carrier. */
-  const each = (f: (c: Carrier) => readonly string[], cand: boolean): State => ({ critique: f('critique'), brief: f('brief'), taste: f('taste'), notes: f('notes'), work: f('work'), options: f('options'), cand });
-  /** What takes these answers to the work: outside a candidate it is the work; inside one, that candidate's work. */
+  const each = (f: (c: Carrier) => readonly string[], cand: boolean): State => ({ critique: f('critique'), brief: f('brief'), taste: f('taste'), notes: f('notes'), work: f('work'), options: f('options'), pool: f('pool'), cand });
+  /** What takes these answers to the work: the work, or inside a candidate, that candidate's work. */
   const land = (st: State, xs: readonly string[]): State => {
     const answers = answersIn(xs);
-    if (st.cand) return answers.length ? { ...st, work: union(st.work, answers) } : st;
-    for (const x of answers) reached.add(x);
-    return st;
+    return answers.length ? { ...st, work: union(st.work, answers) } : st;
   };
-  flowRecipe<State>(recipe, START, {
+  /** What a pick's model judge decides by: the answers the ports its prompt shows carry. */
+  const judgeTakes = (p: PickNode, st: State): string[] => (p.judge?.actor === 'model' ? answersIn(unionAll(ANSWER_PORTS.filter((q) => takesIn(p.judge!, q, medium)).map((q) => st[q]))) : []);
+  const end = flowRecipe<State>(recipe, START, {
     step(s, path, _stage, st, contained) {
-      let next = st;
+      // A writer that drafts from scratch puts a version of its own in place of the work, and what that held is gone.
+      let next = fromScratch(s, contained, medium) ? { ...st, work: [] } : st;
       for (const q of ANSWER_PORTS) if (appliesPort(s, q, contained, medium)) next = land(next, st[q]);
       if (appliesOptions(s, contained, medium)) next = land(next, st.options);
       if (authorWrite(s) && !contained) next = land(next, st.notes);
@@ -1287,7 +1353,10 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
       }
       // What the step puts in a port it fills: what it carries on, and a person's answer its own place too.
       const inPlace = revisedInPlace(s);
-      const inPrompt = answersIn(unionAll(ANSWER_PORTS.filter((q) => takesIn(s, q, medium)).map((q) => st[q])));
+      // An AI step that reads the candidates themselves, by the options or a pool render of them, makes its text from
+      // what they hold too (F01 (c)); a view of the work is not followed, as what a step reads of the work is not.
+      const ofCandidates = [...(takesIn(s, OPTIONS, medium) ? st.options : []), ...(takesIn(s, 'view', medium) ? st.pool : [])];
+      const inPrompt = answersIn(union(unionAll(ANSWER_PORTS.filter((q) => takesIn(s, q, medium)).map((q) => st[q])), ofCandidates));
       const carried = carriesOn(s) ? inPrompt : shownNotes(s) ? answersIn(union(st.notes, inPlace ? st[inPlace] : [])) : [];
       const out: Record<Carrier, readonly string[]> & { cand: boolean } = { ...next };
       for (const q of ANSWER_PORTS) {
@@ -1312,6 +1381,8 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
         const made = carriesOn(s) ? inPrompt : [];
         out.notes = note === 'sometimes' || skippable.get(path) === false ? union(st.notes, made) : made;
       }
+      // A render makes the view: of the options, holding what they hold, or of the work, which is not followed.
+      if (s.role === 'render' && s.actor === 'tool') out.pool = s.consumes.includes(OPTIONS) && !s.consumes.includes('artifact') ? st.options : [];
       return out;
     },
     join: (states) => each((c) => unionAll(states.map((x) => x[c])), states.some((x) => x.cand)),
@@ -1322,8 +1393,9 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
           return { ...st, critique: handed(st.critique), notes: handed(st.notes) };
         case 'replicate':
           return { ...st, cand: true };
+        // A candidate of replicate starts from the work; one of each from its option alone.
         case 'each':
-          return { ...st, cand: true, work: union(st.work, st.options), options: [] };
+          return { ...st, cand: true, work: st.options, options: [], pool: [] };
         case 'gate':
           return st;
       }
@@ -1332,18 +1404,17 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
       switch (node.op) {
         case 'audit':
           return { ...entry, critique: lensesHandOn(entry.critique, parts.map((p) => p.critique)), notes: lensesHandOn(entry.notes, parts.map((p) => p.notes)) };
-        case 'gate': {
-          const made = parts[0]!.critique;
-          return { ...entry, critique: made.includes(EMPTY_ANSWER) ? union(without(made, EMPTY_ANSWER), entry.critique) : made };
-        }
+        // Its body's critique, an empty answer's included (R-GATE-MARK): that carries nothing. Its critic's score decides
+        // whether the work passes, so what that took in stays with the work.
+        case 'gate':
+          return { ...entry, critique: without(parts[0]!.critique, EMPTY_ANSWER), work: parts[0]!.work };
         case 'replicate':
         case 'each':
           return { ...entry, options: parts[0]!.work };
-        case 'pick': {
-          // Its judge, inside a candidate, decides that candidate's work.
-          const judged: State = { ...entry, work: parts[0]!.work };
-          return contained ? judged : land(judged, entry.options);
-        }
+        // The option it chooses is the work from then on (inside a candidate, that candidate's), in place of the work
+        // before it, and its judge's choice decides which.
+        case 'pick':
+          return contained ? entry : { ...entry, work: union(answersIn(entry.options), judgeTakes(node, entry)) };
       }
     },
     exit: (_s, path, before, after) => (skippable.get(path) ? each((c) => union(before[c], after[c]), after.cand) : after),
@@ -1351,7 +1422,8 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
     exactLoops: true,
     untilStable: true,
   });
-  return reached;
+  // What the run delivers is the work at its end, on some path.
+  return new Set(end.work);
 }
 
 /**
@@ -1406,7 +1478,10 @@ export function unappliedCritiques(recipe: Recipe): Placement[] {
  *   (a loop's next round, a relay's next link) before a VISION of the person's: the later directions are shown, never
  *   the earlier.
  * - replicate, each, a pick and a one-shot gate hand on the notes they started with, so a note made inside them stays
- *   there; directions made inside a candidate, a lens, a gate body or a judge are never claimed.
+ *   there: directions made inside one are claimed only where a VISION of yours there is shown them, and an audit hands
+ *   on its lenses' notes, so directions made in a lens may be shown after it (B-060). Not inside candidates that run
+ *   side by side (each, a replicate of more than one), nor in an audit beside another lens where you react: your next
+ *   VISION may be another candidate's or lens's.
  * - A final check that re-runs the directions' stage, or an earlier one, starts it again from that stage's entry: what
  *   the directions left is gone, so where it can still be waiting for its reaction there, no claim is made.
  *
@@ -1424,7 +1499,10 @@ export function directionsReactedTo(recipe: Recipe): Set<Step> {
     const v = p.step;
     if (v.actor !== 'model' || v.role !== 'vision') continue;
     let shown = false;
-    let missed = p.contained || p.perCandidate;
+    const around = enclosing(recipe, p.path);
+    // Inside candidates that run side by side, or beside a lens where a person reacts, the next VISION of theirs may be
+    // another candidate's or lens's, which is not shown these directions.
+    let missed = around.some((n) => n.op === 'each' || (n.op === 'replicate' && n.n > 1) || (n.op === 'audit' && n.lenses.some((l) => l.body !== v && !around.includes(l.body) && hasPersonVision(l.body))));
     if (!missed) {
       const at = stageAt(p.stage);
       flowRecipe<number>(recipe, IDLE, {
@@ -1442,18 +1520,61 @@ export function directionsReactedTo(recipe: Recipe): Set<Step> {
         join: (states) => states.reduce((a, b) => a | b, 0),
         key: String,
         after(node, entry, inner) {
+          // An audit hands on its lenses' notes, the directions made in one of them included.
           if (node.op === 'audit') return inner;
           if (node.op === 'gate' && node.retry && node.retry.times > 0) {
             const from = stageAt(node.retry.stage);
             if (from >= 0 && from <= at && inner & (LIVE | LOST)) missed = true;
           }
-          return entry;
+          // The others hand on the notes they started with: directions made inside one and still waiting are not shown
+          // after it.
+          return around.includes(node) && inner & (LIVE | LOST) ? entry | LOST : entry;
         },
       });
     }
     holds.set(v, (holds.get(v) ?? true) && shown && !missed);
   }
   return new Set([...holds].flatMap(([s, ok]) => (ok ? [s] : [])));
+}
+
+/** The nodes around the place at `path` (a walk path, as `placements` gives it), outermost first; the place itself not. */
+function enclosing(recipe: Recipe, path: string): Node[] {
+  const out: Node[] = [];
+  const visit = (n: Node, at: string): boolean => {
+    if (at === path) return true;
+    if (!path.startsWith(`${at}.`)) return false;
+    out.push(n);
+    const children: [Node, string][] =
+      n.op === 'seq' ? n.steps.map((c, i) => [c, `${at}.steps[${i}]`])
+      : n.op === 'route' ? n.branches.map((b, i) => [b.body, `${at}.branches[${i}].body`])
+      : n.op === 'audit' ? n.lenses.map((l, i) => [l.body, `${at}.lenses[${i}].body`])
+      : n.op === 'pick' ? (n.judge ? [[n.judge, `${at}.judge`]] : [])
+      : n.op === 'step' ? []
+      : [[n.body, `${at}.body`]];
+    if (children.some(([c, p]) => visit(c, p))) return true;
+    out.pop();
+    return false;
+  };
+  recipe.stages.some((s, i) => visit(s.body, `stages[${i}].body`));
+  return out;
+}
+
+/** Whether a person's VISION sits anywhere in a node. */
+function hasPersonVision(n: Node): boolean {
+  switch (n.op) {
+    case 'step':
+      return n.actor === 'human' && n.role === 'vision';
+    case 'seq':
+      return n.steps.some(hasPersonVision);
+    case 'route':
+      return n.branches.some((b) => hasPersonVision(b.body));
+    case 'audit':
+      return n.lenses.some((l) => hasPersonVision(l.body));
+    case 'pick':
+      return n.judge !== undefined && hasPersonVision(n.judge);
+    default:
+      return hasPersonVision(n.body);
+  }
 }
 
 // ---- Field roles ------------------------------------------------------------------------------------------------

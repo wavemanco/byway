@@ -1,0 +1,44 @@
+G1	SURVIVED	Test Files  29 passed (29) | Tests  971 passed (971)	7s
+G2	SURVIVED	Test Files  29 passed (29) | Tests  971 passed (971)	8s
+G5	SURVIVED	Test Files  29 passed (29) | Tests  971 passed (971)	7s
+G5b	SURVIVED	Test Files  29 passed (29) | Tests  971 passed (971)	7s
+G6	KILLED	Test Files  1 failed | 28 passed (29) | Tests  1 failed | 970 passed (971)	7s
+    packages/gateway/test/cut-off.test.ts > a streamed call that stalls (CC-2) > anthropic: the one retry after a decline, carrying a relay step’s wait, waits that wait too, without reading Settings
+G7	KILLED	Test Files  1 failed | 28 passed (29) | Tests  1 failed | 970 passed (971)	7s
+    packages/gateway/test/operation-keys.test.ts > one call across a step’s attempts (F03 stage 3, ADR-0099) > refuses an operation that is not a key with its signals, before anything is reserved
+G11	KILLED	Test Files  1 failed | 28 passed (29) | Tests  1 failed | 970 passed (971)	8s
+    packages/gateway/test/clip-wait.test.ts > a resumed clip keeps its clock: its wait counts from when fal accepted it, as the spend book recorded > an earlier attempt’s job accepted 20 minutes ago is ca
+G12	KILLED	Test Files  1 failed | 28 passed (29) | Tests  31 failed | 940 passed (971)	153s
+    packages/gateway/test/cut-off.test.ts > a streamed call that stalls (CC-2) > openai: a stream that stalls is closed and sent once more, with that attempt retained, and the second answer settled
+    packages/gateway/test/cut-off.test.ts > a streamed call that stalls (CC-2) > openrouter: a stream that stalls is closed and sent once more, with that attempt retained, and the second answer settled
+    packages/gateway/test/cut-off.test.ts > a streamed call that stalls (CC-2) > openai: a stream that stalls and is sent once more, then fails another way, is listed by that failure, not as waited
+    packages/gateway/test/cut-off.test.ts > a streamed call that stalls (CC-2) > anthropic: a stream that sent nothing for STREAM_IDLE_MS once it began (events before: 0) is closed, sent once more, and fa
+F1	KILLED	Test Files  1 failed | 28 passed (29) | Tests  1 failed | 970 passed (971)	15s
+    packages/gateway/test/clip-wait.test.ts > fal’s start deadline: below the wait by about one clip’s making, under both of fal’s names > leaves it out when the wait leaves no time to start (fal takes no
+F4	SURVIVED	Test Files  29 passed (29) | Tests  971 passed (971)	11s
+F13	SURVIVED	Test Files  29 passed (29) | Tests  971 passed (971)	10s
+F16	KILLED	Test Files  1 failed | 28 passed (29) | Tests  1 failed | 970 passed (971)	10s
+    packages/gateway/test/clip-wait.test.ts > a fal clip waits its video model’s wait from fal’s acceptance, then is cancelled and never submitted again > removed from fal’s queue before it ran: nothing w
+F17	KILLED	Test Files  1 failed | 28 passed (29) | Tests  1 failed | 970 passed (971)	10s
+    packages/gateway/test/clip-wait.test.ts > a resumed clip keeps its clock: its wait counts from when fal accepted it, as the spend book recorded > an earlier attempt’s job accepted 20 minutes ago is ca
+S1	KILLED	Test Files  1 failed | 43 passed (44) | Tests  8 failed | 1203 passed (1211)	12s
+    packages/store/test/spend-book.test.ts > SpendBook contract: SQLite, two connections on one file > operation keys > resumes an accepted call whose owner is gone: the new owner holds it with its job id
+    packages/store/test/spend-book.test.ts > SpendBook contract: SQLite, two connections on one file > operation keys > hands a resumed call the time each of its queue jobs was accepted, by the book’s clo
+    packages/store/test/spend-book.test.ts > SpendBook contract: SQLite, two connections on one file > operation keys > resumes a clip abandoned as waited like one handed back, no longer as waited, and li
+    packages/store/test/spend-book.test.ts > SpendBook contract: SQLite, two connections on one file > operation keys > resumes an accepted call its owner handed back as it stopped (endLeases), and not on
+S2	KILLED	Test Files  1 failed | 43 passed (44) | Tests  8 failed | 1203 passed (1211)	11s
+    packages/store/test/spend-book.test.ts > SpendBook contract: SQLite, two connections on one file > operation keys > resumes an accepted call whose owner is gone: the new owner holds it with its job id
+    packages/store/test/spend-book.test.ts > SpendBook contract: SQLite, two connections on one file > operation keys > hands a resumed call the time each of its queue jobs was accepted, by the book’s clo
+    packages/store/test/spend-book.test.ts > SpendBook contract: SQLite, two connections on one file > operation keys > resumes a clip abandoned as waited like one handed back, no longer as waited, and li
+    packages/store/test/spend-book.test.ts > SpendBook contract: SQLite, two connections on one file > operation keys > resumes an accepted call its owner handed back as it stopped (endLeases), and not on
+S3	KILLED	Test Files  2 failed | 42 passed (44) | Tests  5 failed | 1206 passed (1211)	10s
+    packages/gateway/test/clip-wait.test.ts > a resumed clip keeps its clock: its wait counts from when fal accepted it, as the spend book recorded > an earlier attempt’s job accepted 20 minutes ago is ca
+    packages/gateway/test/memory-book.test.ts > SpendBook contract: in memory > operation keys > resumes an accepted call whose owner is gone: the new owner holds it with its job ids, nothing new is reser
+    packages/gateway/test/memory-book.test.ts > SpendBook contract: in memory > operation keys > hands a resumed call the time each of its queue jobs was accepted, by the book’s clock, not the time it is 
+    packages/gateway/test/memory-book.test.ts > SpendBook contract: in memory > operation keys > resumes a clip abandoned as waited like one handed back, no longer as waited, and lists it by its later rea
+T1	KILLED	Test Files  1 failed | 45 passed (46) | Tests  6 failed | 1380 passed (1386)	26s
+    packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > openai gpt-6-astra: a prompt of 272000 input tokens at the short rates, one
+    packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > openai gpt-6.1-sol: a prompt of 272000 input tokens at the short rates, one
+    packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > openai gpt-6-luna: a prompt of 272000 input tokens at the short rates, one 
+    packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > google gemini-3.1-pro-preview: a prompt of 200000 input tokens at the short
+T2	SURVIVED	Test Files  46 passed (46) | Tests  1386 passed (1386)	25s

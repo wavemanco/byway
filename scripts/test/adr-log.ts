@@ -389,3 +389,56 @@ export function describeLinkBreach(b: LinkBreach): string {
   }
   return `ADR-${b.by} reached main in ${b.recordIn}, but the index's "changed by" link from ADR-${b.changed} to it first appears in ${b.linkIn}; the link belongs in the record's commit. ${NOT_REWRITTEN}, so name ${b.linkIn} for this link in LINK_EXCEPTIONS in scripts/test/adr-records.test.ts with its reason. (To keep them together, merge with git merge --no-ff --no-commit and add the index row and links before committing.)`;
 }
+
+// ——— Later notes and the index's "changed by" links (R3 (a)) ———
+
+/** A Later note whose bold heading names another record. */
+export interface NoteLink {
+  /** The record the note is on. */
+  record: string;
+  /** The record its heading names. */
+  by: string;
+  /** The heading's bold text, to name the note. */
+  heading: string;
+}
+
+/** The records each Later note's bold heading names other than its own ("- **2026-10-22, [ADR-0113](…).**"). */
+export function notesHeadedByRecords(number: string, text: string): NoteLink[] {
+  const notes = section(lf(text), '## Later notes') ?? '';
+  return notes.split('\n').flatMap((line) => {
+    const heading = /^- \*\*(.+?)\*\*/.exec(line)?.[1];
+    if (heading === undefined) return [];
+    const named = new Set([...heading.matchAll(/\[ADR-(\d{4})\]/g)].map((m) => m[1] ?? ''));
+    return [...named].filter((by) => by !== number).map((by) => ({ record: number, by, heading }));
+  });
+}
+
+/**
+ * The records a record lists in "What this changes in earlier records" under "Read with this record, and unchanged by
+ * it:" (ADR-0113's form). A note from it on one of them records no change, so it needs no "changed by" link.
+ */
+export function listedAsUnchanged(text: string): string[] {
+  const lines = (section(lf(text), '## What this changes in earlier records') ?? '').split('\n');
+  const start = lines.findIndex((l) => /^- .*unchanged by it:\s*$/.test(l));
+  if (start < 0) return [];
+  const out: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (!/^\s+- /.test(line)) break;
+    const n = /^\s+- \[ADR-(\d{4})\]/.exec(line)?.[1];
+    if (n) out.push(n);
+  }
+  return out;
+}
+
+/**
+ * The Later notes headed by another record whose index row has no "changed by" link to that record, unless that record
+ * lists the noted one as unchanged by it (ADR-0103's Later note of 2026-10-28). It cannot see a change with no note yet.
+ */
+export function noteLinkBreaches(records: ReadonlyMap<string, string>, rows: readonly IndexRow[]): NoteLink[] {
+  const links = new Map(rows.map((r) => [r.number, new Set(r.changedBy)]));
+  const unchanged = new Map([...records].map(([n, text]) => [n, new Set(listedAsUnchanged(text))]));
+  return [...records].flatMap(([n, text]) => notesHeadedByRecords(n, text).filter((note) => !links.get(n)?.has(note.by) && !unchanged.get(note.by)?.has(n)));
+}
+
+export const describeNoteLinkBreach = (b: NoteLink): string =>
+  `ADR-${b.record}'s Later note "${b.heading}" is headed by ADR-${b.by}, but ADR-${b.record}'s index row has no "changed by" link to ADR-${b.by}. Add the link in the same commit as the note; or, if ADR-${b.by} changes nothing in ADR-${b.record}, list ADR-${b.record} in ADR-${b.by}'s "What this changes in earlier records" under "Read with this record, and unchanged by it:".`;

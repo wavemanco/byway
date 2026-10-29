@@ -31,9 +31,14 @@ import { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE, workflowBundleHash } from '..
  * limits (model and image steps under a 24-hour backstop, and TRY_CANCEL named on every proxy); and the relay's waits (a
  * quick step reads them just before each relay step, whose limit is worked out from them and whose calls keep them).
  * Block 2's other branches (the answer waits, the prices, the lost-run pass, the browser helper) change no workflow
- * code. Runs waiting under an older bundle end plainly (ADR-0078).
+ * code. The ponytail audit's batch A and the recipe-semantics batch of 2026-10-28 change it on purpose, together, from
+ * b0a4e13b… to bb8de3c5…: a budget question asked from a step under way no longer waits at a pending pause (ENGINE-2), a
+ * gate with no retry no longer says another try ran (ENGINE-3), limits.ts uses walk.ts's children() (RECIPES-9),
+ * replicate takes as an option's view only one its branch made (B-063), and the run order that `lockedScripts` reads
+ * knows a route's branches exclude each other (B-057); the fix round's test-only walk counter in semantics.ts
+ * (withWalkLimit, inert outside it) is in the bundle too. Runs waiting under an older bundle end plainly (ADR-0078).
  */
-const PINNED_WORKFLOW_HASH = 'b0a4e13bc112a94946bd2394f9bd743047f6985d3cbc45b00e70a158d2cdf2b7';
+const PINNED_WORKFLOW_HASH = 'bb8de3c5860db36ce92189a45467c2cd6f0987fac8f656ee8d1e82de733da470';
 
 describe('the workflow bundle', () => {
   it('inlines the workspace and leaves only the Temporal workflow SDK external', async () => {

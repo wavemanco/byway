@@ -82,3 +82,68 @@ describe('the id a Start names its run with (F03 P3)', () => {
     expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 });
+
+class MapStorage {
+  readonly map = new Map<string, string>();
+  get length() {
+    return this.map.size;
+  }
+  key(i: number) {
+    return [...this.map.keys()][i] ?? null;
+  }
+  getItem(k: string) {
+    return this.map.get(k) ?? null;
+  }
+  setItem(k: string, v: string) {
+    this.map.set(k, v);
+  }
+  removeItem(k: string) {
+    this.map.delete(k);
+  }
+}
+
+// B-042: the screen is made again after a reload, or after choosing another recipe and coming back; the tab's session
+// keeps the Start that got no answer, so pressing it again there gets the run it may have started, not a second one.
+describe('the id a Start names its run with, across a reload (B-042)', () => {
+  const tab = () => {
+    const storage = new MapStorage();
+    const mint = minted();
+    return { storage, page: () => createStartIdentity(mint, () => storage as unknown as Storage) };
+  };
+
+  it('is the same on a new page while no answer came back and nothing changed', async () => {
+    const { page } = tab();
+    const first = await send(page(), inputs(), noAnswer());
+    expect(await send(page(), inputs(), noAnswer())).toBe(first);
+    expect(await send(page(), inputs({ budgetUsd: 3 }), noAnswer())).not.toBe(first);
+  });
+
+  it('compares a composed recipe kept from an earlier page by how it reads', async () => {
+    const { page } = tab();
+    const view = { ok: true, diff: ['one'] };
+    const first = await send(page(), inputs({ recipeId: 'composed' }, view), noAnswer());
+    expect(await send(page(), inputs({ recipeId: 'composed' }, { ...view }), noAnswer())).toBe(first);
+    expect(await send(page(), inputs({ recipeId: 'composed' }, { ok: true, diff: ['two'] }), noAnswer())).not.toBe(first);
+  });
+
+  it('is not kept once byway answered, with a run or a refusal: the next page’s press is a new Start', async () => {
+    const { storage, page } = tab();
+    const started = await send(page(), inputs(), { runId: 'r' });
+    expect(storage.map.size).toBe(0);
+    expect(await send(page(), inputs(), noAnswer())).not.toBe(started);
+    const kept = await send(page(), inputs(), noAnswer());
+    await send(page(), inputs(), refused(409));
+    expect(storage.map.size).toBe(0);
+    expect(await send(page(), inputs(), noAnswer())).not.toBe(kept);
+  });
+
+  it('works without storage, and ignores what it cannot read', async () => {
+    const storage = new MapStorage();
+    storage.setItem('byway.start-id', JSON.stringify({ v: 1, value: { id: 7 } }));
+    const identity = createStartIdentity(minted(), () => storage as unknown as Storage);
+    const first = await send(identity, inputs(), noAnswer());
+    expect(first).toMatch(/0001$/);
+    const none = createStartIdentity(minted(), () => undefined);
+    expect(await send(none, inputs(), noAnswer())).toBe(await send(none, inputs(), noAnswer()));
+  });
+});

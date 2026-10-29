@@ -107,3 +107,13 @@ export function composedAfterStart(state: RecState, refusal: { code?: string | u
   const usable = typeof next === 'object' && next !== null && Array.isArray((next as ComposeView).diff) && typeof (next as ComposeView).ok === 'boolean';
   return usable ? { ...state, composed: next as ComposeView } : state;
 }
+
+/**
+ * How long recommending, re-routing and composing may wait (B-070). Each runs inside its web request with no bound of
+ * byway's own but each model call's wait, chosen in Settings (15 minutes for text at the least), and goes on if the
+ * page is left: its answer is kept on the intake, and asking again while it is under way joins it.
+ */
+const WAITS = 'waits as long as Settings’ “How long to wait for an answer” allows (at least 15 minutes for text)';
+export const RECOMMEND_WAIT_NOTE = `Each model call (one or two, and one more for any the model declines) ${WAITS}. Reloading this page does not ask again: it waits for the same call.`;
+export const ROUTE_WAIT_NOTE = `Choosing again may ask the model once more, and that call ${WAITS}. Leaving or reloading this page does not stop it.`;
+export const COMPOSE_WAIT_NOTE = `Each model call (up to three, and one more for any the model declines) ${WAITS}. Leaving or reloading this page does not stop it, and Build my own pressed again waits for the same call.`;

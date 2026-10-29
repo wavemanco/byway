@@ -9,13 +9,14 @@
  * stand-in Temporal client (engine-state.test.ts runs the same against a real Temporal server).
  */
 import { mkdtempSync, rmSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WorkflowNotFoundError } from '@temporalio/common';
-import type { Client } from '@temporalio/client';
+import { Client, Connection } from '@temporalio/client';
 import type { StartRunInput } from '@byway/contracts';
-import { createRunnerClient } from '../src/client.ts';
+import { createRunnerClient, DESCRIBE_AFTER_FAILED_START_MS } from '../src/client.ts';
 import { ENGINE_DOWN_AT_START, ENGINE_SLOW_AT_START, ENGINE_SLOW_UNCONFIRMED } from '../src/start-failure.ts';
 import { workflowIdFor } from '../src/types.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
@@ -51,6 +52,7 @@ function temporal(engine: Engine) {
   const accepted = new Set<string>();
   const described: string[] = [];
   const client = {
+    withDeadline: <R>(_deadline: number, fn: () => Promise<R>) => fn(),
     workflow: {
       async start(_type: string, o: { workflowId: string }) {
         await engine.start(() => accepted.add(o.workflowId));
@@ -158,6 +160,30 @@ describe('a start that failed after Temporal may have accepted it', () => {
     expect(await store.getRun(RUN_ID)).toMatchObject({ status: 'queued' });
     expect((await store.getRun(RUN_ID))?.error).toBeUndefined();
   });
+
+  it('with the engine down, the describe after the failed start is bounded: the 503 does not wait twice (B-041)', async () => {
+    // A real Temporal client on a port nothing listens on: its calls go through the client's own retries, about 20 s
+    // each. The start's failure is stood in for (it would take as long); the describe after it is the client's own.
+    const closed = await new Promise<number>((resolve) => {
+      const server = createServer().listen(0, '127.0.0.1', () => {
+        const { port } = server.address() as { port: number };
+        server.close(() => resolve(port));
+      });
+    });
+    const connection = Connection.lazy({ address: `127.0.0.1:${closed}` });
+    const real = new Client({ connection });
+    const bound = <T extends object>(target: T, prop: PropertyKey) => {
+      const v = Reflect.get(target, prop, target) as unknown;
+      return typeof v === 'function' ? v.bind(target) : v;
+    };
+    const workflow = new Proxy(real.workflow, { get: (wf, prop) => (prop === 'start' ? () => Promise.reject(UNREACHABLE()) : bound(wf, prop)) });
+    const client = new Proxy(real, { get: (target, prop) => (prop === 'workflow' ? workflow : bound(target, prop)) });
+    const began = Date.now();
+    await expect(createRunnerClient({ client, store }).start(input({ runId: RUN_ID }))).rejects.toMatchObject({ code: 14 });
+    expect(Date.now() - began).toBeLessThan(DESCRIBE_AFTER_FAILED_START_MS + 3_000);
+    expect(await store.getRun(RUN_ID)).toMatchObject({ status: 'failed', error: ENGINE_DOWN_AT_START });
+    await connection.close();
+  }, 60_000);
 
   it('a start that succeeds asks Temporal nothing more', async () => {
     const t = temporal({ start: async () => undefined });

@@ -57,7 +57,7 @@ export function checkDeclarations(recipe: Recipe, findings: Findings): void {
   for (const { step, path, contained, perCandidate } of unappliedCritiques(recipe)) {
     if (contained) continue;
     if (perCandidate) {
-      findings.add('ST12', path, `step "${step.id}" asks a person for a list or a critique once per candidate, and their answer reaches the work on no path: replicate and each hand on only the candidates' work, so only a step of that candidate can take it in, and that candidate reaches the work only where a pick, or an AI writer that takes the options in, takes it up`, 'critique-per-candidate');
+      findings.add('ST12', path, `step "${step.id}" asks a person for a list or a critique once per candidate, and their answer reaches the work on no path: replicate and each hand on only the candidates' work, so only a step of that candidate can take it in, and that candidate reaches the work only where a pick or an AI writer that takes the options in takes it up, or an AI step that reads the candidates makes text that reaches the work`, 'critique-per-candidate');
     } else {
       findings.add('ST12', path, `step "${step.id}" asks a person for a list or a critique, and their answer reaches the work on no path: nothing that writes the work or picks which version it is takes it in, directly or in what an AI step makes from it; before one does, another takes its place, or none comes after it, or the one that does works on candidates that nothing takes up`, 'critique-unapplied');
     }

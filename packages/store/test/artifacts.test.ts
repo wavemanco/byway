@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ArtifactCorruptError, artifactPath } from '../src/index.ts';
 import { openStore, tempDir } from './helpers.ts';
 
@@ -103,6 +104,21 @@ describe('artifact store', () => {
     await Promise.all([store.artifacts.putText('one', 'text/plain'), store.artifacts.putText('two', 'text/plain')]);
     const tmp = join(store.dataDir, 'artifacts', 'tmp');
     expect(existsSync(tmp) ? readdirSync(tmp) : []).toEqual([]);
+  });
+
+  it.each(['writeFile', 'sync'] as const)('removes its temporary file when %s fails, and rejects with that failure', async (method) => {
+    const store = openStore();
+    const probe = await open(join(store.dataDir, 'probe'), 'w');
+    const proto = Object.getPrototypeOf(probe) as Record<typeof method, () => Promise<void>>;
+    await probe.close();
+    const full = Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
+    const spy = vi.spyOn(proto, method).mockRejectedValueOnce(full);
+    try {
+      await expect(store.artifacts.putText('a clip that does not fit', 'text/plain')).rejects.toBe(full);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(readdirSync(join(store.dataDir, 'artifacts', 'tmp'))).toEqual([]);
   });
 
   it('shares artifacts between store instances on one data directory', async () => {

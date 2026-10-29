@@ -166,6 +166,18 @@ describe('judging parsers (spec §3.3)', () => {
       // Text with no spaces, such as Japanese, is cut at a character.
       expect(parseBriefs(answer('あ'.repeat(ADVICE_MAX + 50)))).toMatchObject({ value: { advice: `${'あ'.repeat(kept)}…` } });
     });
+
+    it('counts the halfway point in characters, and never splits a letter from its accent, a flag or a joined emoji (ADR-0104)', () => {
+      // 90 letters outside the BMP (180 UTF-16 units), then a space: in characters the space is in the first half, so the cut is at a character.
+      const wide = '\u{20000}'.repeat(90);
+      const r = parseBriefs(answer(`${wide} ${'b'.repeat(ADVICE_MAX)}`));
+      expect(r).toMatchObject({ value: { advice: `${wide} ${'b'.repeat(ADVICE_MAX - 1 - 91)}…` } });
+      // Each kept whole: as many as fit in ADVICE_MAX - 1 characters, then the ellipsis.
+      expect(parseBriefs(answer('e\u0301'.repeat(ADVICE_MAX)))).toMatchObject({ value: { advice: `${'e\u0301'.repeat(99)}…` } });
+      expect(parseBriefs(answer(`x${'\u{1F1EB}\u{1F1F7}'.repeat(ADVICE_MAX)}`))).toMatchObject({ value: { advice: `x${'\u{1F1EB}\u{1F1F7}'.repeat(99)}…` } });
+      const chef = '\u{1F469}\u200D\u{1F373}';
+      expect(parseBriefs(answer(`x${chef.repeat(ADVICE_MAX)}`))).toMatchObject({ value: { advice: `x${chef.repeat(66)}…` } });
+    });
   });
 });
 

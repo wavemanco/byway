@@ -7,7 +7,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { ActionButton } from '../src/components/ActionButton.tsx';
+import { Examples, type ExampleEntry } from '../src/components/Examples.tsx';
 import { actionAttributes, blockActivation, createInFlight } from '../src/components/useAction.ts';
+import { MAX_REFS } from '../src/view/refs.ts';
 
 /** A promise and the function that settles it, for an action that finishes when the test says. */
 function later<T = void>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (err: unknown) => void } {
@@ -95,5 +97,21 @@ describe('a control that acts', () => {
     expect(html({ unavailable: true, type: 'submit' })).toBe('<button type="submit" aria-disabled="true">Send</button>');
     expect(html({ incomplete: true })).toBe('<button type="button" aria-disabled="true">Send</button>');
     for (const props of [{ busy: true }, { unavailable: true }, { incomplete: true }]) expect(html(props)).not.toMatch(/\sdisabled/);
+  });
+});
+
+// B-037: "Paste an example" at nine examples (MAX_REFS) was the one acting control left with the native state.
+describe('"Paste an example"', () => {
+  const paste = (n: number) => {
+    const entries: ExampleEntry[] = Array.from({ length: n }, (_, i) => ({ key: i + 1, kind: 'text', text: `Example ${i + 1}` }));
+    const markup = renderToStaticMarkup(createElement(Examples, { entries, onChange: () => undefined }));
+    return /<button[^>]*>Paste an example<\/button>/.exec(markup)?.[0] ?? '';
+  };
+
+  it('is unavailable at nine examples with aria-disabled, never disabled, and available below', () => {
+    expect(paste(MAX_REFS)).toContain('aria-disabled="true"');
+    expect(paste(MAX_REFS)).not.toMatch(/\sdisabled/);
+    expect(paste(MAX_REFS - 1)).toMatch(/^<button/);
+    expect(paste(MAX_REFS - 1)).not.toMatch(/disabled/);
   });
 });

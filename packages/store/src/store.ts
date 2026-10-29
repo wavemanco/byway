@@ -28,6 +28,7 @@ import type {
   Store,
   Workspace,
 } from '@byway/contracts';
+import { ENDED_STATUSES } from '@byway/contracts';
 import { answerWait, toAnswerWait } from './answer-waits.ts';
 import { FileArtifactStore } from './artifacts.ts';
 import { assertSafeDataDir, resolveDataDir } from './datadir.ts';
@@ -212,12 +213,23 @@ export class SqliteStore implements Store {
 
   /** Fields left undefined keep their value; `null` clears `error` or `outputArtifactId` (and only those). */
   async updateRun(id: string, patch: RunPatch): Promise<RunRecord> {
+    return this.#updateRun(id, patch, false)!;
+  }
+
+  async endRun(id: string, patch: Parameters<Store['endRun']>[1]): Promise<boolean> {
+    if (!ENDED_STATUSES.has(patch.status)) throw new StoreError('invalid', `a run cannot end as ${JSON.stringify(patch.status)}`);
+    return this.#updateRun(id, patch, true) !== undefined;
+  }
+
+  /** updateRun, or with `unlessEnded`, nothing (undefined) for a run that has ended, read in the same transaction. */
+  #updateRun(id: string, patch: RunPatch, unlessEnded: boolean): RunRecord | undefined {
     const q = this.#queries();
     const p = onlyKeys('a run update', patch, RUN_PATCH_KEYS);
     return writeTransaction(this.#db, () => {
       const row = q.run.get(id);
       if (!row) throw new StoreError('not-found', `no run ${JSON.stringify(id)}`);
       const run = toRun(row);
+      if (unlessEnded && ENDED_STATUSES.has(run.status)) return undefined;
       const status = p.status === undefined ? run.status : oneOf<RunStatus>('run status', p.status, RUN_STATUSES);
       const outputArtifactId = clearable(p.outputArtifactId, run.outputArtifactId, (v) => nonEmpty('outputArtifactId', v));
       const error = clearable(p.error, run.error, (v) => text('error', v));

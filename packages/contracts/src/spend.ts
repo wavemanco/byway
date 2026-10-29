@@ -33,8 +33,9 @@ import type { BudgetDetails, LedgerEntry, ProviderId } from './gateway.ts';
 
 export type PaidOperationState = 'open' | 'sent' | 'accepted' | 'settled' | 'released' | 'uncertain';
 
-/** A fal relay link submits two queue jobs: the clip, then its last frame. */
-export type ProviderJobRole = 'generation' | 'extract';
+/** A fal relay link submits up to three queue jobs: the clip, its last frame, then a frame from its middle (F10 (a)). */
+export const PROVIDER_JOB_ROLES = ['generation', 'extract', 'middle'] as const;
+export type ProviderJobRole = (typeof PROVIDER_JOB_ROLES)[number];
 
 export interface AdmitRequest {
   /** A fresh id the caller chose for this operation. */
@@ -417,8 +418,17 @@ export interface SpendBook {
   /** Compare-and-set from open to sent, for the live row this owner holds. False when it was swept meanwhile. */
   markSent(opId: string, owner: string): Promise<boolean>;
   /**
+   * Whether this owner holds the call's row: it admitted it, or resumed it (AdmitOutcome `resume`), and no other owner
+   * has resumed it since, in whatever state it is now; false for a row the book does not have. Changes nothing. A call
+   * already sent asks it before each further queue job (a fal clip's frame jobs), so an attempt that lost its row to a
+   * takeover submits none beside the attempt that holds it (MONEY-1, the check of fix/fx-landnow).
+   */
+  holds(opId: string, owner: string): Promise<boolean>;
+  /**
    * Records a queue job the provider accepted (sent or open becomes accepted), and when, by the book's clock: a call
    * resumed later is handed that time (AdmitOutcome `resume.acceptedAt`), so a fal clip's wait keeps counting from it.
+   * A role keeps the first job it was accepted with: another job id for it is refused (it throws), and the same id
+   * again changes nothing.
    */
   accept(opId: string, role: ProviderJobRole, providerJobId: string): Promise<void>;
   /**
@@ -476,7 +486,10 @@ export interface SpendBook {
   ledgeredCalls(): Promise<LedgeredCall[]>;
   spend(workspaceId: string): Promise<BookSpend>;
   records(workspaceId: string): Promise<BookRecords>;
-  /** Stops counting calls that may have been billed (the person checked them); returns how many were cleared. */
+  /**
+   * Stops counting calls that may have been billed (the person checked them); returns how many were cleared. A call
+   * still in flight (listed for a send it retained while it is sent again) is left as it is until it ends.
+   */
   clearUncertain(workspaceId: string, opIds: readonly string[]): Promise<number>;
   acknowledgeFault(id: number): Promise<boolean>;
   /** Every fault the book has recorded, open or acknowledged, oldest first (the ledger check, the start-up report). */

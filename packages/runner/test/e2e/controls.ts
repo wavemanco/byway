@@ -50,7 +50,7 @@ export function controlScenarios(use: () => Harness): void {
       // The fix saw the person's reaction.
       expect(h.prompts.calls.find((c) => c.id === 'product.test.revise')?.slots.taste).toBe('Warmer and plainer, please; avoid jargon.');
       expect(view.run.costUsd).toBeGreaterThan(0);
-    }, 60_000);
+    });
   });
 
   describe('starting a run', () => {
@@ -59,7 +59,7 @@ export function controlScenarios(use: () => Harness): void {
       const broken = { ...tiny, stages: [{ stage: 'D1', body: { op: 'step', id: 'x' } }] } as unknown as typeof tiny;
       await expect(h.start(broken)).rejects.toThrow();
       expect((await h.store.listRuns(h.workspaceId)).length).toBe(before);
-    }, 30_000);
+    });
   });
 
   describe('checkpoint answers', () => {
@@ -142,6 +142,32 @@ export function controlScenarios(use: () => Harness): void {
       expect((await h.store.getRun(run.id))?.status).toBe('paused');
       await h.runner.resume(run.id);
       expect((await h.drive(run.id)).run.status).toBe('done');
+    }, 60_000);
+
+    it('a step under way that meets its budget after a Pause still asks to raise it, then the run pauses', async () => {
+      h.setLatency(1500);
+      h.refuseOnce((c) => c.stepId === 'draft');
+      try {
+        const run = await h.start(tiny);
+        await h.waitFor('the draft call in flight', async () => h.calls.some((c) => c.runId === run.id && c.stepId === 'draft'));
+        await h.runner.pause(run.id);
+        // The refused step is still under way, so its budget question opens under the pending pause (before, it waited for the pause, which waited for it).
+        const cp = await openCheckpoint(run.id);
+        expect(cp).toMatchObject({ kind: 'confirm', stepId: 'draft', prompt: 'Raise the budget by $1?' });
+        await statusIs(run.id, 'waiting');
+        await h.runner.resolve({ checkpointId: cp.id, approved: true });
+        await statusIs(run.id, 'paused');
+        const at = await h.store.events(run.id);
+        const paused = at.find((e) => e.type === 'run-paused')!;
+        expect(at.find((e) => e.type === 'step-finished' && e.stepId === 'draft')!.seq).toBeLessThan(paused.seq);
+        await pause(300);
+        expect((await h.store.events(run.id)).filter((e) => e.seq > paused.seq)).toEqual([]);
+        h.setLatency(0);
+        await h.runner.resume(run.id);
+        expect((await h.drive(run.id)).run.status).toBe('done');
+      } finally {
+        h.setLatency(0);
+      }
     }, 60_000);
   });
 

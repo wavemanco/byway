@@ -6,7 +6,7 @@ import { recipeForRun } from '../../../../src/server/api.ts';
 import { getDeps } from '../../../../src/server/deps.ts';
 import { artifactInfo } from '../../../../src/server/run-data.ts';
 import { parseStoryboard, storyboardArtifacts } from '../../../../src/view/result.ts';
-import { howItWasMade, sideImages } from '../../../../src/view/run.ts';
+import { howItWasMade, resultImages } from '../../../../src/view/run.ts';
 import { buildTimeline } from '../../../../src/view/timeline.ts';
 
 export async function generateMetadata({ params }: PageProps<'/runs/[id]/result'>): Promise<Metadata> {
@@ -42,11 +42,12 @@ export default async function ResultPage({ params }: PageProps<'/runs/[id]/resul
   const { presentation, label, steps } = await recipeForRun(deps, run);
   const timeline = buildTimeline(view.events, view.checkpoints, run.status, steps);
   const made = howItWasMade(timeline);
-  // An options list cannot hold images: what Custom imagery made is shown beside it (UX-8).
-  const images = run.medium === 'options' ? sideImages(timeline) : [];
   const { record, bytes } = await services.store.artifacts.get(run.outputArtifactId);
   const mediaType = record.mediaType.split(';')[0]?.trim() ?? 'text/plain';
-  const text = mediaType === 'text/html' || mediaType.startsWith('image/') ? null : new TextDecoder().decode(bytes);
+  const held = mediaType.startsWith('image/') ? '' : new TextDecoder().decode(bytes);
+  const text = mediaType === 'text/html' || mediaType.startsWith('image/') ? null : held;
+  // What Custom imagery made that the deliverable does not hold is shown beside it (UX-8, B-047).
+  const images = resultImages(run.medium, timeline, held);
   // A storyboard shows frames and clips; each is shown by its media type (a real clip plays, a placeholder is an image).
   const board = run.medium === 'media' && text !== null ? parseStoryboard(text) : null;
   const media = board ? await artifactInfo(services, storyboardArtifacts(board)) : {};

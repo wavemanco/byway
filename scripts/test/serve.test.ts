@@ -109,3 +109,17 @@ describe("serve.ts's workflow bundle, and the e2e suite's own (DEV-1)", () => {
     expect(e2e[at - 1]).toBe('rmSync(dataDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });');
   });
 });
+
+/**
+ * BUILD-2: `next build` cleans apps/web/.next first, the folder a running byway's `next start` serves from. So a second
+ * `pnpm start` checks both ports before it touches anything, and a byway that is running is not rebuilt under it.
+ */
+describe("serve.ts's port checks, before anything is built or opened (BUILD-2)", () => {
+  it('awaits the engine port and the web port being free, just after reading them, before the caches, the store and the build', () => {
+    const engineFree = index(/^await assertPortFree\(temporalPort\);$/);
+    const webFree = index(/^await assertPortFree\(webPort, webPortInUseMessage\);$/);
+    expect(engineFree).toBe(index(/^const temporalPort = /) + 1);
+    expect(webFree).toBe(engineFree + 1);
+    for (const later of [/^quietTemporal\(\);$/, /\brmSync\(cache,/, /^const store = createStore\(/, BUILD]) expect(index(later), String(later)).toBeGreaterThan(webFree);
+  });
+});

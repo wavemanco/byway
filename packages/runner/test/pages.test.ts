@@ -20,7 +20,7 @@ import { afterAll, describe, expect, it, onTestFinished } from 'vitest';
 import type { Browser, BrowserContext, LaunchOptions, Page } from 'playwright';
 import { StepError } from '../src/activities/failures.ts';
 import { allowedUrl, chromiumLaunchOptions, fileSaid, launchChromium, LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, OFFSET, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX_DEFAULT, REVERSED, TURNED } from '../src/pages.ts';
-import { headlessShell, possibleSandboxCause, sandboxAdvice, type SandboxHost } from '../src/sandbox.ts';
+import { headlessShell, maybeTheSandbox, possibleSandboxCause, sandboxAdvice, sandboxFailureMessage, sandboxHost, type SandboxHost } from '../src/sandbox.ts';
 
 /** The launch byway makes when the person has not switched the sandbox off: inside it (ADR-0105). */
 const STATED = { osSandbox: RENDERER_OS_SANDBOX_DEFAULT };
@@ -39,20 +39,57 @@ const size = (png: Uint8Array) => {
   return { width: v.getUint32(16), height: v.getUint32(20) };
 };
 
-/** Runs a TypeScript file in a fresh Node process (Node strips the types) and collects what it printed. */
-const runNode = (file: string, args: string[]) =>
+/**
+ * PowerShell that puts itself, and so everything it starts, in a job object with JOB_OBJECT_UILIMIT_DESKTOP (0x40), then
+ * runs Node on BYWAY_SCRIPT with BYWAY_ARGS (D2 (g)). Chromium's sandbox needs a desktop of its own, so a sandboxed
+ * Chromium dies at launch with no word of why; Chromium without the sandbox needs none. Round 2's probe
+ * (docs/adr/evidence/probes/d2/probe-s2/nodesktop.ps1); only this process tree is affected.
+ */
+const NO_DESKTOP = `
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class J {
+  [StructLayout(LayoutKind.Sequential)] public struct UI { public uint Class; }
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern IntPtr CreateJobObject(IntPtr a, string n);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool SetInformationJobObject(IntPtr j, int c, ref UI i, uint l);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool AssignProcessToJobObject(IntPtr j, IntPtr p);
+  [DllImport("kernel32.dll")] public static extern IntPtr GetCurrentProcess();
+}
+'@
+$job = [J]::CreateJobObject([IntPtr]::Zero, $null)
+$ui = New-Object J+UI
+$ui.Class = [uint32]0x40
+if (-not [J]::SetInformationJobObject($job, 4, [ref]$ui, 4)) { throw 'SetInformationJobObject failed' }
+if (-not [J]::AssignProcessToJobObject($job, [J]::GetCurrentProcess())) { throw 'AssignProcessToJobObject failed' }
+& $env:BYWAY_NODE $env:BYWAY_SCRIPT @(ConvertFrom-Json $env:BYWAY_ARGS)
+exit $LASTEXITCODE
+`;
+
+/**
+ * Runs a TypeScript file in a fresh Node process (Node strips the types) and collects what it printed. Called inside a
+ * test, it takes no time limit of its own: the test's own is the hang guard, and the process is killed when the test ends
+ * (a kill after 50 s once failed a dialog test under load, B-100). With `noDesktop` (Windows only), it runs inside a job
+ * object that denies Chromium's sandbox a desktop of its own (NO_DESKTOP).
+ */
+const runNode = (file: string, args: string[], noDesktop = false) =>
   new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-    const child = spawn(process.execPath, [file, ...args], { cwd: fileURLToPath(new URL('..', import.meta.url)), stdio: ['ignore', 'pipe', 'pipe'] });
+    const cwd = fileURLToPath(new URL('..', import.meta.url));
+    const child = noDesktop
+      ? spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(NO_DESKTOP, 'utf16le').toString('base64')], {
+          cwd,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...process.env, BYWAY_NODE: process.execPath, BYWAY_SCRIPT: file, BYWAY_ARGS: JSON.stringify(args) },
+        })
+      : spawn(process.execPath, [file, ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    onTestFinished(() => void child.kill());
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (d: Buffer) => (stdout += d.toString()));
     child.stderr.on('data', (d: Buffer) => (stderr += d.toString()));
-    const killer = setTimeout(() => child.kill(), 50_000);
     child.on('error', reject);
-    child.on('close', (code) => {
-      clearTimeout(killer);
-      resolve({ code, stdout, stderr });
-    });
+    child.on('close', (code) => resolve({ code, stdout, stderr }));
   });
 
 const PIXEL =Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
@@ -262,10 +299,11 @@ describe('web-page RENDER with Playwright Chromium', () => {
 
   it('bounds a page that never settles: the render fails plainly and is not retried, and the next render works (SEC-5)', async () => {
     // The page never settles, so a render of it can end only at its deadline, however fast the machine: were the deadline
-    // not kept, the test would time out. The deadline is short, to keep the test quick, and long enough for the plain
-    // page after it to render on a busy machine (renders take no deadline of their own, so that next render runs under
-    // the same 5 s). Nothing here measures time (this test required the render to end within the limit, both closes and
-    // 5 s: on GitHub's 2-CPU Windows machine it took 18.8 s once, against 14 s, in run 39079760987).
+    // not kept, the test would time out. Nothing here measures time (this test required the render to end within the
+    // limit, both closes and 5 s: on GitHub's 2-CPU Windows machine it took 18.8 s once, against 14 s, in run
+    // 39079760987). Nor does any plain page render under a short limit (B-100): the renderer's own short limit is checked
+    // on a stuck render alone, and the next render follows a stuck render given a deadline of its own, on a renderer
+    // whose own limit only stops a hung render.
     const seen = { launches: 0, contexts: 0 };
     const counted = (into: typeof seen, closing: string[], stuck: () => Promise<void> | undefined) => async () => {
       into.launches++;
@@ -286,15 +324,9 @@ describe('web-page RENDER with Playwright Chromium', () => {
     expect(seen.contexts - before.contexts).toBe(1);
     // The deadline closed the stuck page's context before the render ended (a slow close under load may add the browser).
     expect(shut[0]).toBe('context');
-    const next = await quick.screenshots(SIMPLE, none);
-    expect(next.length).toBe(1);
-    expect(seen.contexts - before.contexts).toBe(2);
 
-    // A stuck page is then closed and, if it will not close, the browser, each within its own limit. Here the test holds
-    // both from closing, as for a renderer too stuck to close, so the render can end only by giving up on each; the next
-    // render then launches a browser again. On a renderer whose own limit only stops a hung render, the render is
-    // cancelled once its page asks for its image, which never comes (so no page spins a CPU while it is held): a cancel
-    // closes the page the same way as the deadline, and nothing in this part runs under a short deadline.
+    // The same stuck page with a deadline of its own, on a renderer whose own limit only stops a hung render: it fails at
+    // its deadline, made once, its context closed; the plain page after it renders with no short limit.
     const held = { launches: 0, contexts: 0 };
     const closing: string[] = [];
     let stuck: Promise<void> | undefined;
@@ -302,6 +334,21 @@ describe('web-page RENDER with Playwright Chromium', () => {
     opened.push(patient);
     await patient.ready();
     closing.length = 0;
+    const first = { ...held };
+    const late = await patient.screenshots(BUSY, none, { deadline: Date.now() + 5_000 }).catch((e: unknown) => e);
+    expect(late).toBeInstanceOf(StepError);
+    expect((late as Error).message).toBe("The page did not finish rendering in the time byway gives a page's renders, so it could not be shown.");
+    expect(held.contexts - first.contexts).toBe(1);
+    expect(closing[0]).toBe('context');
+    expect((await patient.screenshots(SIMPLE, none)).length).toBe(1);
+    expect(held.contexts - first.contexts).toBe(2);
+    closing.length = 0;
+
+    // A stuck page is then closed and, if it will not close, the browser, each within its own limit. Here the test holds
+    // both from closing, as for a renderer too stuck to close, so the render can end only by giving up on each; the next
+    // render then launches a browser again. On the same patient renderer, the render is cancelled once its page asks for
+    // its image, which never comes (so no page spins a CPU while it is held): a cancel closes the page the same way as
+    // the deadline, and nothing in this part runs under a short deadline.
     // Neither the stuck page's context nor the browser closes until the test lets them: when it ends, whichever way it
     // ends (a timeout included), so the browsers can close after it.
     let release = () => {};
@@ -564,35 +611,51 @@ describe('web-page RENDER with Playwright Chromium', () => {
     expect(launched.length).toBe(2);
   }, 60_000);
 
+  /** Chromium's answer when it could not take a screenshot, as Playwright gives it, with its call log. */
+  const UNABLE = 'page.screenshot: Protocol error (Page.captureScreenshot): Unable to capture screenshot\nCall log:\n  - taking page screenshot';
+  /** The browser, with a page's nth screenshot (from 1, counted across its pages) refused with `error` when `refuse(n)` says so. */
+  const refusing = (b: Browser, refuse: (n: number) => boolean, error = UNABLE): Browser => {
+    let n = 0;
+    return seenThrough(b, {
+      page: (page) =>
+        new Proxy(page, {
+          get(pg, name, rr) {
+            if (name === 'screenshot') return async (...a: Parameters<Page['screenshot']>) => (refuse(++n) ? Promise.reject(new Error(error)) : pg.screenshot(...a));
+            const v = Reflect.get(pg, name, rr) as unknown;
+            return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(pg) : v;
+          },
+        }),
+    });
+  };
+
+  it('takes a screenshot once more when Chromium answers "Unable to capture screenshot", and only once (B-118)', async () => {
+    // Seen on GitHub's Linux machine after a card's fonts had loaded, on commits that changed no code.
+    const calls: number[] = [];
+    const flaky = playwrightPages({ launch: async () => refusing(await launchChromium(STATED), (n) => (calls.push(n), n === 1 || n === 3)) });
+    opened.push(flaky);
+    // The first screen and the whole page's one tile, each refused once and then taken.
+    const shots = await flaky.render(SIMPLE, none, ['fold', 'desktop']);
+    expect(shots.map((s) => s.tiles.length)).toEqual([1, 1]);
+    expect(calls).toEqual([1, 2, 3, 4]);
+    // Refused twice in a row: one plain step failure after two tries, not three.
+    calls.length = 0;
+    const refused = playwrightPages({ launch: async () => refusing(await launchChromium(STATED), (n) => (calls.push(n), true)) });
+    opened.push(refused);
+    await expect(refused.render(SIMPLE, none, ['fold'])).rejects.toThrow('The page could not be drawn: the page renderer could not take its screenshot (Unable to capture screenshot).');
+    expect(calls).toEqual([1, 2]);
+    // Any other error is not tried again.
+    calls.length = 0;
+    const crashed = playwrightPages({ launch: async () => refusing(await launchChromium(STATED), (n) => (calls.push(n), true), 'page.screenshot: Target crashed') });
+    opened.push(crashed);
+    await expect(crashed.render(SIMPLE, none, ['fold'])).rejects.toThrow('The page could not be drawn: the page renderer could not take its screenshot (Target crashed).');
+    expect(calls).toEqual([1]);
+  }, 60_000);
+
   it('turns a renderer failure while drawing (a Playwright protocol error) into one plain step failure, not the raw error', async () => {
     // Seen under load in the dialog-interval test: Chromium refused the screenshot, and Playwright's own message reached
     // the step as it was, an error the workflow does not know (so Temporal retried it as if it were transient).
-    const RAW = 'page.screenshot: Protocol error (Page.captureScreenshot): Unable to capture screenshot';
-    const refusing = (b: Browser): Browser =>
-      new Proxy(b, {
-        get(target, prop, receiver) {
-          if (prop !== 'newContext') return Reflect.get(target, prop, receiver);
-          return async (...args: Parameters<Browser['newContext']>) => {
-            const context = await target.newContext(...args);
-            return new Proxy(context, {
-              get(c, p, r) {
-                if (p !== 'newPage') return Reflect.get(c, p, r);
-                return async () => {
-                  const page = await c.newPage();
-                  return new Proxy(page, {
-                    get(pg, name, rr) {
-                      if (name === 'screenshot') return async () => Promise.reject(new Error(`${RAW}\nCall log:\n  - taking page screenshot`));
-                      const v = Reflect.get(pg, name, rr) as unknown;
-                      return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(pg) : v;
-                    },
-                  });
-                };
-              },
-            });
-          };
-        },
-      });
-    const failing = playwrightPages({ launch: async () => refusing(await launchChromium(STATED)) });
+    // Refused every time: the renderer's one more try (B-118) is refused too.
+    const failing = playwrightPages({ launch: async () => refusing(await launchChromium(STATED), () => true) });
     opened.push(failing);
     const err = await failing.render(SIMPLE, none, ['desktop', 'fold']).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StepError);
@@ -699,6 +762,54 @@ describe('web-page RENDER with Playwright Chromium', () => {
     // Not proven: asked again, it draws the test page again, and fails again.
     await expect(on.ready()).rejects.toThrow(/could not draw byway's test page/);
   }, 60_000);
+
+  it("a sandboxed test page past its time names the sandbox as one possible cause, a busy computer another; without the sandbox it says only that it was late (D2 (f); ADR-0105)", async () => {
+    const host: SandboxHost = { os: 'windows', root: false, container: false, appArmorRestricts: false, userNamespacesOff: false };
+    // A page renderer that never loads byway's test page: the check can end only at its own limit.
+    const stalled = (b: Browser): Browser =>
+      seenThrough(b, {
+        page: (p) =>
+          new Proxy(p, {
+            get(t, name, r) {
+              if (name === 'goto') return () => new Promise(() => undefined);
+              const v = Reflect.get(t, name, r) as unknown;
+              return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+            },
+          }),
+      });
+    const on = playwrightPages({ host, timeoutMs: 1_000, launch: async (setting) => stalled(await launchChromium(setting)) });
+    const off = playwrightPages({ host, timeoutMs: 1_000, osSandbox: () => false, launch: async (setting) => stalled(await launchChromium(setting)) });
+    opened.push(on, off);
+    const late = "The page renderer did not draw byway's test page within 1 s.";
+    const withSandbox = await on.ready().catch((e: unknown) => e);
+    expect(withSandbox).toBeInstanceOf(StepError);
+    const named = headlessShell((await import('playwright')).chromium.executablePath());
+    expect((withSandbox as Error).message).toBe(`${late} ${maybeTheSandbox(sandboxAdvice(host, named))} Another is a computer too busy to draw it in time.`);
+    const without = await off.ready().catch((e: unknown) => e);
+    expect(without).toBeInstanceOf(StepError);
+    expect((without as Error).message).toBe(late);
+    // Once the start-up check found the sandbox cannot start here, the sandbox's own message, as before.
+    const found = playwrightPages({ host, timeoutMs: 1_000, lastCheck: async () => ({ sandbox: 'fails' }), launch: async (setting) => stalled(await launchChromium(setting)) });
+    opened.push(found);
+    await expect(found.ready()).rejects.toThrow(sandboxFailureMessage(sandboxAdvice(host, named)));
+  }, 60_000);
+
+  it.runIf(process.platform === 'win32')(
+    "on Windows, a sandbox that ends Chromium at launch with no word of why: the start-up check finds the sandbox the cause, a run's refusal names it as one possible cause and then as the cause, and Chromium without it is ready (D2 (g); ADR-0105)",
+    async () => {
+      // The real case, not the launch seam: its own Node process, in a job object that denies the sandbox its desktop.
+      const { code, stdout, stderr } = await runNode(fileURLToPath(new URL('./helpers/no-desktop.ts', import.meta.url)), [], true);
+      expect(code, stderr).toBe(0);
+      const out = JSON.parse(stdout.trim().split(/\r?\n/).at(-1)!) as { check: Record<string, unknown>; refused: string; refusedWithFinding: string; off: string };
+      const advice = sandboxAdvice(sandboxHost(), headlessShell((await import('playwright')).chromium.executablePath()));
+      expect(out.check).toEqual({ osSandbox: true, ready: false, sandbox: 'fails', message: sandboxFailureMessage(advice), why: advice.why, fix: advice.fix });
+      expect(out.refused).toMatch(/^The page renderer could not start \(/);
+      expect(out.refused).toContain(maybeTheSandbox(advice));
+      expect(out.refusedWithFinding).toBe(sandboxFailureMessage(advice));
+      expect(out.off).toBe('ready');
+    },
+    120_000,
+  );
 
   it('reads the OS sandbox setting before each load: after a change the next load launches with it, and a render under way finishes on the browser it started on (ADR-0105)', async () => {
     let osSandbox = true;
@@ -1413,25 +1524,35 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
   it('a read slower than its deadline fails plainly at it, once, and the next read works, on any machine (SEC-5)', async () => {
     // The page above, read by a reader with a short deadline whose first sample is held until the read has failed: the
     // read cannot finish in time however fast the machine. Were the read to wait for its work past the deadline, it would
-    // never fail, and the test would time out; were it read again, a second context would open.
+    // never fail, and the test would time out; were it read again, a second context would open. The reader's own short
+    // limit is checked on the held read alone; the next read follows a held read given a deadline of its own, on a
+    // reader whose own limit only stops a hung read, so no plain read runs under a short limit (B-100).
     const { seen, launch } = watched();
     const quick = playwrightPages({ timeoutMs: 5_000, closeTimeoutMs: 2_000, launch });
-    opened.push(quick);
+    const patient = playwrightPages({ timeoutMs: 300_000, closeTimeoutMs: 2_000, launch });
+    opened.push(quick, patient);
+    // The readiness check draws byway's test page in a context of its own (ADR-0105).
     await quick.ready();
-    // The readiness check drew byway's test page in a context of its own (ADR-0105).
-    const before = seen.contexts;
-    let release = () => {};
-    seen.hold = new Promise<void>((r) => (release = r));
-    try {
-      const err = await quick.shownText(OPEN, none).catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(StepError);
-      expect((err as Error).message).toBe('The page did not finish loading within 5 s, so its text could not be read.');
-      expect(seen.contexts - before).toBe(1);
-    } finally {
-      release();
-      seen.hold = undefined;
+    await patient.ready();
+    const reads = [
+      { reader: quick, deadline: false, said: 'The page did not finish loading within 5 s, so its text could not be read.' },
+      { reader: patient, deadline: true, said: "The page did not finish loading in the time byway gives a page's reads, so its text could not be read." },
+    ];
+    for (const { reader, deadline, said } of reads) {
+      const before = seen.contexts;
+      let release = () => {};
+      seen.hold = new Promise<void>((r) => (release = r));
+      try {
+        const err = await reader.shownText(OPEN, none, deadline ? { deadline: Date.now() + 5_000 } : {}).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(StepError);
+        expect((err as Error).message).toBe(said);
+        expect(seen.contexts - before).toBe(1);
+      } finally {
+        release();
+        seen.hold = undefined;
+      }
     }
-    expect((await quick.shownText('<p>Next</p>', none)).text).toBe('Next');
+    expect((await patient.shownText('<p>Next</p>', none)).text).toBe('Next');
   }, 60_000);
 
   it('text in a marquee is seen wherever its scrolling has taken it: it is measured by the marquee\'s own box (r9)', async () => {
@@ -1687,7 +1808,10 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
 
   it('is bounded and cancellable like a render (SEC-5)', async () => {
     const quick = playwrightPages({ timeoutMs: 2_000, closeTimeoutMs: 2_000 });
-    opened.push(quick);
+    // Whose own limit only stops a hung read: the stuck reads before its plain one are given a deadline of their own, so
+    // no plain read runs under a short limit (B-100).
+    const patient = playwrightPages({ timeoutMs: 300_000, closeTimeoutMs: 2_000 });
+    opened.push(quick, patient);
     // An artifact that never comes back holds its load; a script that loops once the read runs its clock holds the read.
     const hang = '<!doctype html><html><body><img src="/api/artifacts/sha256:never">Text</body></html>';
     const never = () => new Promise<undefined>(() => undefined);
@@ -1695,8 +1819,11 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
       const err = await quick.shownText(page, never).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(StepError);
       expect((err as Error).message).toMatch(/did not finish loading within 2 s, so its text could not be read/);
+      const late = await patient.shownText(page, never, { deadline: Date.now() + 2_000 }).catch((e: unknown) => e);
+      expect(late).toBeInstanceOf(StepError);
+      expect((late as Error).message).toBe("The page did not finish loading in the time byway gives a page's reads, so its text could not be read.");
     }
-    expect((await quick.shownText('<p>Next</p>', none)).text).toBe('Next');
+    expect((await patient.shownText('<p>Next</p>', none)).text).toBe('Next');
     const ctrl = new AbortController();
     const reason = new Error('cancelled by the run');
     setTimeout(() => ctrl.abort(reason), 300);

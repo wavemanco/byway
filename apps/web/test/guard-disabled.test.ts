@@ -21,11 +21,6 @@ const ALLOWED: { file: string; element: string; reason: string }[] = [
     reason: 'Disabled while the run starts (its `disabled` prop, from Start). Focus is on Start, outside it, and nothing in it may change what is being sent.',
   },
   {
-    file: 'apps/web/src/components/Examples.tsx',
-    element: 'button',
-    reason: '"Paste an example", disabled once nine examples (MAX_REFS) are listed. Pressing it moves focus to the new example’s field, so it is never disabled under focus.',
-  },
-  {
     file: 'apps/web/src/components/Switch.tsx',
     element: 'button',
     reason: 'The caller’s `disabled`: a switch that cannot be used here at all, set by configuration (Settings’ Demo mode when pnpm demo forced it or no key is set), never by pressing it. Busy uses aria-disabled.',
@@ -34,7 +29,6 @@ const ALLOWED: { file: string; element: string; reason: string }[] = [
 
 const WEB = path.join(REPO, 'apps', 'web');
 const rel = (file: string) => path.relative(REPO, file).replace(/\\/g, '/');
-const SCANS = { timeout: 30_000 };
 
 describe('the disabled scan', () => {
   it('finds the attribute on any intrinsic element, bare or with a value, across lines, and DOM writes', () => {
@@ -71,7 +65,7 @@ describe('the disabled scan', () => {
   });
 });
 
-describe('native disabled state in apps/web (R5)', SCANS, () => {
+describe('native disabled state in apps/web (R5)', () => {
   it('is used only where reviewed', () => {
     const files = [...filesUnder(path.join(WEB, 'src'), /\.(ts|tsx)$/), ...filesUnder(path.join(WEB, 'app'), /\.(ts|tsx)$/)];
     const found = files.flatMap((file) => disabledUses(readFileSync(file, 'utf8')).map((use) => ({ key: `${rel(file)} <${use.element}>`, at: `${rel(file)}:${use.line} ${use.text}` })));

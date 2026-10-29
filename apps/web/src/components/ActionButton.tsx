@@ -1,10 +1,10 @@
 'use client';
 
-import type { ButtonHTMLAttributes } from 'react';
+import type { ComponentProps } from 'react';
 import { actionAttributes, blockActivation, type ActionState } from './useAction.ts';
 
-/** A button's own props, less the ones ActionButton owns: the native disabled state is never used (R5). */
-type NativeProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'disabled' | 'aria-disabled' | 'aria-busy'>;
+/** A button's own props (its ref included), less the ones ActionButton owns: the native disabled state is never used (R5). */
+type NativeProps = Omit<ComponentProps<'button'>, 'disabled' | 'aria-disabled' | 'aria-busy'>;
 
 export type ActionButtonProps = NativeProps & ActionState;
 

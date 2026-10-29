@@ -15,12 +15,14 @@ import { rendersKnob, SURFACE_NAMES, SURFACES } from '../surfaces.ts';
 import type { RenderInput, RenderResult, Surface, ViewRef } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
+import { artifactRoute } from './prompting.ts';
 import { stepFinished, stepStarted } from './steps.ts';
 import { announce, storeText } from './writes.ts';
 
 /** What each image of a link view is, said to the judge as its caption (RENDER-1); the shot-check template names them. */
 export const LINK_CAPTIONS = {
   start: 'The frame this clip starts from:',
+  middle: 'A frame from the middle of the generated clip:',
   last: 'The last frame of the generated clip:',
 } as const;
 
@@ -39,11 +41,7 @@ export async function renderView(deps: RunnerDeps, input: RenderInput): Promise<
       case 'web-page': {
         if (!deps.pages) throw new StepError('Web pages cannot be rendered: no page renderer is configured.');
         const wanted = rendersKnob(step.knobs) ?? [...SURFACES];
-        const shots = await deps.pages.render(text, async (id) => {
-          if (!(await deps.store.artifacts.has(id))) return undefined;
-          const { record, bytes } = await deps.store.artifacts.get(id);
-          return { body: bytes, contentType: record.mediaType };
-        }, wanted.length ? wanted : [...SURFACES]);
+        const shots = await deps.pages.render(text, artifactRoute(deps), wanted.length ? wanted : [...SURFACES]);
         const surfaces: NonNullable<ViewRef['surfaces']> = [];
         for (const { surface, tiles } of shots) {
           const ids: string[] = [];
@@ -90,10 +88,11 @@ export async function renderView(deps: RunnerDeps, input: RenderInput): Promise<
 }
 
 /**
- * A storyboard seen inside a relay link (F10, ADR-0090): only that shot's line, then the frame its clip started from and
- * the clip's last frame, each under its caption, so a check of the shot depends on its clip and on nothing of other
- * shots. Defects already in the start frame are the template's to leave out (a regeneration starts there again). With
- * no clip, or no recorded last frame (a storyboard from before the frame was recorded), there is nothing to check.
+ * A storyboard seen inside a relay link (F10, ADR-0090): only that shot's line, then the frame its clip started from, a
+ * frame from the clip's middle when the gateway could take one (F10 (a)), and the clip's last frame, each under its
+ * caption, so a check of the shot depends on its clip and on nothing of other shots. Defects already in the start frame
+ * are the template's to leave out (a regeneration starts there again). With no clip, or no recorded last frame (a
+ * storyboard from before the frame was recorded), there is nothing to check.
  */
 async function linkView(deps: RunnerDeps, input: RenderInput, text: string, tag: string, link: NonNullable<RenderInput['link']>): Promise<ViewRef> {
   const sb = parseStoryboard(text);
@@ -102,7 +101,11 @@ async function linkView(deps: RunnerDeps, input: RenderInput, text: string, tag:
   if (!shot) throw new StepError(`The storyboard has no shot ${link.shot}.`);
   const textArtifactId = await storeText(deps, input.run, input.call, `${shotText(shot)}\n`, { label: `Shot ${shot.shot} as read`, name: `view/${tag}`, mediaType: 'text/plain' });
   if (!shot.clipArtifactId || !shot.lastFrameArtifactId) return { textArtifactId, imageArtifactIds: [], unobservable: noClipNote(shot.shot) };
-  const groups = [...(link.startFrame ? [{ caption: LINK_CAPTIONS.start, imageArtifactIds: [link.startFrame] }] : []), { caption: LINK_CAPTIONS.last, imageArtifactIds: [shot.lastFrameArtifactId] }];
+  const groups = [
+    ...(link.startFrame ? [{ caption: LINK_CAPTIONS.start, imageArtifactIds: [link.startFrame] }] : []),
+    ...(shot.middleFrameArtifactId ? [{ caption: LINK_CAPTIONS.middle, imageArtifactIds: [shot.middleFrameArtifactId] }] : []),
+    { caption: LINK_CAPTIONS.last, imageArtifactIds: [shot.lastFrameArtifactId] },
+  ];
   return { textArtifactId, imageArtifactIds: groups.flatMap((g) => g.imageArtifactIds), groups };
 }
 

@@ -1,0 +1,12 @@
+
+ RUN  v5.0.3 C:/Users/arvik/AppData/Local/Temp/claude/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422/scratchpad/b2check-clones/lens-tests
+
+(node:12852) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ Test Files  12 passed (12)
+      Tests  259 passed (259)
+   Start at  23:55:49
+   Duration  14.63s (tests 77%, import 12%, transform 11%)
+
+exit 0

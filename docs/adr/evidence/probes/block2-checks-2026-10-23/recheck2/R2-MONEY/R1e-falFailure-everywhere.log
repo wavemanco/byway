@@ -1,0 +1,72 @@
+
+ RUN  v5.0.3 C:/Users/arvik/AppData/Local/Temp/claude/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422/scratchpad/b2rc2/m
+
+ ❯ packages/gateway/test/clip-wait.test.ts (53 tests | 4 failed) 572ms
+   ❯ a stopped clip fal reported done, whose result fal answers with a failure: may have been billed, never ledgered as made (8)
+     × the status said done, then a stop came while its result was read, its result answered with a 500 with fal’s body: counted as may have been billed, at its estimate, with its job; nothing ledgered 11ms
+     × the status said done, then a stop came while its result was read, its result answered with a 422 (a ValidationError): counted as may have been billed, at its estimate, with its job; nothing ledgered 4ms
+     × a stop came while it was polled, and fal answered its cancel “already completed”, its result answered with a 500 with fal’s body: counted as may have been billed, at its estimate, with its job; nothing ledgered 4ms
+     × a stop came while it was polled, and fal answered its cancel “already completed”, its result answered with a 422 (a ValidationError): counted as may have been billed, at its estimate, with its job; nothing ledgered 7ms
+
+ Test Files  1 failed | 28 passed (29)
+      Tests  4 failed | 1002 passed (1006)
+   Start at  10:29:38
+   Duration  6.64s (import 53%, tests 33%, transform 13%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/gateway/test/clip-wait.test.ts > a stopped clip fal reported done, whose result fal answers with a failure: may have been billed, never ledgered as made > the status said done, then a stop came while its result was read, its result answered with a 500 with fal’s body: counted as may have been billed, at its estimate, with its job; nothing ledgered
+ FAIL  packages/gateway/test/clip-wait.test.ts > a stopped clip fal reported done, whose result fal answers with a failure: may have been billed, never ledgered as made > a stop came while it was polled, and fal answered its cancel “already completed”, its result answered with a 500 with fal’s body: counted as may have been billed, at its estimate, with its job; nothing ledgered
+AssertionError: expected GatewayError: byway cut off this fal call… { …(9) } to match object { code: 'byway-failure', …(4) }
+(6 matching properties omitted from actual)
+
+- Expected
++ Received
+
+- {
++ GatewayError {
+    "billing": "maybe",
+    "code": "byway-failure",
+    "cutOff": true,
+-   "message": "byway cut off this fal call because its run was ending (fal reported clip job req-1 done, but answered its result with a failure, HTTP 500). fal may have billed the work it did, so the call is counted at its estimate, as \"may have been billed\", and listed in Settings under Spending records until you clear it.",
+    "retryable": false,
+  }
+
+ ❯ packages/gateway/test/clip-wait.test.ts:708:15
+    706|     const { e, g } = await stoppedDone(route, fails);
+    707|     const status = (fails() as { status: number }).status;
+    708|     expect(e).toMatchObject({
+       |               ^
+    709|       code: 'byway-failure',
+    710|       retryable: false,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  packages/gateway/test/clip-wait.test.ts > a stopped clip fal reported done, whose result fal answers with a failure: may have been billed, never ledgered as made > the status said done, then a stop came while its result was read, its result answered with a 422 (a ValidationError): counted as may have been billed, at its estimate, with its job; nothing ledgered
+ FAIL  packages/gateway/test/clip-wait.test.ts > a stopped clip fal reported done, whose result fal answers with a failure: may have been billed, never ledgered as made > a stop came while it was polled, and fal answered its cancel “already completed”, its result answered with a 422 (a ValidationError): counted as may have been billed, at its estimate, with its job; nothing ledgered
+AssertionError: expected GatewayError: byway cut off this fal call… { …(9) } to match object { code: 'byway-failure', …(4) }
+(6 matching properties omitted from actual)
+
+- Expected
++ Received
+
+- {
++ GatewayError {
+    "billing": "maybe",
+    "code": "byway-failure",
+    "cutOff": true,
+-   "message": "byway cut off this fal call because its run was ending (fal reported clip job req-1 done, but answered its result with a failure, HTTP 422). fal may have billed the work it did, so the call is counted at its estimate, as \"may have been billed\", and listed in Settings under Spending records until you clear it.",
+    "retryable": false,
+  }
+
+ ❯ packages/gateway/test/clip-wait.test.ts:708:15
+    706|     const { e, g } = await stoppedDone(route, fails);
+    707|     const status = (fails() as { status: number }).status;
+    708|     expect(e).toMatchObject({
+       |               ^
+    709|       code: 'byway-failure',
+    710|       retryable: false,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+

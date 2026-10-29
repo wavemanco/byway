@@ -45,7 +45,8 @@ export default async function RecommendPage({ params, searchParams }: PageProps<
     options[presentation.recipeId] = {
       presentation,
       label: services.advisor.label(recipe),
-      estimate: services.advisor.estimate(recipe, profileId),
+      // Sized with the problem and its attachments, as the run's prompts will carry them (B-106).
+      estimate: services.advisor.estimate(recipe, profileId, intake.problem),
       takesRefs: takesRefs(recipe),
     };
   }

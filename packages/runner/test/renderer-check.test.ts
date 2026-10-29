@@ -32,7 +32,7 @@ const DIED = new Error(
 
 /**
  * For a test whose answer needs the check's probe of the other setting to finish (a real launch and byway's test page):
- * a bound on the probe that only a probe that hangs reaches, inside the test's own 60 s (the owner's choice of 2026-10-21,
+ * a bound on the probe that only a probe that hangs reaches, inside the 60 s hang guard every test has (vitest.config.ts) (the owner's choice of 2026-10-21,
  * "Fix the test in this batch (Recommended)"). The product's bound is 15 s (PROBE_MS). Under the unit suite's parallel
  * load a probe ran past it, and the check answered the sandbox 'unknown'; that whole test then took 17.6 s.
  */
@@ -193,14 +193,14 @@ describe('the start-up check (serve.ts prints it as the "renderer" line, and Set
     expect(await checkRenderer({ osSandbox: true }, { launch: w.launch, host: linux })).toEqual({ osSandbox: true, ready: true, sandbox: 'starts' });
     expect(w.settings).toEqual([true]);
     expect(w.browsers.map((b) => b.isConnected())).toEqual([false]);
-  }, 60_000);
+  });
 
   it('on, and the sandbox cannot start: not ready, with why and the fix, and nothing launched without the sandbox when Chromium said why', async () => {
     const w = watched((s) => (s.osSandbox ? SANDBOXED : undefined));
     const advice = sandboxAdvice(linux, { error: SANDBOXED });
     expect(await checkRenderer({ osSandbox: true }, { launch: w.launch, host: linux })).toEqual({ osSandbox: true, ready: false, sandbox: 'fails', message: sandboxFailureMessage(advice), why: advice.why, fix: advice.fix });
     expect(w.settings).toEqual([true]);
-  }, 60_000);
+  });
 
   it("on, and the page renderer does not start for a reason Chromium did not give: byway's test page drawn without the sandbox tells whether the sandbox is the cause", async () => {
     // Chromium launches inside the sandbox, but its page renderer dies (security software stopping it, say).
@@ -220,14 +220,14 @@ describe('the start-up check (serve.ts prints it as the "renderer" line, and Set
     const advice = sandboxAdvice(linux);
     expect(await checkRenderer({ osSandbox: true }, { launch, host: linux, probeMs: HUNG_PROBE_MS })).toEqual({ osSandbox: true, ready: false, sandbox: 'fails', message: sandboxFailureMessage(advice), why: advice.why, fix: advice.fix });
     expect(settings).toEqual([true, false]);
-  }, 60_000);
+  });
 
   it('on, and Chromium does not start at all: not ready, the sandbox unknown, and the plain message with the install command', async () => {
     const w = watched(() => MISSING);
     const check = await checkRenderer({ osSandbox: true }, { launch: w.launch, host: linux });
     expect(check).toEqual({ osSandbox: true, ready: false, sandbox: 'unknown', message: launchFailure(MISSING).message });
     expect(w.settings).toEqual([true, false]);
-  }, 60_000);
+  });
 
   it('on, and Chromium dies at launch with the sandbox and without it, saying nothing of why: the message is the one without the sandbox, which does not blame it', async () => {
     const w = watched(() => DIED);
@@ -235,7 +235,7 @@ describe('the start-up check (serve.ts prints it as the "renderer" line, and Set
     expect(check).toEqual({ osSandbox: true, ready: false, sandbox: 'unknown', message: launchFailure(DIED, { osSandbox: false, host: linux }).message });
     expect(check.message).not.toMatch(/sandbox/i);
     expect(w.settings).toEqual([true, false]);
-  }, 60_000);
+  });
 
   it('on, and the probe without the sandbox does not answer: not ready, the sandbox unknown, with what the sandboxed attempt said (one possible cause, why and the fix), told before the probe began', async () => {
     const windows: SandboxHost = { ...linux, os: 'windows', appArmorRestricts: false };
@@ -260,7 +260,7 @@ describe('the start-up check (serve.ts prints it as the "renderer" line, and Set
     expect(await probe.closedOnceReleased()).not.toContain('newContext');
     expect(settings).toEqual([true, false]);
     expect(probe.settings).toEqual([false]);
-  }, 60_000);
+  });
   it('off: ready without the sandbox, and whether the sandbox could start now, from its own test page', async () => {
     const starts = watched();
     expect(await checkRenderer({ osSandbox: false }, { launch: starts.launch, host: linux, probeMs: HUNG_PROBE_MS })).toEqual({ osSandbox: false, ready: true, sandbox: 'starts' });
@@ -274,7 +274,7 @@ describe('the start-up check (serve.ts prints it as the "renderer" line, and Set
     const missing = watched(() => MISSING);
     expect(await checkRenderer({ osSandbox: false }, { launch: missing.launch, host: linux })).toEqual({ osSandbox: false, ready: false, sandbox: 'unknown', message: launchFailure(MISSING).message });
     expect(missing.settings).toEqual([false]);
-  }, 60_000);
+  });
 
   /**
    * The probe of the other setting has a bound of its own (W1, ADR-0105): once the test page is drawn, a probe that does
@@ -300,7 +300,7 @@ describe('the start-up check (serve.ts prints it as the "renderer" line, and Set
     expect(await probe.closedOnceReleased()).not.toContain('newContext');
     expect(settings).toEqual([false, true]);
     expect(probe.settings).toEqual([true]);
-  }, 60_000);
+  });
 
   it("a renderer closed while its launch is on its way launches nothing more: the readiness check waiting on that launch fails plainly, saying byway closed it (ADR-0105 item 5, ADR-0106)", async () => {
     const probe = held();
@@ -317,7 +317,7 @@ describe('the start-up check (serve.ts prints it as the "renderer" line, and Set
     await expect(pages.shownText('<p>hi</p>', async () => undefined)).rejects.toThrow("The page's text could not be read: byway closed the page renderer as it shut down.");
     expect(await probe.closedOnceReleased()).not.toContain('newContext');
     expect(probe.settings).toEqual([false]);
-  }, 60_000);
+  });
 
   it("the start-up line's limit, reached while the probe runs, says what the check has found: ready, the sandbox unknown", async () => {
     const probe = held();
@@ -336,7 +336,7 @@ describe('the start-up check (serve.ts prints it as the "renderer" line, and Set
     probe.release();
     await checking;
     await probe.closedOnceReleased();
-  }, 60_000);
+  });
 
   it('never throws, whatever the launch does', async () => {
     const check = await checkRenderer(
@@ -416,7 +416,7 @@ describe("a run's refusal agrees with the start-up line and Settings (ADR-0105)"
     // Refused before the run began: nothing spent, nothing written.
     expect((await store.getRun(runId))?.status).toBe('queued');
     expect((await store.events(runId)).map((e) => e.type)).not.toContain('run-started');
-  }, 60_000);
+  });
 
   it('with no start-up check to go by, the refusal names the sandbox as one possible cause, with the same why and fix, and the install command', async () => {
     const { err } = await refusal();
@@ -425,7 +425,7 @@ describe("a run's refusal agrees with the start-up line and Settings (ADR-0105)"
     expect((err as Error).message).toBe(
       `The page renderer could not start (Target page, context or browser has been closed), so pages, and the cards that show a reviewer the examples beside the work, cannot be drawn. One possible cause is that its OS sandbox cannot run on this computer; if so: ${advice.why} ${advice.fix} If Playwright's Chromium is not installed: pnpm --filter ./apps/web exec playwright install chromium`,
     );
-  }, 60_000);
+  });
 
   it('a start-up check that found the sandbox starts, or could not tell, leaves the possible cause; a Chromium that is not there is never the sandbox', async () => {
     for (const sandbox of ['starts', 'unknown'] as const) {
@@ -440,5 +440,5 @@ describe("a run's refusal agrees with the start-up line and Settings (ADR-0105)"
     } finally {
       await pages.close();
     }
-  }, 60_000);
+  });
 });

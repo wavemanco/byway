@@ -1,0 +1,9 @@
+
+ RUN  v5.0.3 C:/Users/arvik/AppData/Local/Temp/claude/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422/scratchpad/b2check-clones/refute-WEB-1-0
+
+
+ Test Files  1 passed (1)
+      Tests  40 passed | 49 skipped (89)
+   Start at  00:27:02
+   Duration  2.31s (import 56%, transform 36%, tests 8%)
+

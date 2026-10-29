@@ -293,6 +293,27 @@ describe('picks are made as their mode says', () => {
   });
 });
 
+describe('a critic inside each, over options made after a render of the work (B-063)', () => {
+  // C1 with a first draft rendered before its seeds, and the render inside each candidate's critic loop taken out: each
+  // candidate's critic would be handed the first draft's render, so every candidate would be judged by the same view of
+  // another page. The validator's typing hands each candidate only its own view, so composed admission refuses it.
+  const variant = (keepRender: boolean): N => {
+    const r = clone(c1);
+    const seeds = stageOf(r, 'D1').body;
+    const first = { ...structuredClone(seeds.body), id: 'first-draft' };
+    stageOf(r, 'D1').body = { op: 'seq', steps: [first, { op: 'step', id: 'first-look', role: 'render', glue: 'RENDER', actor: 'tool', consumes: ['artifact'], produces: ['view'] }, seeds] };
+    const loopBody = stageOf(r, 'D2').body.steps[0].body.steps[0].body;
+    if (!keepRender) loopBody.steps = loopBody.steps.filter((s: N) => s.role !== 'render');
+    return r;
+  };
+
+  it('is refused: the critic consumes a view no candidate has (ST5)', () => refusedWith(c1, variant(false), 'ST5'));
+
+  it('with the render inside each kept, the critic judges each candidate by its own render: not refused for that', () => {
+    expect(admission(c1, variant(true))).not.toContain('ST5');
+  });
+});
+
 describe('the catalog copied verbatim is admitted', () => {
   it.each(PROTOCOL_CONFIGS.map((r) => [r.id, r] as const))('%s', (_id, r) => admitted(r, clone(r)));
 });

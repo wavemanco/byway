@@ -1,0 +1,4 @@
+[
+ {"id":"R3c-RESULT_LOOK_MS-value-120s","file":"packages/gateway/src/providers/fal.ts","old":"export const RESULT_LOOK_MS = 30_000;","new":"export const RESULT_LOOK_MS = 120_000;"},
+ {"id":"R3d-RESULT_LOOK_MS-value-10min","file":"packages/gateway/src/providers/fal.ts","old":"export const RESULT_LOOK_MS = 30_000;","new":"export const RESULT_LOOK_MS = 600_000;"}
+]

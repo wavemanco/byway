@@ -37,13 +37,13 @@ import type {
   UnledgeredCall,
   WaitedFor,
 } from '@byway/contracts';
-import { ledgerEntryConflict, ledgerEntryProblem, ledgerOperationId, spendFaultDetail } from '@byway/contracts';
+import { ledgerEntryConflict, ledgerEntryProblem, ledgerOperationId, PROVIDER_JOB_ROLES, spendFaultDetail } from '@byway/contracts';
 import { migrate } from './migrations.ts';
 import { openDatabase, writeTransaction } from './db.ts';
 import { StoreError } from './errors.ts';
 
 const roundUsd = (n: number) => Math.round(n * 1e6) / 1e6;
-const ROLES: ReadonlySet<ProviderJobRole> = new Set(['generation', 'extract']);
+const ROLES: ReadonlySet<ProviderJobRole> = new Set(PROVIDER_JOB_ROLES);
 /** A book-side comparison tolerance: amounts are rounded to the micro-dollar. */
 const EPSILON = 1e-9;
 
@@ -143,12 +143,21 @@ export class SqliteSpendBook implements SpendBook {
     return this.#durable(() => Number(this.#queries().markSent.run({ id: opId, owner, now: this.#ms(), at: this.#stamp() }).changes) > 0);
   }
 
+  async holds(opId: string, owner: string): Promise<boolean> {
+    return this.#queries().holds.get({ id: opId, owner }) !== undefined;
+  }
+
   async accept(opId: string, role: ProviderJobRole, providerJobId: string): Promise<void> {
-    if (!ROLES.has(role)) throw new StoreError('invalid', `a provider job role is generation or extract, got ${String(role)}`);
+    if (!ROLES.has(role)) throw new StoreError('invalid', `a provider job role is generation, extract or middle, got ${String(role)}`);
     const job = textOf('providerJobId', providerJobId);
     this.#durable(() => {
+      const q = this.#queries();
       // When the job was accepted is kept beside its id (provider_jobs_at, migration 10): a resumed fal clip's wait counts from it.
-      this.#queries().accept.run({ id: opId, path: `$.${role}`, job, at: this.#stamp() });
+      if (Number(q.accept.run({ id: opId, path: `$.${role}`, job, at: this.#stamp() }).changes) > 0) return;
+      // A role keeps the first job it was accepted with (B-071): another would leave that job, which may be billed,
+      // counted nowhere. The same job again changes nothing.
+      const held = acceptedJobs((q.get.get(opId) as Row | undefined)?.provider_jobs)[role];
+      if (held !== undefined && held !== job) throw new StoreError('already-exists', `paid operation ${JSON.stringify(opId)} already holds ${role} job ${held}, so job ${job} was not recorded in its place`);
     });
   }
 
@@ -325,6 +334,8 @@ export class SqliteSpendBook implements SpendBook {
   }
 
   async clearUncertain(workspaceId: string, opIds: readonly string[]): Promise<number> {
+    // A call still in flight (being sent again after a send it retained) is listed but not cleared until it ends: its
+    // later send may be billed too, and a cleared row counts nothing (the owner's choice of 2026-10-24, F03 (f)).
     return this.#tx(() => {
       const q = this.#queries();
       const now = this.#ms();
@@ -549,8 +560,11 @@ function prepare(db: DatabaseSync) {
     openFault: p('SELECT ledger_offset FROM spend_faults WHERE acknowledged_at IS NULL ORDER BY id LIMIT 1'),
     openFaults: p('SELECT id, detail, created_at FROM spend_faults WHERE acknowledged_at IS NULL ORDER BY id'),
     allFaults: p('SELECT id, ledger_offset, line_sha256, detail, created_at, acknowledged_at FROM spend_faults ORDER BY id'),
-    sweepOpen: p(`UPDATE paid_operations SET state = 'released', updated_at = :at WHERE state = 'open' AND lease_until <= :now`),
-    sweepSent: p(`UPDATE paid_operations SET state = 'uncertain', uncertain_reason = 'interrupted', updated_at = :at WHERE state IN ('sent', 'accepted') AND lease_until <= :now`),
+    // The sweeps repeat paid_operations_live's own condition first, so SQLite searches that partial index instead of
+    // scanning every call ever made (B-138).
+    sweepOpen: p(`UPDATE paid_operations SET state = 'released', updated_at = :at WHERE state IN ('open', 'sent', 'accepted') AND state = 'open' AND lease_until <= :now`),
+    sweepSent: p(`UPDATE paid_operations SET state = 'uncertain', uncertain_reason = 'interrupted', updated_at = :at
+      WHERE state IN ('open', 'sent', 'accepted') AND state IN ('sent', 'accepted') AND lease_until <= :now`),
     workspaceExposure: p(`SELECT
       COALESCE(SUM(CASE WHEN state = 'settled' THEN settled_usd END), 0) AS settled,
       COALESCE(SUM(CASE WHEN ${IN_FLIGHT} THEN reserved_usd END), 0) AS in_flight,
@@ -571,9 +585,10 @@ function prepare(db: DatabaseSync) {
     letGo: p('UPDATE paid_operations SET lease_until = MIN(lease_until, :now) WHERE id = :id AND owner = :owner'),
     endHolds: p(`UPDATE paid_operations SET lease_until = MIN(lease_until, :now) WHERE owner = :owner AND state = 'settled' AND op_key IS NOT NULL`),
     markSent: p(`UPDATE paid_operations SET state = 'sent', sent_at = :at, updated_at = :at WHERE id = :id AND owner = :owner AND state = 'open' AND ${LIVE}`),
+    holds: p('SELECT 1 AS held FROM paid_operations WHERE id = :id AND owner = :owner'),
     accept: p(`UPDATE paid_operations SET state = CASE WHEN state IN ('open', 'sent') THEN 'accepted' ELSE state END,
       provider_jobs = json_set(COALESCE(provider_jobs, '{}'), :path, :job), provider_jobs_at = json_set(COALESCE(provider_jobs_at, '{}'), :path, :at),
-      updated_at = :at WHERE id = :id`),
+      updated_at = :at WHERE id = :id AND json_extract(COALESCE(provider_jobs, '{}'), :path) IS NULL`),
     retain: p('UPDATE paid_operations SET retained_usd = retained_usd + :usd, retained_waited = COALESCE(:waited, retained_waited), updated_at = :at WHERE id = :id'),
     release: p(`UPDATE paid_operations SET state = 'released', updated_at = :at WHERE id = :id AND state <> 'settled'`),
     abandon: p(`UPDATE paid_operations SET state = 'uncertain', uncertain_reason = :reason, waited = :waited, updated_at = :at WHERE id = :id AND state IN ('open', 'sent', 'accepted')`),
@@ -604,7 +619,7 @@ function prepare(db: DatabaseSync) {
       WHERE workspace_id = :ws AND cleared_at IS NULL AND (${UNCERTAIN} OR retained_usd > 0) ORDER BY updated_at, rowid`),
     outboxSize: p(`SELECT COUNT(*) AS n FROM paid_operations WHERE state = 'settled' AND ledgered_seq IS NULL`),
     clear: p(`UPDATE paid_operations SET cleared_at = :at, updated_at = :at WHERE id = :id AND workspace_id = :ws AND cleared_at IS NULL
-      AND (state = 'uncertain' OR (state IN ('sent', 'accepted') AND lease_until <= :now) OR retained_usd > 0)`),
+      AND (state = 'uncertain' OR (state IN ('sent', 'accepted') AND lease_until <= :now) OR retained_usd > 0) AND NOT (${IN_FLIGHT})`),
     acknowledge: p('UPDATE spend_faults SET acknowledged_at = :at WHERE id = :id AND acknowledged_at IS NULL'),
   };
 }

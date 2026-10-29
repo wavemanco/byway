@@ -30,6 +30,9 @@ export function configFor(env: Env): NextConfig {
     // dependencies, kept external should anything reach them through the bundle.
     serverExternalPackages: ['@temporalio/client', '@anthropic-ai/sdk', 'openai', '@google/genai', '@fal-ai/client', 'undici'],
     poweredByHeader: false,
+    // byway uses no next/image, so Next's image optimiser is off: /_next/image answers 404, which removes a surface that
+    // has carried advisories (GHSA-2464-fhr4-w9xw) and the run-time path that loads sharp (B-096).
+    images: { unoptimized: true },
     // `next dev` would otherwise write AGENTS.md and CLAUDE.md into the app. Agent instructions for this repo
     // are a decision for its maintainers, not a side effect of starting the dev server.
     agentRules: false,

@@ -15,7 +15,8 @@ on:
   schedule:
     # Weekly (Mondays 06:17 UTC): the tests download Chromium and the Temporal CLI, and pushes can stop for days. The
     # weekly run also says whether the Playwright pin has fallen behind npm's latest release and whether the providers'
-    # pages still give byway's prices (two steps below).
+    # pages still give byway's prices (two steps below), and whether byway's dependencies or its Node have known security
+    # advisories (after pnpm is set up).
     - cron: '17 6 * * 1'
 
 permissions:
@@ -81,6 +82,16 @@ jobs:
       # the pinned Node.
       - name: pnpm (the version in package.json's packageManager)
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      # The weekly run only, on one job: pnpm audit's high and critical advisories for the production dependencies, the
+      # advisories undici's and next's own repositories publish against byway's pins, and Node's security releases after
+      # .node-version (scripts/advisories.ts says why each). It reports as the two steps above do, warns on the run's page
+      # when one applies or a check could not be made, fails nothing, and reads no secret.
+      - name: Do byway's dependencies or its Node have known advisories? (the weekly run, Linux only; it reports and fails nothing)
+        if: ${{ github.event_name == 'schedule' && matrix.name == 'linux' }}
+        continue-on-error: true
+        timeout-minutes: 5
+        run: node scripts/advisories.ts
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

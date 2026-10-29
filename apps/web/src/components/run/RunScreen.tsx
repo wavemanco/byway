@@ -7,9 +7,8 @@ import { CANCEL_QUESTION, controlPendingLabel, runStatusLabel, type ControlActio
 import { runMeter } from '../../view/meter.ts';
 import type { Connection } from '../../view/refresh.ts';
 import { HELD_KEY_REFUSAL } from '../../view/refusals.ts';
-import { activeCheckpoint, isEnded, pollDelay } from '../../view/run.ts';
+import { activeCheckpoint, isEnded, runPollDelay } from '../../view/run.ts';
 import { lastSeq, mergeRunData, type RunData } from '../../view/rundata.ts';
-import type { QuestionCosts } from '../../view/questions.ts';
 import type { StepIndex } from '../../view/steps.ts';
 import { questionCost } from '../../view/questions.ts';
 import { buildTimeline, currentStep } from '../../view/timeline.ts';
@@ -28,17 +27,12 @@ import { Timeline } from './Timeline.tsx';
 import { UnsentWords } from './UnsentWords.tsx';
 import { YourTurn } from './YourTurn.tsx';
 
-/** How long to wait before retrying while byway is not answering, whatever the run's status. */
-const LOST_RETRY_MS = 3000;
-
 interface Props {
   initial: RunData;
   presentation: RecipePresentation | null;
   label: Label | null;
   /** Run events → plain step labels, from the presentation's stepIds (null when the recipe is unknown). */
   steps: StepIndex | null;
-  /** What an answer to each optional's and each person's loop's question would cost (null when the recipe is unknown). */
-  questions: QuestionCosts | null;
 }
 
 /**
@@ -47,7 +41,7 @@ interface Props {
  * above the working area's conditional render and settled only by snapshots the refresher applied (the draft store,
  * F06). It is mounted once per run (the page keys it by the run's id).
  */
-export function RunScreen({ initial, presentation, label, steps, questions }: Props) {
+export function RunScreen({ initial, presentation, label, steps }: Props) {
   const technical = useTechnicalNames();
   const [data, setData] = useState(initial);
   // Whether `data` includes a snapshot byway served to this screen's refresher. Until then it is only `initial`: the
@@ -104,9 +98,8 @@ export function RunScreen({ initial, presentation, label, steps, questions }: Pr
     setConnection,
   );
   // Poll while the run can still change: briskly while the AI works, lazily while it waits for you or, once it has ended,
-  // while some of its calls are still under way. While byway is not answering, keep retrying whatever the last status
-  // said, so the banner clears on an ended run too.
-  usePolling(refresher, connection === 'lost' ? LOST_RETRY_MS : pollDelay(run.status, after?.callsUnderWay));
+  // while some of its calls are still under way (view/run.ts runPollDelay).
+  usePolling(refresher, runPollDelay(data, connection));
 
   // F06: the person's unsent answers, owned here, above the working area's conditional render. The store is made once
   // per mount without side effects; it loads after hydration (so the server HTML and the first client render agree)
@@ -189,8 +182,8 @@ export function RunScreen({ initial, presentation, label, steps, questions }: Pr
 
   const shownError = error && (error.checkpointId === 'control' || error.checkpointId === turn?.id) ? error.message : null;
   const status = runStatusLabel(run.status);
-  // What an answer would cost is said with the question, here and under it (view/questions.ts).
-  const cost = turn ? questionCost(turn, questions) : null;
+  // What an answer would cost is said with the question, here and under it (view/questions.ts), as the latest poll priced it.
+  const cost = turn ? questionCost(turn, data.questions) : null;
   const announcement = paused ? 'Run paused.' : turn ? `Your turn: ${turn.prompt}${cost ? ` ${cost}` : ''}` : ended ? `Run ${status.toLowerCase()}.` : '';
 
   return (

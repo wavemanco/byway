@@ -115,6 +115,19 @@ describe('runs', () => {
     expect(await store.getRun(run.id)).toEqual(failed);
   });
 
+  it('ends a run only while it has not ended, and says whether it did (endRun)', async () => {
+    const store = openStore({ now: steppingClock() });
+    const run = await seedRun(store, 'r', { status: 'waiting' });
+    expect(await store.endRun(run.id, { status: 'cancelled', costUsd: 0.25 })).toBe(true);
+    const cancelled = await store.getRun(run.id);
+    expect(cancelled).toMatchObject({ status: 'cancelled', costUsd: 0.25 });
+    // A second end, as a lost-run pass that read the run before the Cancel landed would write, changes nothing.
+    expect(await store.endRun(run.id, { status: 'failed', error: 'lost', costUsd: 1 })).toBe(false);
+    expect(await store.getRun(run.id)).toEqual(cancelled);
+    await expect(store.endRun('missing', { status: 'done' })).rejects.toMatchObject({ code: 'not-found' });
+    await expect(store.endRun(run.id, { status: 'running' as never })).rejects.toMatchObject({ code: 'invalid' });
+  });
+
   it('ignores undefined fields in a patch', async () => {
     const store = openStore();
     const run = await seedRun(store);

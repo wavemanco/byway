@@ -11,8 +11,11 @@ import { resolveDataDir } from '@byway/store';
 import { DEMO_PROFILE_ID, effectiveMode, findRepoRoot, flagOn, liveUsable, runProfileId, servicesConfig } from '../src/services/config.ts';
 import { loadEngine } from '../src/services/engine.ts';
 import { LEDGER_FILENAME } from '../src/services/create.ts';
-import { EngineUnavailableError, engineRunner, isEngineUnavailable, isTransportFailure } from '../src/services/engine-runner.ts';
+import { EngineUnavailableError, engineRunner, isEngineUnavailable } from '../src/services/engine-runner.ts';
 import { ENGINE, testHost, type TestHost } from './fixtures/services.ts';
+
+/** What create.ts hands engineRunner: the runner's own transport and timeout checks (its client entry). */
+const engineDown = (e: unknown) => ENGINE.runner.isTransportFailure(e) || ENGINE.runner.isTimeout(e);
 
 const temp: string[] = [];
 let current: TestHost | undefined;
@@ -105,7 +108,7 @@ describe('the engine Runner (the web process is only a Temporal client)', () => 
       attempts++;
       if (attempts === 1) throw new Error('connect ECONNREFUSED 127.0.0.1:1');
       return real;
-    });
+    }, engineDown);
     expect(attempts).toBe(0);
     await expect(runner.pause('x')).rejects.toBeInstanceOf(EngineUnavailableError);
     await expect(runner.pause('x')).rejects.toThrow(/is not a function|pause/);
@@ -114,7 +117,7 @@ describe('the engine Runner (the web process is only a Temporal client)', () => 
     const ws = await store.ensureDefaultWorkspace();
     await store.createRun({ id: 'run-1', workspaceId: ws.id, recipeId: 'c4', recipeHash: 'h', profileId: 'demo', title: 't', problem: 'p', medium: 'prose', budgetUsd: 1 });
     await store.appendEvent({ runId: 'run-1', type: 'run-started', data: { recipeId: 'c4', profileId: 'demo', budgetUsd: 1 } });
-    const view = await engineRunner(store, () => Promise.reject(new Error('down'))).view('run-1');
+    const view = await engineRunner(store, () => Promise.reject(new Error('down')), engineDown).view('run-1');
     expect(view.run.id).toBe('run-1');
     expect(view.events.map((e) => e.type)).toEqual(['run-started']);
     await expect(runner.view('missing')).rejects.toThrow(/no run/);
@@ -145,7 +148,7 @@ describe('the engine Runner (the web process is only a Temporal client)', () => 
     const runner = engineRunner(store, async () => {
       connects++;
       return real;
-    });
+    }, engineDown);
     await expect(runner.start({} as never)).rejects.toBeInstanceOf(EngineUnavailableError);
     await expect(runner.resolve({ checkpointId: 'c' })).rejects.toBeInstanceOf(EngineUnavailableError);
     // An error that is not about the connection stays what it was.
@@ -156,12 +159,21 @@ describe('the engine Runner (the web process is only a Temporal client)', () => 
     await expect(runner.start({} as never)).resolves.toEqual({ id: 'r' });
   });
 
-  it('recognises transport failures anywhere in the cause chain, and nothing else', () => {
-    expect(isTransportFailure(Object.assign(new Error('x'), { code: 14 }))).toBe(true);
-    expect(isTransportFailure(new Error('outer', { cause: new Error('connect ECONNREFUSED 127.0.0.1:7233') }))).toBe(true);
-    expect(isTransportFailure(Object.assign(new Error('x'), { code: 4 }))).toBe(true);
-    expect(isTransportFailure(Object.assign(new Error('That answer was not accepted.'), { code: 3 }))).toBe(false);
-    expect(isTransportFailure('ECONNREFUSED')).toBe(false);
+  it('reads the engine as down on a transport failure or a timeout anywhere in the cause chain, and nothing else', () => {
+    // The runner's checks, which create.ts hands engineRunner: the web keeps no copy of its own that could drift.
+    expect(engineDown(Object.assign(new Error('x'), { code: 14 }))).toBe(true);
+    expect(engineDown(Object.assign(new Error('x'), { code: 4 }))).toBe(true);
+    expect(engineDown(Object.assign(new Error('x'), { code: 'ECONNREFUSED' }))).toBe(true);
+    expect(engineDown(Object.assign(new Error('x'), { code: 'ECONNRESET' }))).toBe(true);
+    expect(engineDown(new Error('read ECONNRESET'))).toBe(true);
+    expect(engineDown(new Error('14 UNAVAILABLE: No connection established'))).toBe(true);
+    expect(engineDown(new Error('No connection established. Last error: none'))).toBe(true);
+    expect(engineDown(new Error('outer', { cause: new Error('connect ECONNREFUSED 127.0.0.1:7233') }))).toBe(true);
+    expect(engineDown(new Error('a', { cause: new Error('b', { cause: Object.assign(new Error('c'), { code: 4 }) }) }))).toBe(true);
+    // A timeout said only in the text, which the web's own copy missed.
+    expect(engineDown(new Error('4 DEADLINE_EXCEEDED: Deadline exceeded'))).toBe(true);
+    expect(engineDown(Object.assign(new Error('That answer was not accepted.'), { code: 3 }))).toBe(false);
+    expect(engineDown('ECONNREFUSED')).toBe(false);
   });
 
   it('says plainly that the engine stopped or did not answer, and how to bring it back, and is recognised across server bundles', () => {
@@ -266,6 +278,27 @@ describe('the service host', () => {
     expect(current.host.questionEstimates(c4, 'balanced')['framings-if-wanted']).toEqual(framings);
     // A profile byway does not have gets no figures.
     expect(current.host.questionEstimates(c4, 'retired')).toEqual({});
+  });
+
+  // B-106, B-108: sized by what is known while the question is open; B-107: the critic loop's and the gate's questions.
+  it("sizes a question's figure by the run's problem and the work beside it, and names the questions a loop or gate figure is for", async () => {
+    current = testHost({ demo: false, env: { ...FAKE_KEYS } });
+    const { advisor } = current.host.services(false);
+    const [c4, c6] = [advisor.recipe('c4'), advisor.recipe('c6')];
+    if (!c4 || !c6) throw new Error('c4 or c6 missing');
+    const planned = current.host.questionEstimates(c6, 'balanced')['author-loop']!.estimate;
+    // A 6,000-word draft of your own, beside "Is this ready?": one round reads and rewrites it.
+    const draft = 'Mara counted the boats each morning, though no one had asked her to. '.repeat(450);
+    const sized = current.host.questionEstimates(c6, 'balanced', { work: [draft, 'a short note'] })['author-loop']!.estimate;
+    expect(sized.highUsd).toBeGreaterThan(2 * planned.highUsd);
+    // The framings prompt shows the problem: a long brief makes its figure dearer.
+    const brief = { text: 'A memo', attachments: [{ name: 'notes.md', text: 'The offsite moves to May. '.repeat(8000) }] };
+    const host = current.host;
+    const framings = (known?: Parameters<typeof host.questionEstimates>[2]) => host.questionEstimates(c4, 'balanced', known)['framings-if-wanted']!.estimate.highUsd;
+    expect(framings({ problem: brief })).toBeGreaterThan(framings());
+    const { BEST_SO_FAR_PROMPT, NOT_CONVERGING_PROMPT } = ENGINE.runner;
+    expect(current.host.questionEstimates(c4, 'balanced')['critic-loop']).toMatchObject({ asks: 'cap', answers: { [BEST_SO_FAR_PROMPT]: 'No', [NOT_CONVERGING_PROMPT]: 'Yes' } });
+    expect(current.host.questionEstimates(advisor.recipe('c5')!, 'balanced')['launch-gate']).toMatchObject({ asks: 'gate', answers: { [ENGINE.runner.GATE_FAILED_PROMPT]: 'Yes' } });
   });
 
   it("prices every run's questions at nothing when byway's own calls all go to the mock (pnpm demo, or no keys)", async () => {

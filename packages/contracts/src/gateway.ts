@@ -60,7 +60,14 @@ export interface SpendContext {
    * - `key`: the run and memo key of the call (AdmitRequest.operationKey). While one attempt holds it, another waits for
    *   its result (GatewayError 'in-flight') instead of paying again; a dead or timed-out holder's call is taken over.
    * - `cancel`: aborts when Temporal cancels the attempt (a cancel, a timeout, a lost worker): an unsettled call is held
-   *   no longer, so a later attempt can take it over within one lease.
+   *   no longer, so a later attempt can take it over within one lease; and nothing is sent again for it and a retry's
+   *   wait ends at once (F03 (g)), though, unlike `stop`, it cuts no call off. For a clip, the clip itself is never sent
+   *   again after it: no new clip submission and no retry of one, and a status poll of a clip not yet done is not
+   *   retried. A read of a clip the provider has reported done (its result, its download) is retried on `stop` alone, as
+   *   it sends nothing again. And a frame job (the last frame, the middle frame) for a clip already made is still
+   *   submitted when, and only when, the attempt still holds the call's row (the owner's "Third round: frame jobs go on
+   *   (Recommended)", ADR-0111's note of 2026-10-28); once one is out, its retries and the reads after it end on `stop`
+   *   alone, so the made clip is completed once and kept.
    * - `until`: aborts when the attempt's invocation ends: a settled call is held until then, while its result is kept.
    * - `stop`: aborts when the call's run is ending (ADR-0111: the person's Cancel, "Stop the run", or a failure elsewhere
    *   in the run; or any cancel of the attempt once the store shows the run ended). It cuts the call off where its
@@ -248,16 +255,22 @@ export interface VideoRequest extends SpendContext {
 
 export interface VideoResult {
   /**
-   * The clip, stored in the artifact store immediately (provider URLs expire): video/mp4 from real providers; the
+   * The clip, stored in the artifact store immediately (provider URLs expire): MP4 or WebM from real providers; the
    * demo-mode mock stores a labelled placeholder (an animated SVG) instead.
    */
   artifactId: string;
-  /** The clip's media type: 'video/mp4', or 'image/svg+xml' for the demo placeholder. */
-  mediaType: 'video/mp4' | 'image/svg+xml';
+  /** The clip's media type: 'video/mp4' or 'video/webm' (as its bytes say), or 'image/svg+xml' for the demo placeholder. */
+  mediaType: 'video/mp4' | 'video/webm' | 'image/svg+xml';
   /** The clip's last frame, the anchor the next relay link starts from. */
   lastFrameArtifactId: string;
   /** Stored under its real type (the provider's frame extractor does not promise PNG). */
   lastFrameMediaType: MediaType;
+  /**
+   * A frame from the middle of the clip, for the shot check (F10 (a)), when byway could take one: best effort, so a clip
+   * without it is still the call's result. Its extraction is counted in the clip's cost either way.
+   */
+  middleFrameArtifactId?: string;
+  middleFrameMediaType?: MediaType;
   servedModel: string;
   provider: ProviderId;
   costUsd: number;

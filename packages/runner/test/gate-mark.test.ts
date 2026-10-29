@@ -9,7 +9,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { oneShotGate, seq, step, type Node, type Recipe, type Step } from '@byway/recipe';
 import type { Ports, RunInput } from '../src/types.ts';
-import { NOTHING_TO_REMOVE } from '../src/workflow/wording.ts';
+import { GATE_FAILED_NO_RETRY_PROMPT, GATE_FAILED_PROMPT, NOTHING_TO_REMOVE } from '../src/workflow/wording.ts';
 import { UNREAD_BRIEF } from './helpers/briefs.ts';
 
 const state = vi.hoisted(() => ({
@@ -19,6 +19,8 @@ const state = vi.hoisted(() => ({
   passed: [] as { stepId: string; note: string }[],
   /** The gate critic's scores, in order; a pass once they run out. */
   scores: [] as number[],
+  /** The prompts of the confirms the person was asked, in order. */
+  prompts: [] as string[],
   n: 0,
 }));
 
@@ -65,7 +67,10 @@ async function run(body: Node): Promise<Ports> {
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   const engine = new Interpreter(input, control as never);
   Object.assign(engine, {
-    ask: async (_call: unknown, cp: { kind: string }) => (cp.kind === 'confirm' ? { checkpointId: 'cp', approved: true } : { checkpointId: 'cp', text: '' }),
+    ask: async (_call: unknown, cp: { kind: string; prompt?: string }) => {
+      if (cp.kind === 'confirm') state.prompts.push(cp.prompt ?? '');
+      return cp.kind === 'confirm' ? { checkpointId: 'cp', approved: true } : { checkpointId: 'cp', text: '' };
+    },
   });
   return engine.runStages();
 }
@@ -74,6 +79,7 @@ beforeEach(() => {
   state.given = [];
   state.passed = [];
   state.scores = [];
+  state.prompts = [];
 });
 
 describe('a one-shot gate after an empty CUT hands on its critic’s critique without the empty mark', () => {
@@ -101,6 +107,16 @@ describe('a one-shot gate after an empty CUT hands on its critic’s critique wi
     await run(seq(build, personCut, gate, fix));
     expect(state.passed).toEqual([]);
     expect(state.given.find((g) => g.stepId === 'fix')).toEqual({ stepId: 'fix', critique: '- The opening buries the offer.' });
+  });
+
+  it('a gate with no retry asks without saying another try ran; one with a retry still says so (C5)', async () => {
+    state.scores = [3];
+    await run(seq(build, gate));
+    expect(state.prompts).toEqual([GATE_FAILED_NO_RETRY_PROMPT]);
+    state.prompts = [];
+    state.scores = [3, 3];
+    await run(seq(build, oneShotGate('gate', critic, { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' }, { stage: 'D2', times: 1 })));
+    expect(state.prompts).toEqual([GATE_FAILED_PROMPT]);
   });
 
   it('a gate whose body wrote no critique hands on the empty CUT as it was: the fix still passes', async () => {

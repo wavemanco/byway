@@ -7,10 +7,10 @@
  * Advisor.recipe (or the intake's composed recipe), and pause and resume are the Runner's.
  */
 import { randomUUID } from 'node:crypto';
-import type { QuestionEstimate } from '@byway/advisor';
-import type { AnswerWait, ChooserAnswer, ComposeResult, EvidenceLabel, IntakeRecord, ModelWait, Preferences, Recommendation, RecipePresentation, RendererSettings, RunRecord, SpendRecords } from '@byway/contracts';
+import type { AnswerWait, CheckpointRecord, ChooserAnswer, ComposeResult, EvidenceLabel, IntakeRecord, ModelWait, Preferences, Recommendation, RecipePresentation, RendererSettings, RunRecord, SpendRecords } from '@byway/contracts';
 import type { Recipe } from '@byway/recipe';
 import type { z } from 'zod';
+import type { PricedQuestion, QuestionSizes } from '../services/create.ts';
 import { isEngineUnavailable } from '../services/engine-runner.ts';
 import type { Services } from '../services/index.ts';
 import { budgetProblem, workspaceSpend, type WorkspaceSpend } from '../view/history.ts';
@@ -23,10 +23,11 @@ import { isEnded } from '../view/run.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
 import { artifactHeaders, isArtifactId, mediaServing, pageScriptsGranted } from './artifacts.ts';
 import { exportsInline, selfContained } from './export.ts';
-import { firstRecommendation } from './first-recommendation.ts';
+import { firstRecommendation, sharedCall } from './first-recommendation.ts';
 import type { HeldKeyIn } from './http.ts';
 import { modelProblem } from './model-errors.ts';
 import { RefError, storeRef } from './refs.ts';
+import { readIntact } from './run-data.ts';
 import type { AnswerWaitPatch, ControlInput, ProblemInput, RecommendInput, RefInput, RendererPatch, ResolutionInput, SettingsPatch, SpendAction, StartInput } from './schemas.ts';
 
 export class HttpError extends Error {
@@ -52,7 +53,7 @@ export interface Deps {
   /** Names a provider key byway holds found in a request body (ADR-0088); routes hand it to parseBody. */
   heldKeyIn: HeldKeyIn;
   /** What each answer to a run's questions would cost, for a run on that profile (ServiceHost.questionEstimates). */
-  questionEstimates(recipe: Recipe, profileId: string): Record<string, QuestionEstimate>;
+  questionEstimates(recipe: Recipe, profileId: string, known?: QuestionSizes): Record<string, PricedQuestion>;
   /** The day byway's prices were last checked (ServiceHost.pricesCheckedOn), which the Recommendation shows. */
   pricesCheckedOn: string;
   /** Every model the gateway's profiles use, with the answer waits it offers (ServiceHost.modelWaits). */
@@ -91,9 +92,15 @@ export async function createIntake(deps: Deps, input: z.infer<typeof ProblemInpu
  * Recommends for the intake's problem. Answers you flipped are passed in and routing re-runs; the answers and the
  * recommendation are kept on the intake, so coming back to the screen shows them as you left them. The route choices
  * the intake model read from the problem are passed back too, so a re-route with every answer given (no new intake
- * call) keeps them.
+ * call) keeps them. A re-route asked again with the same answers and model profile while it is under way (a reload, a
+ * second tab) joins that call instead of buying a second one (sharedCall, B-070).
  */
 export async function recommendIntake(deps: Deps, intakeId: string, answers?: ChooserAnswer[]): Promise<Recommendation> {
+  if (answers === undefined) return recommendFrom(deps, intakeId);
+  return sharedCall(deps.services.store, `route:${intakeId}:${deps.profileId}:${JSON.stringify(answers)}`, () => recommendFrom(deps, intakeId, answers));
+}
+
+async function recommendFrom(deps: Deps, intakeId: string, answers?: ChooserAnswer[]): Promise<Recommendation> {
   const intake = await requireIntake(deps, intakeId);
   const given = answers ?? intake.answers;
   const routes = intake.recommendation?.routes;
@@ -133,11 +140,18 @@ export function composeView(result: ComposeResult): ComposeView {
   return { ...view, takesRefs: takesRefs(recipe) };
 }
 
+/**
+ * "Build my own". A press again while a compose of this intake under the same model profile is under way (a reload, a
+ * second tab) joins that call instead of buying a second one beside it (sharedCall, B-070); once it settles, the next
+ * press composes again.
+ */
 export async function composeIntake(deps: Deps, intakeId: string): Promise<ComposeView> {
-  const intake = await requireIntake(deps, intakeId);
-  const result = await asking(() => deps.services.advisor.compose(intake.problem, { workspaceId: deps.workspaceId, profileId: deps.profileId }));
-  await deps.services.store.updateIntake(intakeId, { composed: result });
-  return composeView(result);
+  return sharedCall(deps.services.store, `compose:${intakeId}:${deps.profileId}`, async () => {
+    const intake = await requireIntake(deps, intakeId);
+    const result = await asking(() => deps.services.advisor.compose(intake.problem, { workspaceId: deps.workspaceId, profileId: deps.profileId }));
+    await deps.services.store.updateIntake(intakeId, { composed: result });
+    return composeView(result);
+  });
 }
 
 /**
@@ -243,7 +257,10 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
     }
   }
   const spend = await workspaceRemaining(deps);
-  const problem = budgetProblem(input.budgetUsd, spend);
+  // A Start sent again under its id, with the same budget, is that run (ADR-0099 decision 7): its own first call has
+  // already lowered what is left, so it is not checked again. The runner still decides same run or conflict.
+  const before = input.runId !== undefined ? await services.store.getRun(input.runId) : undefined;
+  const problem = before !== undefined && before.budgetUsd === input.budgetUsd ? null : budgetProblem(input.budgetUsd, spend);
   if (problem) throw new HttpError(400, problem);
   const run = await refusedAsHttp(!input.recipeId, () => startOnce(services, {
     workspaceId: spend.workspaceId,
@@ -354,16 +371,44 @@ export async function recipeForRun(deps: Deps, run: RunRecord): Promise<RunRecip
 }
 
 /**
- * What the Run screen says beside each question an optional or a person's loop asks (UX-4 remainder; view/questions.ts):
- * the figure for one answer, by the asking node's id, priced as the run's own calls are (RunRecord.profileId, or the
- * demo profile when this byway's calls all go to the mock), not with the profile Settings name now. Null when the
- * run's recipe is not known.
+ * The text of each artifact that is text (a page's HTML included), as the gateway would size it in a prompt. A missing
+ * or damaged one is left out (readIntact), as the Run screen leaves it out, so the price never fails the screen.
  */
-export function questionCosts(deps: Deps, run: RunRecord, recipe: Recipe | undefined): QuestionCosts | null {
-  if (!recipe) return null;
-  return Object.fromEntries(
-    Object.entries(deps.questionEstimates(recipe, run.profileId)).map(([id, q]) => [id, { asks: q.asks, lowUsd: q.estimate.lowUsd, highUsd: q.estimate.highUsd, calls: q.estimate.modelCalls }]),
-  );
+async function texts(services: Services, ids: readonly string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const id of new Set(ids)) {
+    const got = await readIntact(services, id);
+    if (!got) continue;
+    const { record, bytes } = got;
+    const type = record.mediaType.split(';')[0]?.trim() ?? '';
+    if (type.startsWith('text/') || type === 'application/json') out.push(new TextDecoder().decode(bytes));
+  }
+  return out;
+}
+
+/**
+ * What the Run screen says beside each open question that commits money (UX-4 remainder, B-107; view/questions.ts): the
+ * figure for the answer that buys the work, by the checkpoint's id. Priced as the run's own calls are (RunRecord.profileId,
+ * or the demo profile when this byway's calls all go to the mock), not with the profile Settings name now, and sized by
+ * what the store holds while the question is open (B-106, B-108): the run's problem, attachments included, and the work
+ * beside the question. Empty when no such question is open; undefined when the run's recipe is not known.
+ */
+export async function questionCosts(deps: Deps, run: RunRecord, checkpoints: readonly CheckpointRecord[]): Promise<QuestionCosts | undefined> {
+  const { recipe } = await recipeForRun(deps, run);
+  if (!recipe) return undefined;
+  const open = checkpoints.filter((cp) => cp.status === 'open' && cp.kind === 'confirm');
+  if (!open.length) return {};
+  const intake = run.intakeId ? await deps.services.store.getIntake(run.intakeId) : undefined;
+  const problem = intake?.problem ?? { text: run.problem };
+  const out: QuestionCosts = {};
+  for (const cp of open) {
+    const q: PricedQuestion | undefined = deps.questionEstimates(recipe, run.profileId, { problem, work: await texts(deps.services, cp.artifactIds ?? []) })[cp.stepId];
+    const answer = !q ? undefined : q.answers ? q.answers[cp.prompt] : q.asks === 'optional' ? 'Yes' : 'No';
+    if (!q || !answer) continue;
+    const { lowUsd, highUsd, modelCalls, images, clips } = q.estimate;
+    out[cp.id] = { asks: q.asks, answer, lowUsd, highUsd, calls: modelCalls, images, ...(clips ? { clips } : {}) };
+  }
+  return out;
 }
 
 export async function resolveInRun(deps: Deps, runId: string, checkpointId: string, input: z.infer<typeof ResolutionInput>): Promise<void> {

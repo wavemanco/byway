@@ -5,7 +5,7 @@
  * nothing; and the README's platform claim names exactly the systems CI runs on.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -164,6 +164,29 @@ describe('the CI workflow (ADR-0103)', () => {
       const relative = run({ XDG_CACHE_HOME: 'cache' });
       expect(relative.status).toBe(1);
       expect(relative.stderr).toContain("Playwright's folder, cache/ms-playwright, is not a full path");
+      // As root (an `id` of its own on the PATH says 0): refused before anything else (D2 (h)).
+      const bin = mkdtempSync(path.join(tmpdir(), 'byway-id-'));
+      writeFileSync(path.join(bin, 'id'), '#!/bin/sh\necho 0\n', { mode: 0o755 });
+      const root = run({ PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}` });
+      expect(root.status).toBe(1);
+      expect(root.stderr).toContain('Run this as yourself, not as root');
+      rmSync(bin, { recursive: true, force: true });
+      // The two refusals after the restriction is read, on a Linux whose AppArmor restricts user namespaces (CI's):
+      // each stops before sudo, so the real profile is never written.
+      if (existsSync('/proc/sys/kernel/apparmor_restrict_unprivileged_userns')) {
+        const tmp = mkdtempSync(path.join(tmpdir(), 'byway-apparmor-'));
+        const missing = run({ XDG_CACHE_HOME: tmp });
+        expect(missing.status).toBe(1);
+        expect(missing.stderr).toContain(`Playwright's folder, ${tmp}/ms-playwright, does not exist yet`);
+        mkdirSync(path.join(tmp, 'a b', 'ms-playwright'), { recursive: true });
+        mkdirSync(path.join(tmp, 'cache'));
+        symlinkSync(path.join(tmp, 'a b', 'ms-playwright'), path.join(tmp, 'cache', 'ms-playwright'));
+        const linked = run({ XDG_CACHE_HOME: path.join(tmp, 'cache') });
+        expect(linked.status).toBe(1);
+        expect(linked.stdout).toContain(`Playwright's folder, ${tmp}/cache/ms-playwright, leads to ${realpathSync(tmp)}/a b/ms-playwright`);
+        expect(linked.stderr).toContain(`Playwright's folder, ${realpathSync(tmp)}/a b/ms-playwright, has a space or one of`);
+        rmSync(tmp, { recursive: true, force: true });
+      }
     }
   });
 
@@ -485,6 +508,10 @@ describe("the weekly run's report of the Playwright pin (D4)", () => {
     }
     // Package files that pin no single release.
     expect((await run(answer(200, async () => registry('1.64.1', RELEASES)), pinnedAt('^1.63.0'))).lines[0]).toContain('does not pin playwright to one release');
+    // An answer that quotes a line break and a workflow command stays one plain line (B-020; the price report's plain()).
+    const planted = await run(answer(200, async () => Promise.reject(new SyntaxError('Unexpected token in "x\n::error::planted\r\n##[warning]also"'))));
+    expect(planted.lines).toEqual(['Whether the Playwright pin has fallen behind could not be read (Unexpected token in "x ::error::planted ## [warning]also"), so this run reports nothing on it.']);
+    expect(planted.summary).toContain(planted.lines[0]);
   });
 
   it("marks a pin that is behind with one warning on the run's page, and a pin at the latest release with none", async () => {
@@ -538,5 +565,26 @@ describe("the weekly run's price report (PRICE-CADENCE)", () => {
     const loaded = spawnSync(process.execPath, ['--input-type=module', '-e', "const m = await import('./scripts/price-report.ts'); console.log(typeof m.report);"], { cwd: REPO, encoding: 'utf8' });
     expect(loaded.stderr).toBe('');
     expect(loaded.stdout.trim()).toBe('function');
+  });
+});
+
+describe("the weekly run's advisories report (X-VAL-4 (a))", () => {
+  it('runs on the weekly run only, on one job, once pnpm is set up and before the tests, and cannot fail the job', () => {
+    const at = steps.findIndex((s) => s.run === 'node scripts/advisories.ts');
+    expect(steps.filter((s) => /advisories/.test(s.run ?? ''))).toHaveLength(1);
+    const step = steps[at]!;
+    expect(step.name).toBe("Do byway's dependencies or its Node have known advisories? (the weekly run, Linux only; it reports and fails nothing)");
+    expect(step.if).toBe("${{ github.event_name == 'schedule' && matrix.name == 'linux' }}");
+    expect(step['continue-on-error']).toBe(true);
+    expect(step['timeout-minutes']).toBeLessThanOrEqual(5);
+    expect(step).not.toHaveProperty('env');
+    expect(step).not.toHaveProperty('uses');
+    expect(at).toBeGreaterThan(steps.findIndex((s) => (s.uses ?? '').startsWith('pnpm/action-setup@')));
+    expect(at).toBeLessThan(steps.findIndex((s) => s.run === 'pnpm verify'));
+    // The script exits 0 whatever it finds: nothing in it sets an exit code.
+    const script = read('scripts/advisories.ts');
+    expect(script).not.toMatch(/process\.exit|exitCode/);
+    expect(script.trim().split('\n').at(-1)).toBe('if (import.meta.main) await report({ ...(process.env.GITHUB_STEP_SUMMARY ? { summary: process.env.GITHUB_STEP_SUMMARY } : {}) });');
+    expect(workflow).toMatch(/and whether byway's dependencies or its Node have known security\n\s+# advisories \(after pnpm is set up\)/);
   });
 });

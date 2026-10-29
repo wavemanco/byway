@@ -14,7 +14,7 @@ import { CATALOG } from '@byway/catalog';
 import type { ImageResult } from '@byway/contracts';
 import { steps } from '@byway/recipe';
 import { assetStep } from '../src/activities/asset.ts';
-import { AnswerRejected, StepError } from '../src/activities/failures.ts';
+import { AnswerRejected } from '../src/activities/failures.ts';
 import { finishHumanStep } from '../src/activities/human.ts';
 import { memoized } from '../src/activities/memo.ts';
 import { modelStep } from '../src/activities/model-step.ts';
@@ -32,7 +32,8 @@ afterEach(() => b.close());
 
 /** Another step's random string (48 characters, as the runner's are), handed out earlier in the run. */
 const SIBLING = `sibling${'Q'.repeat(41)}`;
-const PR3 = /The answer contains the random string it was given\. Interpret it for direction, but never write it into the work\./;
+/** PR3's refusal to a person, who is asked again (ENG-6): written for them, not for a model. */
+const PR3 = /^Your text holds a random string this run gave the AI, which never goes into the work: take it out\./;
 
 /** The sibling's seed, kept as the runner keeps one: memoized for its own step call in the run's seed range. */
 const siblingSeed = (run: RunRef) => memoized(b.store, run.runId, seedMemoKey({ key: `${run.runId}/seed/0/1` }), () => SIBLING);
@@ -66,6 +67,10 @@ describe("a SEED step's string is kept in the run's seed range", () => {
     expect(await runSeeds(b.store, other.runId)).toEqual([`seed-3-${'x'.repeat(40)}`]);
     // The step's other memos (its answer, here) are not in the range.
     expect(await b.store.getMemo(run.runId, seedMemoKey(callOf(run, 'spark')))).toBe(`seed-1-${'x'.repeat(40)}`);
+    // The range is "seed/" to the slash: a memo whose key only begins with "seed" is not a seed (B-073 (1)).
+    expect(seedMemoKey({ key: 'k' })).toBe('seed/k');
+    await b.store.setMemo(run.runId, 'seedling/k', 'not a seed');
+    expect(await runSeeds(b.store, run.runId)).toEqual([`seed-1-${'x'.repeat(40)}`, `seed-2-${'x'.repeat(40)}`]);
   });
 
   it("its written direction never holds another step's seed either: both are kept out of the note", async () => {
@@ -97,12 +102,12 @@ describe("every write is checked against the run's seeds, read from the store", 
     expect(await b.store.artifacts.getText(out.artifactId!)).toBe('# Memo\n\nA plan.\n');
   });
 
-  it("the author's own draft that holds one is refused, and nothing is stored", async () => {
+  it("the author's own draft that holds one is asked again, and nothing is stored", async () => {
     const run = await benchRun(b, 'prose');
     await siblingSeed(run);
     const draft: StepSpec = { id: 'draft', role: 'build', actor: 'human', consumes: [], produces: ['artifact'], writes: true };
     const err = await finishHumanStep(b.deps, { run, call: stepCall(run, 'draft'), step: draft, kind: 'write', resolution: { checkpointId: 'cp-draft', text: `# Mine\n\nThe code ${SIBLING}.` }, ports: {} }).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(StepError);
+    expect(err).toBeInstanceOf(AnswerRejected);
     expect((err as Error).message).toMatch(PR3);
     expect((await b.store.events(run.runId)).filter((e) => e.type === 'artifact')).toEqual([]);
   });
@@ -119,7 +124,7 @@ describe("every write is checked against the run's seeds, read from the store", 
     await siblingSeed(claims);
     const log = await VoiceQuestion.open(b, claims, await putWork(b, 'prose', '# Memo\n\nWe launched on 3 May.\n'), voiceStep({ variant: 'claim-log' }), 'claims');
     const logged = await log.answer(log.offered!.replace('3 May', `3 May (${SIBLING})`)).catch((e: unknown) => e);
-    expect(logged).toBeInstanceOf(StepError);
+    expect(logged).toBeInstanceOf(AnswerRejected);
     expect((logged as Error).message).toMatch(PR3);
 
     const page = await benchRun(b, 'web-page');

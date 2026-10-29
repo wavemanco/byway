@@ -157,14 +157,19 @@ Logic on top of the contracts sits in view code:
   except after the tab's own switch, whose Settings status already says it. A step whose
   pages were drawn without the sandbox has a note in the Run screen's timeline (under its failure, if it failed) and in
   the Result's "How this was made".
-  `test/guard-sandbox.test.ts` reads the product sources, lines that are only a comment left out, and pins as exact
+  `test/guard-sandbox.test.ts` reads the product sources (a leading `/* ... */` taken off a line, a line that is then
+  a comment left out, and a line that ends in `import` read with the next), and pins as exact
   lists every line that mentions a way to switch the setting (`setRendererSandbox`, Settings' route, the setting's
   table and column), to set Chromium's sandbox option (`chromiumSandbox`), to build a renderer (`playwrightPages`,
   `renderBrowsers`, `checkRenderer`, `storeOsSandbox`) or to launch Chromium (`launchChromium`,
   `chromiumLaunchOptions`, the test-only `launch` seam, Playwright's launch calls, and any line that names Playwright's
   packages, Puppeteer or `chromium-bidi` in quotes, as an import does), whatever their arguments look like. It also
-  checks itself against each way round it that reviews have found, each of which must change one of its lists. It does
-  not see a use that names none of these (SQL that builds the table's or the column's name from pieces, say), a browser
+  pins every module loaded by a name its line does not write out (an `import()` or a `require` whose argument is not
+  one written-out string: none) and every `createRequire`, since the require it makes loads any name. It checks
+  itself against each way round it that reviews have found, each of which must change one of its lists. It does
+  not see a use that names none of these (a namespace import called by a computed name, a require made by
+  `createRequire` passed to another file and called there with a computed name, SQL that builds the table's or the
+  column's name from pieces, say), a browser
   driver it does not list, a browser started as a program of its own, a file outside those it reads, or a change inside
   the lines it pins, such as a retry without the sandbox in `pages.ts`; the renderer's own tests (`launch.test.ts`,
   `pages.test.ts`, `renderer-check.test.ts`) check that last one, and no test checks the others.

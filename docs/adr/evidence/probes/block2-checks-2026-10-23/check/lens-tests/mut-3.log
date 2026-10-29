@@ -1,0 +1,27 @@
+F2	KILLED	Test Files  1 failed | 28 passed (29) | Tests  1 failed | 970 passed (971)	12s
+    packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type "user"): nothing was billed, and the step says so > a 504 that is not fal’s start deadline (no
+F18	KILLED	Test Files  2 failed | 27 passed (29) | Tests  4 failed | 967 passed (971)	9s
+    packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type "user"): nothing was billed, and the step says so > balanced (fal-ai/kling-video/v2.5-turbo/pr
+    packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type "user"): nothing was billed, and the step says so > balanced (fal-ai/kling-video/v2.5-turbo/pr
+    packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type "user"): nothing was billed, and the step says so > best (fal-ai/kling-video/v3/pro/image-to-v
+    packages/gateway/test/fal-submit.test.ts > gateway: a relay link over fal HTTP, the SDK reading status and results (F03) > a clip job fal dropped at its start deadline: the SDK hands on its 504 and ti
+A1	KILLED	Test Files  1 failed | 28 passed (29) | Tests  1 failed | 970 passed (971)	9s
+    packages/gateway/test/providers.test.ts > anthropic adapter > maps the request: system, roles, base64 images, max_tokens, summarized thinking, and no fallback to another model (ADR-0102)
+GG1	KILLED	Test Files  2 failed | 27 passed (29) | Tests  21 failed | 950 passed (971)	8s
+    packages/gateway/test/cut-off.test.ts > calls a stop does not cut off > a Google call is handed no stop, finishes after the stop, and is settled at its true cost: its only signal is its own deadline, 
+    packages/gateway/test/whole-call.test.ts > a call answered whole waits its model’s wait in all, and is not sent again once it runs out > google text: aborted at its model’s wait (undefined minutes; no
+    packages/gateway/test/whole-call.test.ts > a call answered whole waits its model’s wait in all, and is not sent again once it runs out > google text: aborted at its model’s wait (15 minutes; none chos
+    packages/gateway/test/whole-call.test.ts > a call answered whole waits its model’s wait in all, and is not sent again once it runs out > google text: aborted at its model’s wait (30 minutes; none chos
+O1	KILLED	Test Files  1 failed | 28 passed (29) | Tests  1 failed | 970 passed (971)	10s
+    packages/gateway/test/whole-call.test.ts > the real SDKs keep the wait > openai: the image request’s own SDK timeout is its wait and a minute
+W1	KILLED	Test Files  1 failed | 48 passed (49) | Tests  1 failed | 542 passed (543)	22s
+    apps/web/test/api.test.ts > route handler logic > saves a model’s answer wait from the minutes its own kind offers, and refuses any other, or a model no profile uses
+W2	KILLED	Test Files  1 failed | 48 passed (49) | Tests  1 failed | 542 passed (543)	15s
+    apps/web/test/api.test.ts > route handler logic > saves a model’s answer wait from the minutes its own kind offers, and refuses any other, or a model no profile uses
+P1	KILLED	Test Files  1 failed | 1 passed (2) | Tests  1 failed | 13 passed (14)	4s
+    packages/runner/test/stored-inputs.test.ts > Runner.start stores the brief once and starts the workflow with its id (P2) > the same brief written with its fields in another order is the same file
+P2	KILLED	Test Files  1 failed | 1 passed (2) | Tests  5 failed | 13 passed (18)	4s
+    packages/runner/test/start-refusal.test.ts > Runner.start refuses what the engine cannot run, before a run exists > a billion seeded drafts
+    packages/runner/test/start-refusal.test.ts > Runner.start refuses what the engine cannot run, before a run exists > a C pick with no judge
+    packages/runner/test/start-refusal.test.ts > Runner.start refuses what the engine cannot run, before a run exists > G1: a retrying gate inside each-candidate
+    packages/runner/test/start-refusal.test.ts > Runner.start refuses what the engine cannot run, before a run exists > an ASSET step whose slots knob is 0.5

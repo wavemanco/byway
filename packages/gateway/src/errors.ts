@@ -1,4 +1,4 @@
-import { GatewayError, type GatewayErrorCode, type ProviderId } from '@byway/contracts';
+import { GatewayError, type GatewayErrorCode, type ProviderId, type ProviderJobRole } from '@byway/contracts';
 import type { Redactor } from './redact.ts';
 
 /**
@@ -165,6 +165,19 @@ export function cutOffError(provider: ProviderId, billing: Billing, detail?: str
   err.cutOff = true;
   return err;
 }
+
+/**
+ * The jobs a queue call found, as it came to submit, that the provider had already accepted from another attempt of its
+ * step (PaidCall.markSent's takeover): carried by the error the gateway's `submit` throws instead of submitting, so an
+ * adapter that polls jobs by id can poll these in the same call (B-071), as it polls `resume`'s.
+ */
+export interface TakenOver {
+  resume: Partial<Record<ProviderJobRole, string>>;
+  acceptedAt?: Partial<Record<ProviderJobRole, number>>;
+}
+
+/** The jobs a takeover error carries (TakenOver), or undefined for any other error. */
+export const takenOverOf = (e: unknown): TakenOver | undefined => (isObject(e) && isObject(e.takenOver) && e instanceof GatewayError ? (e.takenOver as unknown as TakenOver) : undefined);
 
 /** Whether an error is a call byway cut off (cutOffError), by its mark, so it survives being passed along. */
 export const isCutOff = (e: unknown): e is CutOffError => isObject(e) && e.cutOff === true && e instanceof GatewayError;

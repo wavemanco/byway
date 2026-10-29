@@ -62,11 +62,14 @@ export const NO_IMAGE_CHOSEN_NOTE = 'The AI chose not to illustrate this piece, 
 export const NO_SLOTS_NOTE = 'This step makes no images, so none was made; the work passes through unchanged.';
 
 /**
- * A stop: a sentence end in any script (Unicode's Sentence_Terminal), the ellipsis or the Greek question mark, before any
- * closing quotes and brackets. Those include the marks Unicode files as opening quotes (Pi), because German and Danish
- * close a quote with them: „mehr.“ ‚mehr.‘ »mere.«
+ * A stop: a sentence end in any script (Unicode's Sentence_Terminal), the ellipsis, the Greek question mark or the
+ * Tibetan shad and its double (U+0F0D, U+0F0E, which Unicode does not file as Sentence_Terminal), before any closing
+ * quotes and brackets. Those include the marks Unicode files as opening quotes (Pi), because German and Danish close a
+ * quote with them: „mehr.“ ‚mehr.‘ »mere.«
  */
-const ENDS_SENTENCE = /[\p{Sentence_Terminal}…\u037E]["'\p{Pe}\p{Pf}\p{Pi}]*$/u;
+const ENDS_SENTENCE = /[\p{Sentence_Terminal}…\u037E\u0F0D\u0F0E]["'\p{Pe}\p{Pf}\p{Pi}]*$/u;
+/** Greek is usually typed with the ordinary semicolon as its question mark (normalisation turns U+037E into it): after a Greek letter it is one. */
+const GREEK_QUESTION = /\p{Script=Greek}["'\p{Pe}\p{Pf}\p{Pi}]*;$/u;
 /** A trailing comma, colon or semicolon in the common scripts' forms (Latin, fullwidth, ideographic, Arabic) gives way to the stop. */
 const GIVES_WAY = /\s*[,:;\uFF0C\uFF1A\uFF1B\u3001\uFF64\uFE50\uFE51\uFE54\uFE55\u060C\u061B]+$/u;
 
@@ -74,9 +77,11 @@ const GIVES_WAY = /\s*[,:;\uFF0C\uFF1A\uFF1B\u3001\uFF64\uFE50\uFE51\uFE54\uFE55
  * The AI's line of advice, shown with the image it came with as its suggestion, never a veto (ADR-0101, D3). Only a
  * prompt that asks for advice gets one shown, and only C3's header image does, which its Trim step follows (a test
  * holds every such step to that). The advice is plain, bounded text (parse.ts plainLine); a stop is added if it has none
- * (. ! ? and their forms in other scripts, the ellipsis; one before closing quotes and brackets counts).
+ * (. ! ? and their forms in other scripts, a semicolon after a Greek letter, the ellipsis; one before closing quotes and
+ * brackets counts).
  */
 export const adviceNote = (advice: string): string => {
+  if (GREEK_QUESTION.test(advice)) return `The AI suggests: ${advice} You can cut the image at Trim.`;
   const line = advice.replace(GIVES_WAY, '');
   return `The AI suggests: ${ENDS_SENTENCE.test(line) ? line : `${line}.`} You can cut the image at Trim.`;
 };
@@ -291,7 +296,8 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
  * where to change it in Settings ... Google charges for a call that is stopped, so a resend mostly pays twice." The
  * gateway did not send it again, and neither does the step: another try would be a new call, admitted and sent as its
  * own, which could wait as long again and be billed again. The slot is not made, and the gateway's words, which say the
- * wait ran out, that it may have billed the work and where to wait longer, go in the step's note (waitedSentences).
+ * wait ran out, that it may have billed the work and where to wait longer, go in the step's note (waitedSentences). The
+ * memo keeps that outcome as it keeps a decline (B-045), so the step run again gets it back and asks nothing.
  */
 async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, tries: number): Promise<{ made: MadeImage; costUsd: number } | { declined: DeclineRecord } | { waited: string } | undefined> {
   const { run, call, step } = input;
@@ -317,7 +323,8 @@ async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, 
  * leaves: which image it was, that the run stops here and buys no more images (a billed failure is a storage or ledger
  * fault that more images could repeat), and that the images this step already made were billed too and are not in the
  * work (the step stops before attaching or placing them). An image whose result byway could not keep (memo.ts
- * PaidNotKept) is a billed failure too: the same words are added, and it stays a StepError.
+ * PaidNotKept), or a decline with a recorded cost whose outcome it could not keep (B-044 (1)), is a billed failure too:
+ * the same words are added, and it stays a StepError.
  */
 function billedStop(e: GatewayError | PaidNotKept, plan: SlotPlan, slot: string, made: MadeImage[], what: string): GatewayError | PaidNotKept {
   const name = (id: string) => slotName(plan, id);

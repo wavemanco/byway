@@ -1,14 +1,14 @@
 /** Request bodies accepted by the route handlers. Limits keep a stray paste from exhausting memory. */
 import { z } from 'zod';
-import { MAX_BUDGET_USD } from '../view/format.ts';
+import { ATTACHMENT_NAME_MAX, ATTACHMENT_TEXT_MAX, MAX_ATTACHMENTS, MAX_BUDGET_USD, PROBLEM_TEXT_MAX } from '../view/format.ts';
 import { MAX_REF_IMAGE_BYTES, MAX_REF_TEXT, MAX_REFS, REF_IMAGE_TYPES } from '../view/refs.ts';
 
 const text = (max: number) => z.string().max(max);
 const ArtifactId = z.string().regex(/^sha256:[0-9a-f]{64}$/, 'That example is not a stored file.');
 
 export const ProblemInput = z.object({
-  text: text(20_000).refine((t) => t.trim().length > 0, 'Describe what you are working on.'),
-  attachments: z.array(z.object({ name: text(200), text: text(200_000) })).max(5).optional(),
+  text: text(PROBLEM_TEXT_MAX).refine((t) => t.trim().length > 0, 'Describe what you are working on.'),
+  attachments: z.array(z.object({ name: text(ATTACHMENT_NAME_MAX), text: text(ATTACHMENT_TEXT_MAX) })).max(MAX_ATTACHMENTS).optional(),
   /** Library shortcut: start from this recipe instead of a recommendation. */
   recipeId: z.string().regex(/^[a-z0-9-]{1,64}$/).optional(),
 });

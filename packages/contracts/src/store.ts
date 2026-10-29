@@ -9,6 +9,9 @@ import type { SpendBook } from './spend.ts';
 
 export type RunStatus = 'queued' | 'running' | 'waiting' | 'paused' | 'done' | 'failed' | 'cancelled';
 
+/** The statuses of a run that has ended: nothing more is written to it, paid for or asked of the person. */
+export const ENDED_STATUSES: ReadonlySet<RunStatus> = new Set(['done', 'failed', 'cancelled']);
+
 export interface Workspace {
   id: string;
   name: string;
@@ -102,9 +105,6 @@ export interface RunEventPayloads {
    */
   'renderer-sandbox-off': { note: string };
 }
-
-/** A RunEvent whose data is typed by its event type. */
-export type TypedRunEvent<T extends RunEventType = RunEventType> = Omit<RunEvent, 'type' | 'data'> & { type: T; data: RunEventPayloads[T] };
 
 export interface RunEvent {
   runId: string;
@@ -280,6 +280,15 @@ export interface Store {
     id: string,
     patch: Partial<Pick<RunRecord, 'status' | 'costUsd' | 'title' | 'budgetUsd'>> & { error?: string | null; outputArtifactId?: string | null },
   ): Promise<RunRecord>;
+  /**
+   * Ends a run that has not ended: sets its end status (done, failed or cancelled) and the patch's other fields, in
+   * one transaction with the read of its status, so two ends written at once cannot both land. Returns true when this
+   * call ended the run, and false, changing nothing, when it had ended already. Throws for an unknown run, as updateRun.
+   */
+  endRun(
+    id: string,
+    patch: { status: Extract<RunStatus, 'done' | 'failed' | 'cancelled'> } & Partial<Pick<RunRecord, 'costUsd'>> & { error?: string | null; outputArtifactId?: string | null },
+  ): Promise<boolean>;
   getRun(id: string): Promise<RunRecord | undefined>;
   listRuns(workspaceId: string, opts?: { limit?: number }): Promise<RunRecord[]>;
 

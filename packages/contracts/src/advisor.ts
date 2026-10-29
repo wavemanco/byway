@@ -58,8 +58,11 @@ export interface CostEstimate {
   /** Low and high USD estimates for one run with the chosen profile. */
   lowUsd: number;
   highUsd: number;
+  /** Calls to a text model; images and clips are counted on their own. */
   modelCalls: { low: number; high: number };
   images: { low: number; high: number };
+  /** Video clips (relay links that make one). Absent from an estimate stored before clips were counted. */
+  clips?: { low: number; high: number };
   /** Human time the run asks for, in minutes. */
   humanMinutes: { low: number; high: number };
 }
@@ -143,5 +146,6 @@ export interface Advisor {
   /** The canonical recipe for an id (protocol channel), for starting a run. */
   recipe(recipeId: string): Recipe | undefined;
   label(recipe: Recipe): EvidenceLabel;
-  estimate(recipe: Recipe, profileId: string): CostEstimate;
+  /** With the person's problem, each prompt that shows it is sized with it; without, at the planning size. */
+  estimate(recipe: Recipe, profileId: string, problem?: ProblemBrief): CostEstimate;
 }

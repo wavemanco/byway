@@ -17,18 +17,21 @@
  *   an import does), which only pages.ts has besides two lines of the weekly pin report (scripts/playwright-pin.ts,
  *   ADR-0110) that name Playwright's packages to read their versions and load nothing, and every module loaded by a name
  *   its line does not write out (`import(name)`), which no line has, so the names that report holds load nothing
- *   through an import() this guard reads (the two layouts it does not read are below).
+ *   through an import().
  * A line that opens an import or re-export list is pinned by its file alone, so naming one more thing in a list already
  * pinned is not a change, but a new importer is. A second test feeds the pins each way round them found so far (the launch seam, a
  * setting in a named function or shorthand, chromiumLaunchOptions handed to Playwright, Playwright's own launch, whose
  * default is no sandbox, and more) and requires that one pin changes.
  *
- * What it does not see: a use that names none of these (a namespace import called by a computed name, a module loaded
- * by a computed name through a require that createRequire made, SQL that builds the table's or the column's name from
- * pieces), a code line that begins with a block comment, its import(name) after it (a line that begins with //,
- * /* or * is read as a comment, so a literal import there is unseen too), an `import` whose `(` is on the next line (the
- * LC-1 note of the re-check of block 1's fix round), a browser driver it does not list, a browser started as a program of its
- * own, and a change to the launch wiring inside the lines it pins (a retry without the sandbox inside pages.ts):
+ * Every createRequire is pinned too, since the require it makes loads any name, and so is every require (serve.ts's two
+ * included) called with an argument that is not one written-out string, which none is (SEC-NOTE-3). A line's leading
+ * block comment is taken off before the comment test, and a line that ends in `import` is read with the next, so
+ * neither layout hides a line (LC-1, the re-check of block 1's fix round; codeLines).
+ *
+ * What it does not see: a use that names none of these (a namespace import called by a computed name, a require that
+ * createRequire made, passed to another file under another name and called there with a computed name, SQL that builds
+ * the table's or the column's name from pieces), a browser driver it does not list, a browser started as a program of
+ * its own, and a change to the launch wiring inside the lines it pins (a retry without the sandbox inside pages.ts):
  * launch.test.ts, pages.test.ts and renderer-check.test.ts check that behaviour. The store never writes the setting
  * except through setRendererSandbox (packages/store/test/renderer-settings.test.ts).
  */
@@ -59,10 +62,28 @@ function sources(): Source[] {
 
 const IMPORT_LIST = /^\s*(import|export)\s+(type\s+)?(\{|\*)/;
 
+/**
+ * A file's lines of code: a leading block comment (`/* x *\/ import ...`) is taken off, a line that is then a comment
+ * (it begins with //, /* or *) is left out, and a line that ends in `import` is read with the next (`import` on one
+ * line, its `(name)` on the next).
+ */
+function codeLines(lines: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    let l = (lines[i] as string).replace(/^\s*(?:\/\*.*?\*\/\s*)+/, '');
+    if (l.trim() === '' || /^\s*(\/\/|\/\*|\*)/.test(l)) continue;
+    if (/\bimport\s*$/.test(l) && i + 1 < lines.length) l = `${l.trimEnd()} ${(lines[++i] as string).trim()}`;
+    out.push(l);
+  }
+  return out;
+}
+
 /** Lines of code (not comments) that match, as "file: line"; an import or re-export line as "file: (import or re-export)". */
 function uses(pattern: RegExp, files: Source[] = sources()): string[] {
   return files.flatMap(({ file, lines }) =>
-    lines.filter((l) => pattern.test(l) && !/^\s*(\/\/|\/\*|\*)/.test(l)).map((l) => (IMPORT_LIST.test(l) ? `${file}: (import or re-export)` : `${file}: ${l.trim()}`)),
+    codeLines(lines)
+      .filter((l) => pattern.test(l))
+      .map((l) => (IMPORT_LIST.test(l) ? `${file}: (import or re-export)` : `${file}: ${l.trim()}`)),
   );
 }
 
@@ -223,8 +244,29 @@ const LAUNCH: Pin[] = [
     // An import() whose argument is one string literal (comments before it allowed) writes its module out, so the pin
     // above sees it; any other argument (a variable, PINNED[0].name, 'play' + 'wright') is a module loaded by a name the
     // line does not write out. An import( with its argument on a later line counts as one too.
-    what: 'modules loaded by a name the line does not write out: none (the header says which layouts it does not read)',
+    what: 'modules loaded by an import() of a name the line does not write out: none',
     pattern: /\bimport\s*\((?!\s*(?:\/\*.*?\*\/\s*)*(?:'[^'\\\n]*'|"[^"\\\n]*"|`[^`\\$\n]*`)\s*[,)])/,
+    lines: [],
+  },
+  {
+    // A require made by createRequire loads whatever name it is given, so each one made is pinned (SEC-NOTE-3).
+    what: 'createRequire: the dev engine’s Temporal version, the dev server’s next, and serve.ts’s Temporal logger and next',
+    pattern: /\bcreateRequire\b/,
+    lines: [
+      imported('packages/runner/src/dev-engine.ts'),
+      "packages/runner/src/dev-engine.ts: const sdkVersion = (): string => (createRequire(import.meta.url)('@temporalio/testing/package.json') as { version: string }).version;",
+      imported('apps/web/src/server/dev-server.ts'),
+      "apps/web/src/server/dev-server.ts: const next = createRequire(import.meta.url)('next') as CreateNextApp;",
+      imported('scripts/serve.ts'),
+      "scripts/serve.ts: const requireFromRunner = createRequire(path.join(ROOT, 'packages', 'runner', 'package.json'));",
+      "scripts/serve.ts: const require = createRequire(path.join(WEB, 'package.json'));",
+    ],
+  },
+  {
+    // A require, or one the pin above made (serve.ts's two; dev-engine.ts and dev-server.ts call theirs on the pinned
+    // line), called with an argument that is not one written-out string: none. A new createRequire moves the pin above.
+    what: 'a require called with a name its line does not write out: none',
+    pattern: /\b(?:require|requireFromRunner)(?:\.resolve)?\s*\((?!\s*(?:'[^'\\\n]*'|"[^"\\\n]*"|`[^`\\$\n]*`)\s*[,)])/,
     lines: [],
   },
 ];
@@ -234,9 +276,7 @@ const PINS: Pin[] = [...SWITCH, ...OPTION, ...BUILD, ...LAUNCH];
 /** The pins whose lines differ in these sources. */
 const moved = (files: Source[]): string[] => PINS.filter((p) => JSON.stringify(uses(p.pattern, files)) !== JSON.stringify(p.lines)).map((p) => p.what);
 
-const SCANS = { timeout: 30_000 };
-
-describe('only the person turns the OS sandbox off, in Settings (ADR-0105)', SCANS, () => {
+describe('only the person turns the OS sandbox off, in Settings (ADR-0105)', () => {
   it('reads the product sources', () => {
     const files = sources().map((s) => s.file);
     for (const f of ['packages/runner/src/pages.ts', 'packages/runner/src/worker.ts', 'packages/store/src/store.ts', 'apps/web/src/server/api.ts', 'apps/web/app/api/renderer/route.ts', 'apps/web/instrumentation.ts', 'scripts/serve.ts']) expect(files).toContain(f);
@@ -283,6 +323,12 @@ describe('only the person turns the OS sandbox off, in Settings (ADR-0105)', SCA
     ["the setting's column written directly (WB-2)", ["db.exec('UPDATE renderer_settings SET os_sandbox = 0 WHERE id = 1');"]],
     ['Settings’ route called from elsewhere', ["await fetch('/api/renderer', { method: 'PATCH', body: JSON.stringify({ osSandbox: false }) });"]],
     ['an import list that names the launch', ['import {', '  launchChromium,', "} from '../packages/runner/src/pages.ts';"]],
+    ['Playwright imported on a line that begins with a block comment (LC-1)', ["/* warm-up */ import { chromium } from 'playwright';"]],
+    ['a launch on a line that begins with block comments (LC-1)', ['/* x */ /* y */ const warm = () => chromium.launch({ headless: true });']],
+    ['a module loaded by a computed name, its ( on the next line (LC-1)', ['const m = await import', "  ('play' + 'wright');"]],
+    ['a require made by createRequire, loading a computed name (SEC-NOTE-3)', ["import { createRequire } from 'node:module';", 'const load = createRequire(import.meta.url);', "const { chromium } = load('play' + 'wright');"]],
+    ['a require made elsewhere, called with a computed name (SEC-NOTE-3)', ['const { chromium } = requireFromRunner(PINNED[0].name);']],
+    ['require.resolve of a computed name (SEC-NOTE-3)', ['const where = require.resolve(name);']],
   ])('fails on %s', (_, lines) => {
     const files = [...sources(), { file: 'scripts/zz-way-round.ts', lines }];
     expect(moved(files)).not.toEqual([]);

@@ -204,6 +204,8 @@ const NOT_PLAIN = /(?![\u200C\u200D])[\p{Cc}\p{Cf}]/gu;
  */
 const READABLE = /(?![\u3164\u115F\u1160\uFFA0])[\p{L}\p{N}]/u;
 
+const GRAPHEMES = new Intl.Segmenter('en', { granularity: 'grapheme' });
+
 /**
  * Model text as one plain line for the person to read (ADR-0101, ADR-0104): well-formed (a lone surrogate becomes
  * U+FFFD), without control or format characters, its whitespace collapsed, and at most `max` characters, cut at a word
@@ -215,12 +217,18 @@ export function plainLine(text: string, max: number): string {
   // Whitespace first, so a line break between two words leaves a space; then the rest (each removed character becomes a
   // space), then the spaces left doubled.
   const t = text.toWellFormed().replace(/\s+/g, ' ').replace(NOT_PLAIN, ' ').replace(/ {2,}/g, ' ').trim();
-  const chars = [...t];
   let line = t;
-  if (chars.length > max) {
-    const cut = chars.slice(0, max - 1).join('');
-    const space = cut.lastIndexOf(' ');
-    line = `${(space > cut.length / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+  if ([...t].length > max) {
+    // Whole characters as a person sees them (a letter and its accent, a flag, a joined emoji), up to max - 1 code points.
+    const kept: string[] = [];
+    let n = 0;
+    for (const { segment } of GRAPHEMES.segment(t)) {
+      n += [...segment].length;
+      if (n > max - 1) break;
+      kept.push(segment);
+    }
+    const space = kept.lastIndexOf(' ');
+    line = `${(space > kept.length / 2 ? kept.slice(0, space) : kept).join('').trimEnd()}…`;
   }
   // Read as shown: what the cut keeps must say something.
   return READABLE.test(line) ? line : '';

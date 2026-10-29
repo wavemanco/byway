@@ -26,8 +26,6 @@ import type { EarlierAnswer, Ports, RunInput, StepSpec } from '../src/types.ts';
 import { UNREAD_BRIEF } from './helpers/briefs.ts';
 import { benchRun, putWork, stepCall, storyboard, voiceBench, VoiceQuestion, voiceStep, type VoiceBench } from './helpers/voice-activity.ts';
 
-vi.setConfig({ testTimeout: 60_000 });
-
 type Opened = { stepId: string; initial?: { earlier?: EarlierAnswer }; prompt: string; initialText?: string };
 type Finished = { stepId: string; deckId?: string; initialText?: string; voiceId?: string; deckOut?: string };
 

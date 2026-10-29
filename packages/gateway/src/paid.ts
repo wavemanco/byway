@@ -212,6 +212,27 @@ export class PaidCalls {
     this.held.delete(opId);
   }
 
+  /**
+   * @internal Which PaidCall in this process admitted or resumed each row last. The book's owner is this process, so it
+   * cannot tell two attempts here apart: an attempt that resumed a row here takes it from the one that lost it.
+   */
+  private readonly holders = new Map<string, PaidCall>();
+
+  /** @internal This call now holds this row in this process. */
+  claim(opId: string, call: PaidCall): void {
+    this.holders.set(opId, call);
+  }
+
+  /** @internal This call is over: it holds the row here no longer, unless another call has resumed it since. */
+  unclaim(opId: string, call: PaidCall): void {
+    if (this.holders.get(opId) === call) this.holders.delete(opId);
+  }
+
+  /** @internal Whether this call is the one in this process that holds the row. */
+  claimedBy(opId: string, call: PaidCall): boolean {
+    return this.holders.get(opId) === call;
+  }
+
   /** A keyed call's invocation ended: if the call is over, let it go now (else end() does, when it is). */
   private callerEnded(opId: string): void {
     const held = this.held.get(opId);
@@ -349,10 +370,27 @@ export class PaidCall {
     this.req = req;
     this.caps = caps;
     this.caller = caller;
+    calls.claim(this.opId, this);
   }
 
   get id(): string {
     return this.opId;
+  }
+
+  /** Whether the call has been marked sent (or was resumed sent): a submission now is not its first billable request. */
+  get wasSent(): boolean {
+    return this.sent;
+  }
+
+  /**
+   * Whether this call still holds its row in the spend book: no other attempt has resumed it since (SpendBook.holds),
+   * in another process or in this one. Asked before each try of each queue job after the call's first, so an attempt that lost its
+   * row to a takeover submits none of its frame jobs beside the attempt that took it over (MONEY-1, the check of
+   * fix/fx-landnow).
+   */
+  async holdsRow(): Promise<boolean> {
+    if (!this.calls.claimedBy(this.opId, this)) return false;
+    return this.calls.book.holds(this.opId, this.calls.owner);
   }
 
   /** The provider's job ids when this call resumes one an earlier attempt made: poll them, never submit again. */
@@ -378,8 +416,10 @@ export class PaidCall {
     if (this.sent) return;
     if (!(await this.calls.book.markSent(this.opId, this.calls.owner))) {
       this.calls.forget(this.opId);
+      this.calls.unclaim(this.opId, this);
       const again = await this.calls.admitOnce(this.req, await this.caps(), this.caller);
       this.opId = again.opId;
+      this.calls.claim(this.opId, this);
       if (again.resumed) {
         // Another attempt's accepted jobs, taken over meanwhile: polled, not sent again.
         this.resumedJobs = again.resumed;
@@ -473,6 +513,7 @@ export class PaidCall {
   async end(): Promise<void> {
     if (this.ended) return;
     this.ended = true;
+    this.calls.unclaim(this.opId, this);
     this.calls.ended(this.opId, this.settled);
     try {
       if (this.settled) await this.calls.drain();

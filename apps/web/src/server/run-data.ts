@@ -8,7 +8,8 @@
  * titles are counted here from the whole artifact, so a step row never states a count of the excerpt as the
  * artifact's (F13, ADR-0086). The whole text itself is never polled: a view that needs it loads it once.
  */
-import type { RunRecord } from '@byway/contracts';
+import type { RunRecord, RunView } from '@byway/contracts';
+import type { QuestionCosts } from '../view/questions.ts';
 import type { Services } from '../services/index.ts';
 import { parseUnifiedDiff } from '../view/diff.ts';
 import { ArtifactData, read } from '../view/events.ts';
@@ -40,18 +41,38 @@ function textInfo(mediaType: string, bytes: Uint8Array): ArtifactInfo {
   return { mediaType, excerpt, complete, bytes: bytes.length, ...wholeFacts(mediaType, bytes) };
 }
 
+/**
+ * An artifact the Run screen reads, or undefined when it is missing or damaged. A damaged file is left out, as a missing
+ * one is, so one bad artifact does not fail the whole run's screen and every poll: both artifactInfo and the price beside
+ * an open question (api.ts questionCosts) read through here. Matched by name: the store may come from another server
+ * bundle.
+ */
+export async function readIntact(services: Services, id: string): Promise<Awaited<ReturnType<Services['store']['artifacts']['get']>> | undefined> {
+  if (!(await services.store.artifacts.has(id))) return undefined;
+  try {
+    return await services.store.artifacts.get(id);
+  } catch (e) {
+    if (e instanceof Error && e.name === 'ArtifactCorruptError') return undefined;
+    throw e;
+  }
+}
+
 export async function artifactInfo(services: Services, ids: Iterable<string>): Promise<Record<string, ArtifactInfo>> {
   const out: Record<string, ArtifactInfo> = {};
   for (const id of new Set(ids)) {
-    if (!(await services.store.artifacts.has(id))) continue;
-    const { record, bytes } = await services.store.artifacts.get(id);
+    const got = await readIntact(services, id);
+    if (!got) continue;
+    const { record, bytes } = got;
     const mediaType = record.mediaType.split(';')[0]?.trim() ?? 'application/octet-stream';
     out[id] = TEXT_TYPES.has(mediaType) ? textInfo(mediaType, bytes) : { mediaType };
   }
   return out;
 }
 
-export async function getRunData(services: Services, runId: string, afterSeq = 0): Promise<RunData> {
+/** Prices the run's open questions (api.ts questionCosts); undefined when the run's recipe is not known. */
+export type QuestionPricer = (run: RunRecord, checkpoints: RunView['checkpoints']) => Promise<QuestionCosts | undefined>;
+
+export async function getRunData(services: Services, runId: string, afterSeq = 0, price?: QuestionPricer): Promise<RunData> {
   const view = await services.runner.view(runId, afterSeq);
   const ids: string[] = [];
   for (const e of view.events) {
@@ -66,7 +87,8 @@ export async function getRunData(services: Services, runId: string, afterSeq = 0
   }
   if (view.run.outputArtifactId) ids.push(view.run.outputArtifactId);
   const ended = isEnded(view.run.status) ? await endedSpend(services, view.run) : undefined;
-  return { view, artifacts: await artifactInfo(services, ids), ...(ended ? { ended } : {}) };
+  const questions = price ? await price(view.run, view.checkpoints) : undefined;
+  return { view, artifacts: await artifactInfo(services, ids), ...(ended ? { ended } : {}), ...(questions ? { questions } : {}) };
 }
 
 /**

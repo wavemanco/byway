@@ -1188,47 +1188,53 @@ describe('the VOICE prompt for a page, and the page lock (F07)', () => {
 
 /**
  * A guard against a search or a quadratic pass over the page, not a benchmark: these pages take a few hundred
- * milliseconds alone, and a full parallel suite on a loaded machine has taken 2.6 s, so the bound leaves room for load.
- * Each page is held to BOUND_MS; a test may run up to three such pages, so each test has SIZE_TEST_MS, well above three
- * bounds, in place of vitest's five seconds (r10: the round-9 verifier saw the three-page test time out at 5.3 s under load).
+ * milliseconds of work alone. Each page is held to BOUND_MS of the CPU time this process spends on it (cpuNow), not of
+ * the wall clock: the work a pass does is what a quadratic one multiplies, and a stalled runner or a busy machine, which
+ * pushed a three-page test past 5.3 s of real time in r10, does not add to it (backlog row B-120).
  */
 const BOUND_MS = 5000;
-const SIZE_TEST_MS = 60_000;
+/** The CPU time this process has used, in milliseconds. */
+const cpuNow = (): number => {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+};
 
 describe('size: reading, placing and verifying are linear in the page (F07)', () => {
   it('a 4,000-item list (24,010 tags) opens, places and verifies well inside five seconds; a bad markup is still found', () => {
     const items = Array.from({ length: 4000 }, (_, i) => `<li><span class="n">${i}</span> Item ${i} <a href="/i/${i}">go</a></li>`).join('');
     const before = pageOf(`<ul>${items}</ul>`);
-    const t0 = performance.now();
+    const t0 = cpuNow();
     const p = readPageCopy(before);
     const d = deckLines(p);
     const e = readPageEdit(p, d.map((l, i) => (i === 5 || i === Math.floor(d.length * 0.6) ? '' : i === 7 ? `${l} (new)` : l)).join('\n'));
     if (!e.ok) throw new Error(e.problem);
     const placed = placePageEdit(before, e);
     const v = pageEditProblems(before, placed.page, e, placed);
-    expect(performance.now() - t0).toBeLessThan(BOUND_MS);
+    expect(cpuNow() - t0).toBeLessThan(BOUND_MS);
     expect(p.tokens.filter((t) => t.kind === 'tag')).toHaveLength(24010);
     expect([placed.problems, v]).toEqual([[], []]);
     expect(pageEditProblems(before, placed.page.replace('<li>', '<li class="x">'), e, placed)).toHaveLength(1);
-  }, SIZE_TEST_MS);
+  });
 
   it('one block of 12,000 words with emphasis: a word changed near each end is placed with every <em> kept, within the bound (r2)', () => {
     const words = Array.from({ length: 12000 }, (_, i) => `w${i}`);
     const before = pageOf(`<p>${words.map((w, i) => (i % 50 === 0 ? `<em>${w}</em>` : w)).join(' ')}</p>`);
-    const t0 = performance.now();
+    const t0 = cpuNow();
     const r = run(before, set(1, words.map((w) => (w === 'w10' ? 'changed' : w === 'w11995' ? 'tail' : w)).join(' ')), { full: true });
-    expect(performance.now() - t0).toBeLessThan(BOUND_MS);
+    expect(cpuNow() - t0).toBeLessThan(BOUND_MS);
     expect(r).toMatchObject(clean(before.replace(' w10 ', ' changed ').replace(' w11995 ', ' tail ')));
     // Rewritten throughout (past the edit script's cap): still placed exactly, in bounded time; formatting is not kept.
-    const t1 = performance.now();
+    const t1 = cpuNow();
     const heavy = run(before, set(1, words.map((w, i) => (i % 3 ? w : `x${i}`)).join(' ')), { full: true });
-    expect(performance.now() - t1).toBeLessThan(BOUND_MS);
+    expect(cpuNow() - t1).toBeLessThan(BOUND_MS);
     expect(heavy).toMatchObject({ placeProblems: [], verifier: [] });
-  }, SIZE_TEST_MS);
+  });
 
   it('the edit script matches as many words as the table, in order, on 2,000 random pairs of word lists', () => {
     let seed = 7;
-    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    // The product taken exactly (Math.imul): `seed * 1103515245` passes a double's 53 bits and loses its low bits, whose
+    // states end in short cycles (ADR-0097's Later note). Over 2^31, so a draw is below 1 and indexes a letter.
+    const rnd = () => ((seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) / 0x80000000);
     const list = () => Array.from({ length: Math.floor(rnd() * 30) }, () => 'abcde'[Math.floor(rnd() * 5)]!);
     for (let i = 0; i < 2000; i++) {
       const a = list();
@@ -1238,42 +1244,42 @@ describe('size: reading, placing and verifying are linear in the page (F07)', ()
       expect(pairs.every(([x, y], k) => a[x] === b[y] && (k === 0 || (x > pairs[k - 1]![0] && y > pairs[k - 1]![1])))).toBe(true);
     }
     expect(editPairs(['a', 'b', 'c'], ['x', 'y', 'z'], 2)).toBeUndefined();
-  }, SIZE_TEST_MS);
+  });
 
   it('20,000 inline elements a block leaves open: read, placed and verified within the bound, without copying the open elements per run of text (r5)', () => {
     for (const open of ['<span>', '<a href="/x">', '<b>']) {
       const before = pageOf(`<p>${Array.from({ length: 20000 }, (_, i) => `${open}w${i} `).join('')}</p><p>Tail</p>`);
-      const t0 = performance.now();
+      const t0 = cpuNow();
       const r = run(before, (d) => set(d.length - 1, 'Tail!')(d), { full: true });
-      expect(performance.now() - t0, open).toBeLessThan(BOUND_MS);
+      expect(cpuNow() - t0, open).toBeLessThan(BOUND_MS);
       expect(r, open).toMatchObject(clean(before.replace('<p>Tail</p>', '<p>Tail!</p>')));
     }
-  }, SIZE_TEST_MS);
+  });
 
   it('20,000 nested elements, emptied: the removal rule is linear too (r5)', () => {
     const before = pageOf(`<p>Keep</p><p>${'<span>'.repeat(20000)}Gone${'</span>'.repeat(20000)}</p>`);
-    const t0 = performance.now();
+    const t0 = cpuNow();
     const r = run(before, () => 'T\nKeep\n', { full: true });
-    expect(performance.now() - t0).toBeLessThan(BOUND_MS);
+    expect(cpuNow() - t0).toBeLessThan(BOUND_MS);
     expect(r).toMatchObject(clean(pageOf('<p>Keep</p>')));
-  }, SIZE_TEST_MS);
+  });
 
   it('a 20,000-path svg page and 1,000 identical items, every other one deleted', () => {
     const paths = Array.from({ length: 20000 }, (_, i) => `<path d="M${i} 0 L${i + 1} 1" stroke="#${(i % 4096).toString(16).padStart(3, '0')}"/>`).join('');
     const svgPage = pageOf(`<h1>Fresh bread</h1><svg viewBox="0 0 20000 1" aria-hidden="true">${paths}</svg><p>Order by nine</p><p>Old line</p>`);
-    let t0 = performance.now();
+    let t0 = cpuNow();
     const e = edit(svgPage, 'T\nFresh loaves\nOrder by nine\n');
     const placed = placePageEdit(svgPage, e);
     expect(pageEditProblems(svgPage, placed.page, e, placed)).toEqual([]);
-    expect(performance.now() - t0).toBeLessThan(BOUND_MS);
+    expect(cpuNow() - t0).toBeLessThan(BOUND_MS);
     expect(body(placed.page).slice(-60)).toBe('M19999 0 L20000 1" stroke="#e1f"/></svg><p>Order by nine</p>');
     const same3 = pageOf(`<ul>${Array.from({ length: 1000 }, () => '<li>Same</li>').join('')}</ul>`);
     const p = readPageCopy(same3);
-    t0 = performance.now();
+    t0 = cpuNow();
     const e2 = edit(same3, ['T', ...p.units.slice(1).map((_, i) => (i % 2 ? '' : 'Same'))].join('\n'));
     const placed2 = placePageEdit(same3, e2);
     expect(pageEditProblems(same3, placed2.page, e2, placed2)).toEqual([]);
-    expect(performance.now() - t0).toBeLessThan(BOUND_MS);
+    expect(cpuNow() - t0).toBeLessThan(BOUND_MS);
     expect(placed2.page.match(/<li>/g)).toHaveLength(500);
-  }, SIZE_TEST_MS);
+  });
 });

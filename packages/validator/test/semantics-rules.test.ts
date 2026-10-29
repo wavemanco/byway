@@ -142,7 +142,7 @@ describe("ST9/ST10 'human-critique' and ST12 'critique-per-candidate': no person
     expect(answers(cutIn((cut) => replicate('twice', 2, cut)))).toEqual(['ST12:critique-per-candidate']);
     expect(answers(cutIn((cut) => replicate('once', 1, cut)))).toEqual(['ST12:critique-per-candidate']);
     expect(validate(cutIn((cut) => replicate('twice', 2, cut))).violations.find((v) => v.clause === 'critique-per-candidate')!.message).toBe(
-      `step "cut" asks a person for a list or a critique once per candidate, and their answer reaches the work on no path: replicate and each hand on only the candidates' work, so only a step of that candidate can take it in, and that candidate reaches the work only where a pick, or an AI writer that takes the options in, takes it up`,
+      `step "cut" asks a person for a list or a critique once per candidate, and their answer reaches the work on no path: replicate and each hand on only the candidates' work, so only a step of that candidate can take it in, and that candidate reaches the work only where a pick or an AI writer that takes the options in takes it up, or an AI step that reads the candidates makes text that reaches the work`,
     );
     const r = studio();
     const d2 = r.stages[1]!.body as Seq;
@@ -183,7 +183,7 @@ describe("ST9/ST10 'human-critique' and ST12 'critique-per-candidate': no person
     d.steps.splice(i, 0, replicate('two-trims', 2, seq(...d.steps.splice(i, 3))));
     expect(answers(r)).toEqual(['ST12:critique-per-candidate']);
     expect(validate(r).violations.find((v) => v.clause === 'critique-per-candidate')!.message).toBe(
-      `step "cut" asks a person for a list or a critique once per candidate, and their answer reaches the work on no path: replicate and each hand on only the candidates' work, so only a step of that candidate can take it in, and that candidate reaches the work only where a pick, or an AI writer that takes the options in, takes it up`,
+      `step "cut" asks a person for a list or a critique once per candidate, and their answer reaches the work on no path: replicate and each hand on only the candidates' work, so only a step of that candidate can take it in, and that candidate reaches the work only where a pick or an AI writer that takes the options in takes it up, or an AI step that reads the candidates makes text that reaches the work`,
     );
     // An AI writer that drafts the work from the options takes them up, as a pick does (C2's option map).
     const map = step({ id: 'option-map', role: 'build', actor: 'model', tier: 'mid', consumes: [OPTION_SET], produces: ['artifact'], writes: true });

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useId, useRef, useState } from 'react';
 import { formatUsd } from '../view/format.ts';
 import type { WorkspaceSpend } from '../view/history.ts';
-import { callPurpose, FAULT_ADVICE, inFlightNote, outboxNote, providerName, quietNote, setAsideNote, UNCERTAIN_ADVICE, uncertainReason } from '../view/spending.ts';
+import { callPurpose, clearable, FAULT_ADVICE, inFlightNote, outboxNote, providerName, quietNote, setAsideNote, UNCERTAIN_ADVICE, uncertainReason } from '../view/spending.ts';
 import { ActionButton } from './ActionButton.tsx';
 import { get, post } from './api.ts';
 import { useAction } from './useAction.ts';
@@ -69,6 +69,7 @@ export function SpendingRecords({ records: initial, pricingNote = null }: Props)
 
   const notes = [inFlightNote(records), outboxNote(records), setAsideNote(records.setAside), pricingNote].filter((n): n is string => n !== null);
   const quiet = quietNote(records);
+  const canClear = records.uncertain.filter((u) => clearable(u, records));
 
   return (
     <section className="settings-section" id="spending" aria-labelledby={`${ids}-spending`}>
@@ -112,17 +113,21 @@ export function SpendingRecords({ records: initial, pricingNote = null }: Props)
                 <span>
                   <strong>{formatUsd(u.usd)}</strong> · {callPurpose(u)}, {providerName(u.provider)} {u.model}. {uncertainReason(u)}
                 </span>
-                <ActionButton className="button" busy={acting.busy} onClick={() => act({ clear: [u.opId] })} aria-label={`Clear ${formatUsd(u.usd)} for ${callPurpose(u)}`}>
-                  Clear
-                </ActionButton>
+                {clearable(u, records) ? (
+                  <ActionButton className="button" busy={acting.busy} onClick={() => act({ clear: [u.opId] })} aria-label={`Clear ${formatUsd(u.usd)} for ${callPurpose(u)}`}>
+                    Clear
+                  </ActionButton>
+                ) : (
+                  <span className="section-note">You can clear it once the call sent again ends.</span>
+                )}
               </li>
             ))}
           </ul>
           <p className="section-note">{UNCERTAIN_ADVICE}</p>
-          {records.uncertain.length > 1 ? (
+          {canClear.length > 1 ? (
             <div className="inline-form">
-              <ActionButton className="button" busy={acting.busy} onClick={() => act({ clear: records.uncertain.map((u) => u.opId) })}>
-                Clear all {records.uncertain.length}
+              <ActionButton className="button" busy={acting.busy} onClick={() => act({ clear: canClear.map((u) => u.opId) })}>
+                Clear all {canClear.length}
               </ActionButton>
             </div>
           ) : null}

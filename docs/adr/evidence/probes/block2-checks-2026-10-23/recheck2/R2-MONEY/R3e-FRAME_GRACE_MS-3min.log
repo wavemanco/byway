@@ -1,0 +1,97 @@
+
+ RUN  v5.0.3 C:/Users/arvik/AppData/Local/Temp/claude/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422/scratchpad/b2rc2/m
+
+ ❯ packages/gateway/test/clip-wait.test.ts (53 tests | 5 failed) 774ms
+   ❯ the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way (5)
+     × a frame job that does not finish, its clip finished 25 minutes in: 5 left, so 7 minutes, is cancelled then; the clip is ledgered and kept 67ms
+     × a frame job that does not finish, its clip finished in a minute: 29 left, so 31 minutes, is cancelled then; the clip is ledgered and kept 37ms
+     × a clip done only after its wait ran out (fal’s cancel said so) leaves its frame the 2 minutes alone 62ms
+     × the frame job’s result read is bounded too: a frame job done in a minute whose result never comes is given up at the bound, and the clip kept 30ms
+     × the frame’s download is bounded too: one held past it is given up, and the clip kept 32ms
+
+ Test Files  1 failed | 28 passed (29)
+      Tests  5 failed | 1001 passed (1006)
+   Start at  10:38:18
+   Duration  6.79s (import 50%, tests 37%, transform 12%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > a frame job that does not finish, its clip finished 25 minutes in: 5 left, so 7 minutes, is cancelled then; the clip is ledgered and kept
+ FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > a frame job that does not finish, its clip finished in a minute: 29 left, so 31 minutes, is cancelled then; the clip is ledgered and kept
+AssertionError: expected [ { …(3) } ] to deeply equal [ { …(3) } ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "at": 1792672320000,
++     "at": 1792672380000,
+      "endpoint": "fal-ai/ffmpeg-api/extract-frame",
+      "requestId": "req-2",
+    },
+  ]
+
+ ❯ packages/gateway/test/clip-wait.test.ts:746:25
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > a clip done only after its wait ran out (fal’s cancel said so) leaves its frame the 2 minutes alone
+AssertionError: expected 'fal made the clip and billed it, but …' to match /last-frame job req-2 did not finish w…/
+
+- Expected:
+/last-frame job req-2 did not finish within the time left on the clip’s wait plus 2 minutes/
+
++ Received:
+"fal made the clip and billed it, but its last frame could not be extracted (the clip is kept as sha256:224dc1959674edd3ff151639649f3faa0a2da48805ada1992c4b1f7ffd10390a): last-frame job req-2 did not finish within the time left on the clip’s wait plus 3 minutes, so byway stopped waiting and cancelled it (HTTP 400 ALREADY_COMPLETED)"
+
+ ❯ packages/gateway/test/clip-wait.test.ts:762:42
+    760|     expect(fal.cancels).toHaveLength(1);
+    761|     await vi.advanceTimersByTimeAsync(1);
+    762|     expect((await settled(err)).message).toMatch(/last-frame job req-2…
+       |                                          ^
+    763|     expect(fal.cancels.map((c) => [c.endpoint, c.at])).toEqual([
+    764|       [BALANCED_VIDEO, T0 + 30 * MINUTE],
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > the frame job’s result read is bounded too: a frame job done in a minute whose result never comes is given up at the bound, and the clip kept
+AssertionError: expected 'fal made the clip and billed it, but …' to match /: last-frame job req-2 did not finish…/
+
+- Expected:
+/: last-frame job req-2 did not finish within the time left on the clip’s wait plus 2 minutes, so byway stopped waiting$/
+
++ Received:
+"fal made the clip and billed it, but its last frame could not be extracted (the clip is kept as sha256:224dc1959674edd3ff151639649f3faa0a2da48805ada1992c4b1f7ffd10390a): last-frame job req-2 did not finish within the time left on the clip’s wait plus 3 minutes, so byway stopped waiting"
+
+ ❯ packages/gateway/test/clip-wait.test.ts:800:23
+    798|     const e = await err;
+    799|     expect(e).toMatchObject({ billed: true });
+    800|     expect(e.message).toMatch(/: last-frame job req-2 did not finish w…
+       |                       ^
+    801|     // Done when its bound ran out, so not cancelled; the clip is ledg…
+    802|     // it (R-MONEY-3, Block 2's re-check: the loop above moves the clo…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > the frame’s download is bounded too: one held past it is given up, and the clip kept
+AssertionError: expected 'fal made the clip and billed it, but …' to match /the last frame’s download did not fin…/
+
+- Expected:
+/the last frame’s download did not finish within the time left on the clip’s wait plus 2 minutes, so byway stopped waiting$/
+
++ Received:
+"fal made the clip and billed it, but its last frame could not be extracted (the clip is kept as sha256:224dc1959674edd3ff151639649f3faa0a2da48805ada1992c4b1f7ffd10390a): the last frame’s download did not finish within the time left on the clip’s wait plus 3 minutes, so byway stopped waiting"
+
+ ❯ packages/gateway/test/clip-wait.test.ts:832:42
+    830|     expect(frames[0]?.aborted).toBe(false);
+    831|     await vi.advanceTimersByTimeAsync(1);
+    832|     expect((await settled(err)).message).toMatch(/the last frame’s dow…
+       |                                          ^
+    833|     expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal…
+    834|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+

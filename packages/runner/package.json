@@ -8,9 +8,6 @@
     ".": "./src/index.ts",
     "./client": "./src/client-entry.ts"
   },
-  "scripts": {
-    "build:workflows": "tsx scripts/build-workflows.ts"
-  },
   "dependencies": {
     "@byway/catalog": "workspace:*",
     "@byway/contracts": "workspace:*",
@@ -19,6 +16,7 @@
     "@byway/protocol": "workspace:*",
     "@byway/recipe": "workspace:*",
     "@byway/store": "workspace:*",
+    "@byway/validator": "workspace:*",
     "@temporalio/activity": "1.24.0",
     "@temporalio/client": "1.24.0",
     "@temporalio/common": "1.24.0",
@@ -28,10 +26,10 @@
     "esbuild": "0.28.2",
     "parse-entities": "4.0.2",
     "playwright": "1.63.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@byway/validator": "workspace:*",
+    "@byway/advisor": "workspace:*",
     "@tailwindcss/browser": "4.1.11"
   }
 }

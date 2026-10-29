@@ -83,7 +83,9 @@ describe('gateway: video through fal.ai', () => {
     expect(fal.calls[0]).toEqual({ endpoint: BALANCED_VIDEO, input: { prompt: req().prompt, image_url: fal.uploadedUrl(0), duration: '5' } });
     // fal's own last-frame endpoint ran on the clip.
     expect(fal.calls[1]).toEqual({ endpoint: FAL_EXTRACT_FRAME, input: { video_url: fal.clipUrl, frame_type: 'last' } });
-    expect(fetch.requested).toEqual([fal.clipUrl, fal.frameUrl]);
+    // Then its middle frame, for the shot check (F10 (a)).
+    expect(fal.calls[2]).toEqual({ endpoint: FAL_EXTRACT_FRAME, input: { video_url: fal.clipUrl, frame_type: 'middle' } });
+    expect(fetch.requested).toEqual([fal.clipUrl, fal.frameUrl, fal.middleUrl]);
 
     // Both are stored at once (provider URLs expire).
     expect((await artifacts.get(res.artifactId)).record.mediaType).toBe('video/mp4');
@@ -91,13 +93,15 @@ describe('gateway: video through fal.ai', () => {
     const frame = await artifacts.get(res.lastFrameArtifactId);
     expect(frame.record.mediaType).toBe('image/png');
     expect(Buffer.from(frame.bytes.subarray(0, 4)).toString('hex')).toBe('89504e47');
+    expect(res.middleFrameArtifactId).toBeDefined();
+    expect((await artifacts.get(res.middleFrameArtifactId!)).record.mediaType).toBe('image/png');
 
-    // 5 s at $0.07, plus fal's frame extraction bounded at 10 compute seconds at $0.0002.
-    expect(res).toMatchObject({ provider: 'fal', servedModel: BALANCED_VIDEO, costUsd: 0.352, mediaType: 'video/mp4', lastFrameMediaType: 'image/png' });
+    // 5 s at $0.07, plus fal's two frame extractions (the last and the middle frame), each bounded at 10 compute seconds at $0.0002.
+    expect(res).toMatchObject({ provider: 'fal', servedModel: BALANCED_VIDEO, costUsd: 0.354, mediaType: 'video/mp4', lastFrameMediaType: 'image/png', middleFrameMediaType: 'image/png' });
     const [entry] = ledgerLines();
-    expect(entry).toMatchObject({ id: res.ledgerEntryId, kind: 'video', provider: 'fal', purpose: 'relay:media', requestedModel: BALANCED_VIDEO, usage: { inputTokens: 0, outputTokens: 0, units: 5 }, costUsd: 0.352, runId: 'run-1', stepId: 'clip' });
+    expect(entry).toMatchObject({ id: res.ledgerEntryId, kind: 'video', provider: 'fal', purpose: 'relay:media', requestedModel: BALANCED_VIDEO, usage: { inputTokens: 0, outputTokens: 0, units: 5 }, costUsd: 0.354, runId: 'run-1', stepId: 'clip' });
     expect(await g.verifyLedger()).toBeNull();
-    expect((await g.spend('ws-1')).spentUsd).toBe(0.352);
+    expect((await g.spend('ws-1')).spentUsd).toBe(0.354);
   });
 
   it.each([
@@ -110,9 +114,9 @@ describe('gateway: video through fal.ai', () => {
     const adapter: ProviderAdapter = { ...real, video: async (r) => ({ ...(await real.video!(r)), servedModel: model as string }) };
     const g = gateway({ adapters: { fal: adapter } });
     const res = await g.video(req());
-    expect(res).toMatchObject({ servedModel: BALANCED_VIDEO, costUsd: 0.352 });
-    expect(ledgerLines()).toEqual([expect.objectContaining({ id: res.ledgerEntryId, requestedModel: BALANCED_VIDEO, servedModel: BALANCED_VIDEO, priceBasis: 'assumed', costUsd: 0.352 })]);
-    expect(await g.spend('ws-1')).toMatchObject({ spentUsd: 0.352, uncertainUsd: 0, assumedPricing: { calls: 1, usd: 0.352 } });
+    expect(res).toMatchObject({ servedModel: BALANCED_VIDEO, costUsd: 0.354 });
+    expect(ledgerLines()).toEqual([expect.objectContaining({ id: res.ledgerEntryId, requestedModel: BALANCED_VIDEO, servedModel: BALANCED_VIDEO, priceBasis: 'assumed', costUsd: 0.354 })]);
+    expect(await g.spend('ws-1')).toMatchObject({ spentUsd: 0.354, uncertainUsd: 0, assumedPricing: { calls: 1, usd: 0.354 } });
   });
 
   it('snaps the duration to what the model can make, and bills what it makes', async () => {
@@ -120,9 +124,9 @@ describe('gateway: video through fal.ai', () => {
     const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
     await g.video(req({ durationSec: 8.5 }));
     expect(fal.calls[0]?.input).toMatchObject({ duration: '10' });
-    expect(ledgerLines()[0]).toMatchObject({ usage: { units: 10 }, costUsd: 0.702 });
+    expect(ledgerLines()[0]).toMatchObject({ usage: { units: 10 }, costUsd: 0.704 });
     await g.video(req({ durationSec: 2 }));
-    expect(fal.calls[2]?.input).toMatchObject({ duration: '5' });
+    expect(fal.calls[3]?.input).toMatchObject({ duration: '5' });
   });
 
   it("uses the best profile's model with its own input names, and no native audio (the voice-over is a separate step)", async () => {
@@ -130,8 +134,8 @@ describe('gateway: video through fal.ai', () => {
     const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
     const res = await g.video(req({ profileId: 'best', durationSec: 4 }));
     expect(fal.calls[0]).toEqual({ endpoint: BEST_VIDEO, input: { prompt: req().prompt, start_image_url: fal.uploadedUrl(0), duration: '4', generate_audio: false } });
-    // 4 s at $0.112 (audio off) + the frame extraction bound.
-    expect(res.costUsd).toBe(0.45);
+    // 4 s at $0.112 (audio off) + the two frame extractions' bound.
+    expect(res.costUsd).toBe(0.452);
   });
 
   it('refuses before any call: no key, no video model, no start frame, a missing frame or a bad duration', async () => {
@@ -169,7 +173,7 @@ describe('gateway: video through fal.ai', () => {
     const err = (await g.video(req()).catch((e: unknown) => e)) as GatewayError;
     expect(err).toBeInstanceOf(GatewayError);
     expect(err.code).toBe('budget-exceeded');
-    expect(err.budget).toMatchObject({ scope: 'run', capUsd: 0.3, estimateUsd: 0.352, shortfallUsd: 0.052 });
+    expect(err.budget).toMatchObject({ scope: 'run', capUsd: 0.3, estimateUsd: 0.354, shortfallUsd: 0.054 });
     expect(fal.calls).toEqual([]);
   });
 
@@ -208,7 +212,7 @@ describe('gateway: video through fal.ai', () => {
     expect(err).toMatchObject({ code: 'provider-error', retryable: false, billed: true });
     expect(err.message).toMatch(/may have accepted the last-frame job/);
     expect(fal.calls.map((c) => c.endpoint)).toEqual([BALANCED_VIDEO, FAL_EXTRACT_FRAME]);
-    expect(ledgerLines()).toEqual([expect.objectContaining({ kind: 'video', costUsd: 0.352 })]);
+    expect(ledgerLines()).toEqual([expect.objectContaining({ kind: 'video', costUsd: 0.354 })]);
     expect([...artifacts.items.values()].filter((i) => i.record.mediaType === 'video/mp4')).toHaveLength(1);
   });
 
@@ -227,9 +231,9 @@ describe('gateway: video through fal.ai', () => {
     const fal = fakeFal({}, { pollFailures: { [BALANCED_VIDEO]: [Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }), httpError(502)] } });
     const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
     const res = await g.video(req());
-    expect(fal.calls.map((c) => c.endpoint)).toEqual([BALANCED_VIDEO, FAL_EXTRACT_FRAME]);
-    expect(fal.polls).toEqual(['req-1', 'req-1', 'req-1', 'req-2']);
-    expect(res.costUsd).toBe(0.352);
+    expect(fal.calls.map((c) => c.endpoint)).toEqual([BALANCED_VIDEO, FAL_EXTRACT_FRAME, FAL_EXTRACT_FRAME]);
+    expect(fal.polls).toEqual(['req-1', 'req-1', 'req-1', 'req-2', 'req-3']);
+    expect(res.costUsd).toBe(0.354);
   });
 
   it('maps fal errors to gateway codes, keeps the key out of them and spends nothing on a failed generation', async () => {
@@ -255,10 +259,34 @@ describe('gateway: video through fal.ai', () => {
     expect(err.code).toBe('invalid-request');
     expect(err.message).toMatch(/last frame/);
     const [entry] = ledgerLines();
-    expect(entry).toMatchObject({ kind: 'video', costUsd: 0.352, usage: { units: 5 } });
+    expect(entry).toMatchObject({ kind: 'video', costUsd: 0.354, usage: { units: 5 } });
     // The clip itself is in the store, so the spend is not lost.
     const stored = [...artifacts.items.values()].filter((i) => i.record.mediaType === 'video/mp4');
     expect(stored).toHaveLength(1);
+  });
+
+  it('a middle frame that cannot be made, fetched or used never fails the billed clip: the clip is used without it, at the same cost (F10 (a))', async () => {
+    const cases: [string, ReturnType<typeof fakeFal>, ReturnType<typeof fakeFetch>][] = [];
+    // Its job is refused (the last frame's job, submitted first, is not).
+    const refused = fakeFal();
+    const submit = refused.client.queue.submit.bind(refused.client.queue);
+    refused.client.queue.submit = async (endpoint, options) => {
+      if (options.input.frame_type === 'middle') throw httpError(400, 'unsupported codec');
+      return submit(endpoint, options);
+    };
+    cases.push(['refused', refused, fakeFetch()]);
+    const missing = fakeFal();
+    cases.push(['not served', missing, fakeFetch({ [missing.middleUrl]: 404 })]);
+    const text = fakeFal({}, { middleUrl: 'https://v3.fal.media/files/middle.txt' });
+    cases.push(['not an image', text, fakeFetch({}, { responses: { 'https://v3.fal.media/files/middle.txt': () => new Response('not an image') } })]);
+    for (const [what, fal, fetch] of cases) {
+      const res = await gateway({ clients: { fal: fal.client }, fetch: fetch.fetch }).video(req());
+      expect(res, what).toMatchObject({ mediaType: 'video/mp4', lastFrameMediaType: 'image/png', costUsd: 0.354 });
+      expect(res.middleFrameArtifactId, what).toBeUndefined();
+      expect(res.middleFrameMediaType, what).toBeUndefined();
+      const response = JSON.parse(await artifacts.getText(ledgerLines().at(-1).responseSha256));
+      expect(response.wire.middleFrame, what).toMatchObject({ notMade: expect.any(String) });
+    }
   });
 
   it('reports the last frame under the type its bytes have, whatever fal claims (contracts v4 lastFrameMediaType)', async () => {
@@ -268,14 +296,23 @@ describe('gateway: video through fal.ai', () => {
     expect((await artifacts.get(res.lastFrameArtifactId)).record.mediaType).toBe('image/jpeg');
   });
 
-  it('keeps and ledgers a paid clip that is not MP4, then fails clearly (the contract knows MP4 clips only)', async () => {
+  it('hands on a WebM clip under its own type, billed, stored and ledgered (B-012)', async () => {
     const fal = fakeFal({}, { clipUrl: 'https://v3.fal.media/files/clip.webm' });
-    const err = (await gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch }).video(req()).catch((e: unknown) => e)) as GatewayError;
-    expect(err).toBeInstanceOf(GatewayError);
-    expect(err.code).toBe('provider-error');
-    expect(err.message).toMatch(/video\/webm/);
+    const res = await gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch }).video(req());
+    expect(res).toMatchObject({ provider: 'fal', mediaType: 'video/webm', costUsd: 0.354 });
+    expect((await artifacts.get(res.artifactId)).record.mediaType).toBe('video/webm');
     expect(ledgerLines()).toHaveLength(1);
-    expect([...artifacts.items.values()].filter((i) => i.record.mediaType === 'video/webm')).toHaveLength(1);
+  });
+
+  it('keeps and ledgers a paid clip of a type the contract does not name, then fails clearly', async () => {
+    const fal = fakeFal();
+    const real = falAdapter({ client: fal.client, fetch: fakeFetch().fetch });
+    const adapter: ProviderAdapter = { ...real, video: async (r) => { const out = await real.video!(r); return { ...out, clip: { ...out.clip!, mediaType: 'video/quicktime' } }; } };
+    const err = (await gateway({ adapters: { fal: adapter } }).video(req()).catch((e: unknown) => e)) as GatewayError;
+    expect(err).toBeInstanceOf(GatewayError);
+    expect(err).toMatchObject({ code: 'provider-error', billed: true });
+    expect(err.message).toMatch(/it is video\/quicktime, not MP4 or WebM \(the clip is kept as sha256:/);
+    expect(ledgerLines()).toHaveLength(1);
   });
 
   it('records the storyboard shot in the stored request, and refuses a shot that is not a positive integer', async () => {
@@ -296,7 +333,7 @@ describe('gateway: video through fal.ai', () => {
     // A CDN status is not a provider-API status: a 404 is not a bad request byway made.
     await expect(gateway({ clients: { fal: gone.client }, fetch: fetch.fetch }).video(req())).rejects.toMatchObject({ code: 'provider-error', message: expect.stringMatching(/HTTP 404/) });
     // Both clips were generated (billed), so both are ledgered even though neither could be kept.
-    expect(ledgerLines().map((e) => e.costUsd)).toEqual([0.352, 0.352]);
+    expect(ledgerLines().map((e) => e.costUsd)).toEqual([0.354, 0.354]);
   });
 });
 
@@ -337,7 +374,7 @@ describe('gateway: provider media admission (ADR-0088)', () => {
     expect(err.message).toContain(`outside its media host (${origin(url)})`);
     expect(err.message).not.toContain('user:pw');
     expect(fetch.requested).toEqual([]);
-    expect(lastLine()).toMatchObject({ kind: 'video', costUsd: 0.352 });
+    expect(lastLine()).toMatchObject({ kind: 'video', costUsd: 0.354 });
   });
 
   it('refuses a last frame outside the media host the same way, keeping the clip', async () => {
@@ -356,7 +393,7 @@ describe('gateway: provider media admission (ADR-0088)', () => {
     expect(err).toMatchObject({ code: 'provider-error', retryable: false });
     expect(err.message).toContain(`redirected outside its media host (${origin(target)})`);
     expect(fetch.requested).toEqual([fal.clipUrl]);
-    expect(lastLine()).toMatchObject({ kind: 'video', costUsd: 0.352 });
+    expect(lastLine()).toMatchObject({ kind: 'video', costUsd: 0.354 });
   });
 
   it('refuses a redirect that names no address', async () => {
@@ -371,15 +408,15 @@ describe('gateway: provider media admission (ADR-0088)', () => {
     const moved = 'https://v3b.fal.media/files/b/x.mp4';
     const fetch = fakeFetch({}, { redirects: { [fal.clipUrl]: moved, [fal.frameUrl]: '/files/elsewhere/last.png' } });
     const res = await gateway({ clients: { fal: fal.client }, fetch: fetch.fetch }).video(req());
-    expect(fetch.requested).toEqual([fal.clipUrl, moved, fal.frameUrl, 'https://v3.fal.media/files/elsewhere/last.png']);
-    expect(fetch.inits.map((i) => i?.redirect)).toEqual(['manual', 'manual', 'manual', 'manual']);
+    expect(fetch.requested).toEqual([fal.clipUrl, moved, fal.frameUrl, 'https://v3.fal.media/files/elsewhere/last.png', fal.middleUrl]);
+    expect(fetch.inits.map((i) => i?.redirect)).toEqual(['manual', 'manual', 'manual', 'manual', 'manual']);
     // One deadline covers a whole download, every hop included.
     expect(fetch.inits[0]?.signal).toBeInstanceOf(AbortSignal);
     expect(fetch.inits[1]?.signal).toBe(fetch.inits[0]?.signal);
     expect(Buffer.from((await artifacts.get(res.artifactId)).bytes).equals(Buffer.from(MP4_BYTES))).toBe(true);
     // The evidence records which hosts each download used, so a live link shows fal's real media hosts.
     const response = JSON.parse(await artifacts.getText(ledgerLines()[0].responseSha256));
-    expect(response.wire.media).toEqual({ clip: ['https://v3.fal.media', 'https://v3b.fal.media'], frame: ['https://v3.fal.media', 'https://v3.fal.media'] });
+    expect(response.wire.media).toEqual({ clip: ['https://v3.fal.media', 'https://v3b.fal.media'], frame: ['https://v3.fal.media', 'https://v3.fal.media'], middle: ['https://v3.fal.media'] });
   });
 
   it('follows at most three redirects', async () => {
@@ -405,7 +442,7 @@ describe('gateway: provider media admission (ADR-0088)', () => {
     const busy = fakeFal();
     const fetch = fakeFetch({ [busy.clipUrl]: [503, 429] });
     await expect(gateway({ clients: { fal: busy.client }, fetch: fetch.fetch }).video(req())).resolves.toMatchObject({ mediaType: 'video/mp4' });
-    expect(fetch.requested).toEqual([busy.clipUrl, busy.clipUrl, busy.clipUrl, busy.frameUrl]);
+    expect(fetch.requested).toEqual([busy.clipUrl, busy.clipUrl, busy.clipUrl, busy.frameUrl, busy.middleUrl]);
   });
 
   it('stops reading at the byte cap when no length is declared, cancelling the body, and still ledgers the clip', async () => {
@@ -417,7 +454,7 @@ describe('gateway: provider media admission (ADR-0088)', () => {
     // 200 MiB is the cap: the 201st chunk is the one that crosses it, and reading stops there.
     expect(body.seen.pulls).toBeLessThanOrEqual(201);
     expect(body.seen.cancelled).toBe(true);
-    expect(lastLine()).toMatchObject({ kind: 'video', costUsd: 0.352 });
+    expect(lastLine()).toMatchObject({ kind: 'video', costUsd: 0.354 });
   });
 
   it('refuses a declared length over the cap before reading anything', async () => {
@@ -436,7 +473,7 @@ describe('gateway: provider media admission (ADR-0088)', () => {
     expect(err).toMatchObject({ code: 'provider-error', message: expect.stringMatching(/not a video/) });
     expect([...artifacts.items.values()].filter((i) => i.record.mediaType.startsWith('video/'))).toEqual([]);
     expect(artifacts.allText()).not.toContain('INTERNAL-SERVICE-RESPONSE-BODY');
-    expect(lastLine()).toMatchObject({ kind: 'video', costUsd: 0.352 });
+    expect(lastLine()).toMatchObject({ kind: 'video', costUsd: 0.354 });
     expect(fal.calls.map((c) => c.endpoint)).toEqual([BALANCED_VIDEO]);
   });
 });

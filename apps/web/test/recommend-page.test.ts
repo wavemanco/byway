@@ -47,10 +47,7 @@ async function rendered(intakeId: string, recipe?: string): Promise<Recommendati
   return view.props.recommendation;
 }
 
-/** Real services on a temp data directory: as many tests here as in api.test.ts, and as busy a disk. */
-const PRODUCT_PATH = { timeout: 30_000 };
-
-describe('the Recommendation page renders what is stored and asks the model nothing (F03)', PRODUCT_PATH, () => {
+describe('the Recommendation page renders what is stored and asks the model nothing (F03)', () => {
   it('with no recommendation stored yet, renders none, and none is made', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });

@@ -30,9 +30,9 @@ import {
   workspaceRemaining,
 } from '../src/server/api.ts';
 import { AnswerWaitPatch, RecommendInput } from '../src/server/schemas.ts';
-import { getRunData } from '../src/server/run-data.ts';
+import { artifactInfo, getRunData } from '../src/server/run-data.ts';
 import { FIRST_QUESTION } from './fixtures/runner.ts';
-import { TINY_PNG_BASE64, testHost, type TestHost } from './fixtures/services.ts';
+import { ENGINE, TINY_PNG_BASE64, testHost, type TestHost } from './fixtures/services.ts';
 
 let current: TestHost | undefined;
 
@@ -50,21 +50,13 @@ async function deps(): Promise<Deps> {
   return { services, workspaceId: ws.id, profileId: 'demo', heldKeyIn: host.heldKeyIn, questionEstimates: host.questionEstimates, pricesCheckedOn: host.pricesCheckedOn, modelWaits: host.modelWaits };
 }
 
-/**
- * Every test here runs the real store, gateway and advisor on a fresh data directory, so it creates a database and
- * writes artifact files that are flushed to disk. Alone, a test takes about 0.1 s; with the machine busy (several suites,
- * their Chromium and Temporal servers) the compose test has run past vitest's 5 s default. The limit is realistic for
- * that, and still bounded.
- */
-const PRODUCT_PATH = { timeout: 30_000 };
-
 async function openQuestion(d: Deps, runId: string): Promise<CheckpointRecord> {
   const open = (await d.services.runner.view(runId)).checkpoints.find((c) => c.status === 'open');
   if (!open) throw new Error('no open question');
   return open;
 }
 
-describe('route handler logic', PRODUCT_PATH, () => {
+describe('route handler logic', () => {
   it('takes a problem from Start to a recommendation, re-routes on a flipped answer, keeps it, and starts the run', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
@@ -128,25 +120,66 @@ describe('route handler logic', PRODUCT_PATH, () => {
   });
 
   // UX-4 remainder: "Run this step?" and "Is this ready?" said what each answer does, never what it costs.
-  it("prices each question an optional or a person's loop asks, with the run's own profile, for the Run screen", async () => {
+  it('prices each open question that commits money, with the run\'s own profile, on its problem and the work beside it, for the Run screen', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
     const { runId } = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 });
     const run = await d.services.store.getRun(runId);
     if (!run) throw new Error('run missing');
     const { recipe } = await recipeForRun(d, run);
-    const costs = questionCosts(d, run, recipe);
-    // C4 asks three optional questions and has no loop a person ends; the demo profile prices them at nothing.
-    expect(Object.keys(costs ?? {}).sort()).toEqual(['claim-log', 'framings-if-wanted', 'recipient-critic']);
-    expect(costs?.['framings-if-wanted']).toEqual({ asks: 'optional', lowUsd: 0, highUsd: 0, calls: { low: 1, high: 1 } });
+    const draft = await d.services.store.artifacts.putText('# The offsite\n\nIt moves to May.\n', 'text/markdown');
+    const open = (stepId: string, prompt: string, artifactIds?: string[]): CheckpointRecord => ({
+      id: `${runId}/cp-${stepId}-${prompt.length}`,
+      runId,
+      stepId,
+      kind: 'confirm',
+      prompt,
+      status: 'open',
+      openedAt: '2026-10-28T10:00:00.000Z',
+      ...(artifactIds ? { artifactIds } : {}),
+    });
+    const framings = open('framings-if-wanted', 'Run this step?', [draft.id]);
+    const claims = open('claim-log', 'Run this step?');
+    const best = open('critic-loop', ENGINE.runner.BEST_SO_FAR_PROMPT, [draft.id]);
+    const keepGoing = open('critic-loop', ENGINE.runner.NOT_CONVERGING_PROMPT, [draft.id]);
+    // A budget question about the loop's own call (its re-rank) carries the loop's id, and commits nothing of its own.
+    const budget = open('critic-loop', 'Raise the budget by $1?');
+    const costs = await questionCosts(d, run, [framings, claims, best, keepGoing, budget]);
+    // The demo profile prices them at nothing.
+    expect(costs?.[framings.id]).toEqual({ asks: 'optional', answer: 'Yes', lowUsd: 0, highUsd: 0, calls: { low: 1, high: 1 }, images: { low: 0, high: 0 }, clips: { low: 0, high: 0 } });
     // The claim log is your own sign-off: no AI call.
-    expect(costs?.['claim-log']?.calls).toEqual({ low: 0, high: 0 });
-    // Asked for the run's own profile, not the one this request's Settings name (services.test.ts has how it is priced).
+    expect(costs?.[claims.id]?.calls).toEqual({ low: 0, high: 0 });
+    // B-107: the critic loop's two questions, each with the answer that goes on; nothing for the budget question.
+    expect([costs?.[best.id]?.asks, costs?.[best.id]?.answer, costs?.[keepGoing.id]?.answer]).toEqual(['cap', 'No', 'Yes']);
+    expect(Object.keys(costs ?? {}).sort()).toEqual([best.id, claims.id, framings.id, keepGoing.id].sort());
+    // Asked for the run's own profile, not the one this request's Settings name (services.test.ts has how it is priced),
+    // with the run's problem and the work beside the question (B-106, B-108).
     const asked = vi.fn(d.questionEstimates);
-    questionCosts({ ...d, profileId: 'best', questionEstimates: asked }, { ...run, profileId: 'balanced' }, recipe);
-    expect(asked).toHaveBeenCalledWith(recipe, 'balanced');
-    // A run whose recipe is not known gets none.
-    expect(questionCosts(d, run, undefined)).toBeNull();
+    await questionCosts({ ...d, profileId: 'best', questionEstimates: asked }, { ...run, profileId: 'balanced' }, [framings]);
+    expect(asked).toHaveBeenCalledWith(recipe, 'balanced', { problem: { text: 'A memo' }, work: ['# The offsite\n\nIt moves to May.\n'] });
+    // A run whose recipe is not known gets none; one with no question open, an empty set.
+    expect(await questionCosts(d, { ...run, recipeId: 'gone' }, [framings])).toBeUndefined();
+    expect(await questionCosts(d, run, [])).toEqual({});
+    // The Run screen's data carries them, on the first render and on each poll.
+    const data = await getRunData(d.services, runId, 0, async () => costs);
+    expect(data.questions).toEqual(costs);
+  });
+
+  // ENGINE-1 (check of 2026-10-28): a gate with no retry asks B-136's "It did not pass the final check. Use it anyway?",
+  // which the priced answers did not hold, so that question went without its figure.
+  it("prices a failed gate's question in both its wordings, with or without a retry, at Yes (ENGINE-1)", async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A launch page', recipeId: 'c5' });
+    const { runId } = await startRun(d, { intakeId, recipeId: 'c5', budgetUsd: 5 });
+    const run = await d.services.store.getRun(runId);
+    if (!run) throw new Error('run missing');
+    const open = (prompt: string): CheckpointRecord => ({ id: `${runId}/cp-${prompt.length}`, runId, stepId: 'launch-gate', kind: 'confirm', prompt, status: 'open', openedAt: '2026-10-28T10:00:00.000Z' });
+    const retried = open(ENGINE.runner.GATE_FAILED_PROMPT);
+    const oneShot = open(ENGINE.runner.GATE_FAILED_NO_RETRY_PROMPT);
+    expect(oneShot.prompt).toBe('It did not pass the final check. Use it anyway?');
+    const costs = await questionCosts(d, run, [retried, oneShot]);
+    expect(costs?.[retried.id]).toMatchObject({ asks: 'gate', answer: 'Yes' });
+    expect(costs?.[oneShot.id]).toEqual(costs?.[retried.id]);
   });
 
   it('refuses unknown intakes, a missing composed recipe, and budgets over what the workspace has left', async () => {
@@ -170,6 +203,48 @@ describe('route handler logic', PRODUCT_PATH, () => {
     await expect(startRun(d, { intakeId: other, recipeId: 'c4', budgetUsd: 2, runId })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/another problem/) });
     // The same Start id asking for another recipe is another start, whatever its id says (the screen mints a new id then).
     await expect(startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 2, runId })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/another problem or recipe/) });
+  });
+
+  it("returns the same run for a Start sent again after the run's first call has lowered what is left; another budget is still checked (WEB-1)", async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
+    const runId = '6e7f8091-a2b3-4c5d-9e0f-6a7b8c9d0e1f';
+    const budgetUsd = (await workspaceRemaining(d)).remainingUsd;
+    expect(await startRun(d, { intakeId, recipeId: 'c4', budgetUsd, runId })).toEqual({ runId });
+    await d.services.store.spendBook.admit({ opId: 'first-call', owner: 'worker', leaseMs: 60_000, workspaceId: d.workspaceId, runId, purpose: 'build:prose', kind: 'completion', provider: 'google', model: 'gemini-3-pro', reserveUsd: 0.5, paid: true, caps: { workspaceUsd: 1000 } });
+    // The answer was lost; the same Start again is the same run, though what is left is now below its budget.
+    expect(await startRun(d, { intakeId, recipeId: 'c4', budgetUsd, runId })).toEqual({ runId });
+    expect((await d.services.store.listRuns(d.workspaceId)).filter((r) => r.id === runId)).toHaveLength(1);
+    // A resend under that id with another budget is checked as a new Start is.
+    await expect(startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 500, runId })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/workspace budget/) });
+  });
+
+  it('leaves a damaged artifact out of what the Run screen polls, as a missing one is, and shows the rest (WEB-4)', async () => {
+    const d = await deps();
+    const good = await d.services.store.artifacts.putText('# Good', 'text/markdown');
+    const bad = await d.services.store.artifacts.putText('# Bad!', 'text/markdown');
+    const hex = bad.id.slice('sha256:'.length);
+    // The same size, other bytes: the start-up size check does not see it, and has() still finds the file.
+    writeFileSync(path.join(current!.dataDir, 'artifacts', 'sha256', hex.slice(0, 2), hex.slice(2)), '# Bad?');
+    expect(Object.keys(await artifactInfo(d.services, [good.id, bad.id]))).toEqual([good.id]);
+  });
+
+  // DATA-1 (check of 2026-10-28): the price beside an open question read the work unguarded, so the damaged file that
+  // artifactInfo leaves out failed every poll and the Run page while a question that commits money was open.
+  it('prices an open question beside a damaged artifact, leaving that artifact out, and the Run screen still loads (DATA-1)', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
+    const { runId } = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 });
+    const bad = await d.services.store.artifacts.putText('# Bad!', 'text/markdown');
+    const hex = bad.id.slice('sha256:'.length);
+    writeFileSync(path.join(current!.dataDir, 'artifacts', 'sha256', hex.slice(0, 2), hex.slice(2)), '# Bad?');
+    const cp = await d.services.store.openCheckpoint({ id: `${runId}/cp-damaged`, runId, stepId: 'framings-if-wanted', kind: 'confirm', prompt: 'Run this step?', artifactIds: [bad.id] });
+    const asked = vi.fn(d.questionEstimates);
+    const data = await getRunData(d.services, runId, 0, (run, cps) => questionCosts({ ...d, questionEstimates: asked }, run, cps));
+    expect(data.questions?.[cp.id]).toMatchObject({ asks: 'optional', answer: 'Yes' });
+    // Sized without the damaged work, as if it were missing.
+    expect(asked).toHaveBeenCalledWith(expect.anything(), 'demo', { problem: { text: 'A memo' }, work: [] });
+    expect(data.artifacts[bad.id]).toBeUndefined();
   });
 
   it('resolves a question only within its own run, and passes validation messages through', async () => {
@@ -280,7 +355,7 @@ describe('route handler logic', PRODUCT_PATH, () => {
   });
 });
 
-describe('examples you admire (ADR-0071)', PRODUCT_PATH, () => {
+describe('examples you admire (ADR-0071)', () => {
   it('stores pasted text and images, and passes them to the run as inputs.refs', async () => {
     const d = await deps();
     const text = await addRef(d, { text: '  A memo I admire.  ' });
@@ -308,7 +383,7 @@ describe('examples you admire (ADR-0071)', PRODUCT_PATH, () => {
   });
 });
 
-describe('the artifact route', PRODUCT_PATH, () => {
+describe('the artifact route', () => {
   it('serves stored artifacts with their headers, as downloads on request, and refuses bad ids', async () => {
     const d = await deps();
     const page = await d.services.store.artifacts.putText('<!doctype html><title>x</title>', 'text/html');
@@ -388,7 +463,7 @@ describe('the artifact route', PRODUCT_PATH, () => {
   });
 });
 
-describe('model errors while recommending or composing (UX-2)', PRODUCT_PATH, () => {
+describe('model errors while recommending or composing (UX-2)', () => {
   const gatewayError = (code: GatewayErrorCode, scope?: 'workspace' | 'run') =>
     Object.assign(new GatewayError(code, `${code} from the provider`), scope ? { budget: { scope, capUsd: 5, spentUsd: 5, reservedUsd: 0, estimateUsd: 0.1, shortfallUsd: 0.1 } } : {});
 
@@ -442,7 +517,7 @@ describe('model errors while recommending or composing (UX-2)', PRODUCT_PATH, ()
   });
 });
 
-describe('Recommendation screen commands return everything they change (F14, ADR-0082)', PRODUCT_PATH, () => {
+describe('Recommendation screen commands return everything they change (F14, ADR-0082)', () => {
   const rateLimited = () => new GatewayError('rate-limited', 'rate-limited from the provider');
 
   it('Try again ({ ensure: true }) makes and stores the recommendation once, and says what is left in the workspace', async () => {
@@ -505,7 +580,7 @@ describe('Recommendation screen commands return everything they change (F14, ADR
   });
 });
 
-describe('exports carry their images (EXP-1)', PRODUCT_PATH, () => {
+describe('exports carry their images (EXP-1)', () => {
   it('inlines byway-served images into a downloaded page or Markdown file, so it works away from byway', async () => {
     const d = await deps();
     const png = await d.services.store.artifacts.put(Buffer.from(TINY_PNG_BASE64, 'base64'), 'image/png');
@@ -535,7 +610,7 @@ describe('exports carry their images (EXP-1)', PRODUCT_PATH, () => {
   });
 });
 
-describe('Settings: checking the spend ledger on demand (ADR-0091)', PRODUCT_PATH, () => {
+describe('Settings: checking the spend ledger on demand (ADR-0091)', () => {
   it('says the ledger checks out, then names the damage once a line is broken', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
@@ -547,7 +622,7 @@ describe('Settings: checking the spend ledger on demand (ADR-0091)', PRODUCT_PAT
   });
 });
 
-describe('Settings: Spending records (F03, ADR-0095)', PRODUCT_PATH, () => {
+describe('Settings: Spending records (F03, ADR-0095)', () => {
   /** A call admitted and sent in the spend book whose answer never came: it may have been billed. */
   async function interruptedCall(d: Deps, usd: number): Promise<string> {
     const book = d.services.store.spendBook;
@@ -601,7 +676,7 @@ describe('Settings: Spending records (F03, ADR-0095)', PRODUCT_PATH, () => {
 
 // RS-5: the run shows Cancelled at once (ADR-0111), while a call byway does not cut off is still under way; its cost is
 // added to the run when it settles. What the Run screen polls says so, from the spend book, until none is left.
-describe('what the Run screen polls once its run has ended (ADR-0111)', PRODUCT_PATH, () => {
+describe('what the Run screen polls once its run has ended (ADR-0111)', () => {
   async function startedRun(d: Deps): Promise<string> {
     const { intakeId } = await createIntake(d, { text: 'Tighten my quarterly memo', recipeId: 'c4' });
     return (await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 })).runId;
@@ -671,7 +746,7 @@ describe('what the Run screen polls once its run has ended (ADR-0111)', PRODUCT_
   });
 });
 
-describe('the first recommendation is asked for once per intake (F03, ADR-0091)', PRODUCT_PATH, () => {
+describe('the first recommendation is asked for once per intake (F03, ADR-0091)', () => {
   const intakeCalls = () =>
     readFileSync(path.join(current!.dataDir, 'ledger.jsonl'), 'utf8')
       .trim()
@@ -726,5 +801,51 @@ describe('the first recommendation is asked for once per intake (F03, ADR-0091)'
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
     await Promise.all([currentRecommendation(d, one.intakeId), currentRecommendation(d, two.intakeId)]);
     expect(recommend).toHaveBeenCalledTimes(2);
+  });
+});
+
+// B-070: a compose or a re-route runs inside its web request, with no bound of byway's own but the model's wait, and
+// goes on when the request ends. A press again after a reload, or a second tab, joins the call under way instead of
+// buying a second one beside it.
+describe('"Build my own" and a re-route asked again while under way join the call (B-070)', () => {
+  it('two composes of one intake at once share one advisor call; once it settles, the next is a new one', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
+    const compose = vi.spyOn(d.services.advisor, 'compose');
+    const [a, b] = await Promise.all([composeCommand(d, intakeId), composeCommand(d, intakeId)]);
+    expect(a.composed).toEqual(b.composed);
+    expect(compose).toHaveBeenCalledTimes(1);
+    // "Try building again" once nothing is under way composes again, as it always has.
+    await composeCommand(d, intakeId);
+    expect(compose).toHaveBeenCalledTimes(2);
+    // Another intake's compose is its own.
+    const other = await createIntake(d, { text: 'Tighten my quarterly memo' });
+    await Promise.all([composeCommand(d, intakeId), composeCommand(d, other.intakeId)]);
+    expect(compose).toHaveBeenCalledTimes(4);
+  });
+
+  it('two re-routes of one intake with the same answers share one call; other answers are their own', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
+    const { answers } = await currentRecommendation(d, intakeId);
+    const flipped = answers.map((a, i) => (i === 0 ? { ...a, answer: !a.answer, confidence: 1, setBy: 'user' as const } : a));
+    const recommend = vi.spyOn(d.services.advisor, 'recommend');
+    const [a, b] = await Promise.all([recommendCommand(d, intakeId, { answers: flipped }), recommendCommand(d, intakeId, { answers: flipped })]);
+    expect(a.recommendation).toEqual(b.recommendation);
+    expect(recommend).toHaveBeenCalledTimes(1);
+    await Promise.all([recommendCommand(d, intakeId, { answers: flipped }), recommendCommand(d, intakeId, { answers })]);
+    expect(recommend).toHaveBeenCalledTimes(3);
+  });
+
+  it('shares a failure with the presses that joined it, keeps nothing, and the next press tries again', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo' });
+    const compose = vi.spyOn(d.services.advisor, 'compose');
+    compose.mockRejectedValueOnce(new GatewayError('rate-limited', 'rate-limited from the provider'));
+    const both = await Promise.allSettled([composeCommand(d, intakeId), composeCommand(d, intakeId)]);
+    expect(both.map((r) => r.status)).toEqual(['rejected', 'rejected']);
+    expect(compose).toHaveBeenCalledTimes(1);
+    expect((await composeCommand(d, intakeId)).composed).toBeTruthy();
+    expect(compose).toHaveBeenCalledTimes(2);
   });
 });

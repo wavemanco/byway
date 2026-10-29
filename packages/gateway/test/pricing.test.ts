@@ -203,11 +203,11 @@ describe('the price rows, as the providers documented them on 2026-10-18', () =>
     ['anthropic', 'claude-opus-4-8', tokens(5, 25, { cacheReadPerMTok: 0.5, cacheWritePerMTok: 6.25 })],
     ['openai', 'gpt-6-astra', tokens(10, 50, { cacheReadPerMTok: 1, cacheWritePerMTok: 12.5 })],
     ['openai', 'gpt-6.1-sol', tokens(2, 10, { cacheReadPerMTok: 0.1, cacheWritePerMTok: 2.5 })],
-    ['openai', 'gpt-6-luna', tokens(0.1, 0.5, { cacheWritePerMTok: 0.125 })],
+    ['openai', 'gpt-6-luna', tokens(0.1, 0.5, { cacheReadPerMTok: 0.01, cacheWritePerMTok: 0.125 })],
     ['openai', 'gpt-image-2.5-flare', tokens(5, 30)],
     ['openai', 'gpt-image-2.5-sunburst', tokens(5, 30)],
-    ['google', 'gemini-3.1-pro-preview', tokens(2, 12)],
-    ['google', 'gemini-3.8-flash', tokens(0.75, 3.75)],
+    ['google', 'gemini-3.1-pro-preview', tokens(2, 12, { cacheReadPerMTok: 0.2 })],
+    ['google', 'gemini-3.8-flash', tokens(0.75, 3.75, { cacheReadPerMTok: 0.075 })],
     ['google', 'gemini-nano-banana-2.1', { ...tokens(1.5, 7.5), perImageUsd: 0.0336 }],
     ['openrouter', 'anthropic/claude-fable-5.1', tokens(10, 50)],
     ['openrouter', 'anthropic/claude-opus-5.5', tokens(4, 20)],
@@ -327,10 +327,9 @@ describe('long-context tiers: each call is priced at the tier its prompt falls i
   it("records the tiers as the pages give them: OpenAI's cached input and 30-minute writes too, where the short row records them", () => {
     expect(at('openai', 'gpt-6-astra').longContext).toEqual({ aboveInputTokens: 272_000, inputPerMTok: 20, outputPerMTok: 75, cacheReadPerMTok: 2, cacheWritePerMTok: 25 });
     expect(at('openai', 'gpt-6.1-sol').longContext).toEqual({ aboveInputTokens: 272_000, inputPerMTok: 4, outputPerMTok: 15, cacheReadPerMTok: 0.2, cacheWritePerMTok: 5 });
-    // gpt-6-luna's cached input is not recorded at either tier (its row's trigger); its write rate is.
-    expect(at('openai', 'gpt-6-luna').longContext).toEqual({ aboveInputTokens: 272_000, inputPerMTok: 0.2, outputPerMTok: 0.75, cacheWritePerMTok: 0.25 });
+    expect(at('openai', 'gpt-6-luna').longContext).toEqual({ aboveInputTokens: 272_000, inputPerMTok: 0.2, outputPerMTok: 0.75, cacheReadPerMTok: 0.02, cacheWritePerMTok: 0.25 });
     // Google's context-cache rates are not recorded at either tier (the row's trigger).
-    expect(at('google', 'gemini-3.1-pro-preview').longContext).toEqual({ aboveInputTokens: 200_000, inputPerMTok: 4, outputPerMTok: 18 });
+    expect(at('google', 'gemini-3.1-pro-preview').longContext).toEqual({ aboveInputTokens: 200_000, inputPerMTok: 4, outputPerMTok: 18, cacheReadPerMTok: 0.4 });
   });
 
   it("counts the whole prompt, its cached tokens too, and charges OpenAI's cache reads and writes at the tier's rates", () => {
@@ -341,8 +340,14 @@ describe('long-context tiers: each call is priced at the tier its prompt falls i
     expect(tokenCost(astra, { inputTokens: 300_000, cacheReadTokens: 100_000, cacheWriteTokens: 150_000, outputTokens: 1000 })).toBeCloseTo(usd(50_000, 20) + usd(100_000, 2) + usd(150_000, 25) + usd(1000, 75), 9);
   });
 
-  it("charges a cache hit above Google's threshold at the long input rate, never at a short-context rate", () => {
-    expect(tokenCost(at('google', 'gemini-3.1-pro-preview'), { inputTokens: 250_000, cacheReadTokens: 100_000, outputTokens: 0 })).toBeCloseTo(usd(250_000, 4), 9);
+  it("charges a Google cache hit at the page's context caching rate of its tier, never at a short-context rate (B-030)", () => {
+    const pro = at('google', 'gemini-3.1-pro-preview');
+    // 150,000 uncached and 100,000 read from the cache: 250,000 in the prompt, so the long tier ($4, cache $0.40).
+    expect(tokenCost(pro, { inputTokens: 250_000, cacheReadTokens: 100_000, outputTokens: 0 })).toBeCloseTo(usd(150_000, 4) + usd(100_000, 0.4), 9);
+    // Under the threshold: $2, cache $0.20.
+    expect(tokenCost(pro, { inputTokens: 150_000, cacheReadTokens: 100_000, outputTokens: 0 })).toBeCloseTo(usd(50_000, 2) + usd(100_000, 0.2), 9);
+    // gemini-3.8-flash: $0.075 through 2026-12-31, then $0.15.
+    expect(priceFor(PRICES, 'google', 'gemini-3.8-flash', new Date('2027-01-02T00:00:00Z'))!.cacheReadPerMTok).toBe(0.15);
   });
 
   it('gives no other row a tier: Claude models (direct and through OpenRouter) bill a 900k-token prompt at the per-token rate of a 9k one, and so do Gemini 3.8 Flash and the image and video models', () => {

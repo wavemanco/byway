@@ -32,7 +32,7 @@ import { guarded } from './failures.ts';
 import { finishHumanStep, openCheckpoint, recordResolution } from './human.ts';
 import { beginRun, cancelRun, emitEvents, failRun, finishRun, passStep, raiseBudget, rerank, setRunStatus, skipStep } from './lifecycle.ts';
 import { guardGateway, guardPages, runHasEnded, settleLateCost, startInvocation, stopSignal, STOPPED_STEP } from './liveness.ts';
-import { memoGateway, memoScopeOf } from './memo.ts';
+import { memoGateway } from './memo.ts';
 import { modelStep } from './model-step.ts';
 import { relayLink, relayWaits, storyboardShots } from './relay.ts';
 import { renderView } from './render.ts';
@@ -53,17 +53,18 @@ export function createActivities(deps: RunnerDeps): RunnerActivities {
     async (input: I): Promise<O> => {
       const invocation = startInvocation();
       const gateway = guardGateway(deps.gateway, deps.store, invocation.signal);
-      const memo = memoScopeOf(input);
+      // The run and step call the input names, when it is a step's: its memo scope, its declines and its sandbox note.
+      const step = stepCallOf(input);
+      const memo = step && { runId: step.runId, key: step.call.key };
       // The run is ending (ADR-0111): set beside `until` and `cancel`, after the request is hashed, so memo keys stay.
       const stop = stopSignal(invocation.signal, () => runHasEnded(deps.store, memo?.runId ?? runIdOf(input)), invocation.done);
       const operation = { until: invocation.done, ...(invocation.signal ? { cancel: invocation.signal } : {}), ...(stop ? { stop } : {}) };
       const memoized = memo ? memoGateway(gateway, deps.store, memo, { operation }) : gateway;
-      // Each decline a step's calls meet is written to the run's events (ADR-0102), outside the memo: see declines.ts.
-      const step = stepCallOf(input);
       // A step whose pages are drawn with the OS sandbox off says so (ADR-0105): see sandbox-note.ts.
-      const watch = deps.pages ? watchSandbox(guardPages(deps.pages, invocation.signal), deps.store, input) : undefined;
+      const watch = deps.pages ? watchSandbox(guardPages(deps.pages, invocation.signal), deps.store, step) : undefined;
       const scoped: RunnerDeps = {
         ...deps,
+        // Each decline a step's calls meet is written to the run's events (ADR-0102), outside the memo: see declines.ts.
         gateway: step ? logDeclines(memoized, deps.store, step) : memoized,
         ...(watch ? { pages: watch.pages } : {}),
         ...(invocation.signal ? { signal: invocation.signal } : {}),

@@ -1,4 +1,4 @@
-import type { ImageRequest, MediaType, ProviderId, SpendContext, Tier, Usage } from '@byway/contracts';
+import type { ImageRequest, MediaType, ProviderId, ProviderJobRole, SpendContext, Tier, Usage } from '@byway/contracts';
 import type { TokenBreakdown } from '../prices.ts';
 
 /** An image part with its bytes loaded from the artifact store. */
@@ -121,31 +121,35 @@ export interface ProviderVideoRequest {
   context: CallContext;
   /**
    * Runs one free round trip (an upload, a status poll, a result, a download) under the gateway's retry policy and
-   * error mapping. A video call makes several, and only the failed one is repeated.
+   * error mapping. A video call makes several, and only the failed one is repeated. `done`: the round trip reads a job
+   * the provider has reported done (its result, or what that result points to), so it is retried as far as the run's
+   * stop allows, even after Temporal cancels the attempt (SpendContext.operation.cancel): a read sends nothing again.
    */
-  attempt<T>(fn: () => Promise<T>): Promise<T>;
+  attempt<T>(fn: () => Promise<T>, opts?: { done?: boolean }): Promise<T>;
   /**
    * Runs one billable job submission (ADR-0091): retried only after failures that were certainly not billed (billingOf
    * 'none', such as fal's own 503 body). After one that may have been, it is never sent again: the call fails, not
-   * retryable, saying the provider may have accepted `what` ("the clip").
+   * retryable, saying the provider may have accepted `what` ("the clip"). When marking the call sent finds another
+   * attempt's jobs the provider had already accepted, nothing is submitted and the error carries those jobs
+   * (takenOverOf): an adapter that polls jobs by id may poll them instead, as it polls `resume`'s (B-071).
    */
   submit<T>(fn: () => Promise<T>, what: string): Promise<T>;
   /**
    * A queue job the provider accepted, by role and its request id (ADR-0095): recorded in the spend book before the job
    * is polled, so a call interrupted from here on is listed with the ids to look up in the provider's dashboard.
    */
-  accepted?(role: 'generation' | 'extract', requestId: string): Promise<void>;
+  accepted?(role: ProviderJobRole, requestId: string): Promise<void>;
   /**
    * Queue jobs an earlier attempt of this call submitted and the provider accepted (stage 3, ADR-0099): the adapter polls
    * them by these ids and submits only the jobs not listed here, so a retried relay link never buys its clip twice.
    */
-  resume?: Partial<Record<'generation' | 'extract', string>>;
+  resume?: Partial<Record<ProviderJobRole, string>>;
   /**
    * When each of the `resume` jobs was accepted, in milliseconds since the epoch, as the spend book recorded it: a resumed
    * clip's wait keeps counting from fal's acceptance. A job without one (accepted before the book kept the time) counts
    * from the resume.
    */
-  acceptedAt?: Partial<Record<'generation' | 'extract', number>>;
+  acceptedAt?: Partial<Record<ProviderJobRole, number>>;
   /**
    * The clip's wait (the video model's, chosen in Settings or read by a relay step for it; the gateway's waitMs): how
    * long byway waits for the clip from fal's acceptance before it cancels the job (the waits design of 2026-10-22,
@@ -166,6 +170,8 @@ export interface ProviderVideo {
   clip?: MediaBytes;
   /** Its last frame, the next relay link's anchor; absent only when `failure` is set. */
   lastFrame?: MediaBytes;
+  /** A frame from its middle, for the shot check (F10 (a)): best effort, absent when it could not be taken. */
+  middleFrame?: MediaBytes;
   /**
    * Set when the clip was generated (and billed) but a later round trip failed. The gateway keeps what arrived,
    * ledgers the spend and then raises this error. Failures before anything is billed are thrown instead.
@@ -190,8 +196,8 @@ export interface ProviderAdapter {
   /** The seconds a video model makes (and bills) for a requested length; models offer only some lengths. */
   videoSeconds?(model: string, requestedSec: number): number;
   /**
-   * Helper endpoints billed per second that every video call also uses (fal.ai's last-frame extraction), with an upper
-   * bound on their seconds. The gateway prices them from the price table, in the estimate and in the ledger.
+   * Helper endpoints billed per second that every video call also uses (fal.ai's last- and middle-frame extractions),
+   * with an upper bound on their seconds. The gateway prices them from the price table, in the estimate and in the ledger.
    */
   readonly videoExtras?: readonly { model: string; seconds: number }[];
   /**

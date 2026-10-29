@@ -147,6 +147,8 @@ export const FINAL_CHOICE_OPTIONS = [
 export const STOPPED_AT_CAP = 'You stopped the run at the last round.';
 export const NOT_CONVERGING_PROMPT = 'The outside critique is not improving the work. Keep going anyway?';
 export const GATE_FAILED_PROMPT = 'It did not pass the final check, even after another try. Use it anyway?';
+/** A gate with no retry: no other try ran, so the question does not say one did. */
+export const GATE_FAILED_NO_RETRY_PROMPT = 'It did not pass the final check. Use it anyway?';
 export const GATE_RETRY_NOTE = 'It did not pass the final check, so the earlier stage runs again with the same brief.';
 export const budgetPrompt = (amountUsd: number, scope: 'run' | 'workspace'): string =>
   scope === 'workspace' ? `Raise the workspace budget by $${amountUsd}?` : `Raise the budget by $${amountUsd}?`;

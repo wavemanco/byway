@@ -316,8 +316,13 @@ describe('a call answered whole waits its model’s wait in all, and is not sent
       );
       await started(0);
       await vi.advanceTimersByTimeAsync(15 * MINUTE);
-      // Its files are written on the real event loop (setImmediate is not faked).
-      for (let i = 0; i < 20_000 && !over; i++) await new Promise<void>((resolve) => setImmediate(resolve));
+      // Its files are written on the real event loop (setImmediate is not faked), and a lock or a rename Windows answers
+      // with a transient error is tried again on a timer, so the clock moves on a little at each turn until the call is
+      // over. No count of turns bounds it: under load the files take as long as they take (backlog row B-122).
+      while (!over) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        await vi.advanceTimersByTimeAsync(100);
+      }
       // Sent again: the first send aborted at the wait, the second answered.
       expect(seen.map((x) => x.signal?.aborted)).toEqual([true, false]);
       expect((await result).costUsd).toBeGreaterThan(0);

@@ -10,12 +10,15 @@ import { createRunnerClient } from './client.ts';
 
 export { createRunnerClient, ResolutionRejectedError, RunStartConflictError, RunStartInvalidError, titleOf, type RunnerClientOptions } from './client.ts';
 export { storeCaps } from './caps.ts';
-export { ENGINE_DOWN_AT_START, isTransportFailure } from './start-failure.ts';
+// The web app reads an engine call's failure with these (apps/web/src/services/engine-runner.ts).
+export { isTimeout, isTransportFailure } from './start-failure.ts';
 export { RUN_WORKFLOW, workflowIdFor } from './types.ts';
 // reconcileLostRuns is client-safe too: the e2e suite runs the engine's lost-run pass itself, to check that the runs it
 // seeds outlast it (apps/web/e2e/seed.ts).
 export { LOST_RUN_MESSAGE, reconcileLostRuns } from './lost-runs.ts';
 export { OLDER_VERSION_MESSAGE } from './versioning.ts';
+// The words of the questions whose figure the web prices by the asking node's id, beside a budget question on that id.
+export { BEST_SO_FAR_PROMPT, GATE_FAILED_NO_RETRY_PROMPT, GATE_FAILED_PROMPT, NOT_CONVERGING_PROMPT } from './workflow/wording.ts';
 
 export interface ConnectedRunner {
   runner: Runner;

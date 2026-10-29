@@ -12,7 +12,7 @@ export { COMPOSE_PROMPT, REPAIR_PROMPT, MAX_REPAIRS, checkAnswer, composeRecipe,
 export { catalogPrompts, checkComposedProfile, COMPOSED_RULES, writersAfter, type ProfileContext, type ProfileViolation } from './profile.ts';
 export { blocksListing, describeKnob, portSignatures } from './blocks.ts';
 export { diffFromNearest } from './diff.ts';
-export { COMPOSED_EXPLAINERS, nodeIds, presentComposed, stepLabel, type ComposedCopy } from './present.ts';
+export { COMPOSED_EXPLAINERS, nodeIds, presentComposed, stepLabel, type ComposedCopy, type Media } from './present.ts';
 export { COMPOSED_SUMMARY, isComposed, labelFor, STUDY_REGISTRY, UNTESTED_SUMMARY, type StudyEntry } from './registry.ts';
 export {
   ARTIFACT_TOKENS,
