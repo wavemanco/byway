@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGateway, type GatewayOptions, type ModelGateway } from '../src/gateway.ts';
 import { MemorySpendBook } from '../src/memory-book.ts';
 import { encodePng } from '../src/mock/png.ts';
-import { FAL_EXTRACT_FRAME, FAL_START_TIMEOUT_HEADERS, falStartTimeoutSeconds, FRAME_GRACE_MS, RESULT_LOOK_MS, submitJob, type FalCancel, type FalClientLike } from '../src/providers/fal.ts';
+import { FAL_EXTRACT_FRAME, FAL_START_TIMEOUT_HEADERS, falStartTimeoutSeconds, FRAME_GRACE_MS, RESULT_LOOK_MS, STOPPED, submitJob, untilEnded, WAITED, type FalCancel, type FalClientLike } from '../src/providers/fal.ts';
 import { fakeFetch, MemoryArtifacts } from './fakes.ts';
 
 const KEYS = { FAL_KEY: '0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6:00112233445566778899aabbccddeeff' };
@@ -339,6 +339,8 @@ describe('a fal clip waits its video model’s wait from fal’s acceptance, the
     // Over with the fake clock where it was: the stop ended the look, not its bound.
     await untilSeen(() => over);
     expect(Date.now()).toBe(T0 + 30 * MINUTE);
+    // The look's bound ended with it (seenDone's bound.end): no timer of the call is left waiting to fire (B-073 (7)).
+    expect(vi.getTimerCount()).toBe(0);
     expect(await err).toMatchObject({ billing: 'maybe', message: lateClip(BALANCED_VIDEO, 'req-1', 30, failedCancel, true), waited: { minutes: 30, how: 'clip', cancel: failedCancel } });
     expect(asked(fal)).toEqual(['cancel req-1', 'status req-1']);
     expect(fal.submitted.map((s) => s.endpoint)).toEqual([BALANCED_VIDEO]);
@@ -504,6 +506,16 @@ describe('a resumed clip keeps its clock: its wait counts from when fal accepted
     expect(e).toMatchObject({ billing: 'maybe', cutOff: true });
     expect(e).not.toHaveProperty('waited');
     expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ reason: 'interrupted', providerJobs: { generation: 'req-earlier' } })]);
+  });
+});
+
+// B-073 (5): which of the two ended a wait decides only the reason Spending records give (waited or stopped), so the order
+// is pinned here, where it is decided.
+describe('a wait that its stop and its deadline have both already ended', () => {
+  it('is a stop: the stop is looked at first', async () => {
+    const never = new Promise<never>(() => undefined);
+    expect(await untilEnded(never, AbortSignal.abort(), AbortSignal.abort())).toBe(STOPPED);
+    expect(await untilEnded(never, new AbortController().signal, AbortSignal.abort())).toBe(WAITED);
   });
 });
 
@@ -675,6 +687,8 @@ describe('a stopped clip fal reported done, whose result fal answers with a fail
   const notFals = {
     'a lost connection (no status)': () => Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) }),
     'a 500 with no body of fal’s (a proxy’s page)': () => new ApiError({ message: 'HTTP 500: Internal Server Error', status: 500 }),
+    // fal's body is its JSON object; a body of text is not its word on the job (B-073 (6): falFailure reads its shape).
+    'a 500 whose body is text, not fal’s JSON object': () => new ApiError({ message: 'HTTP 500: Internal Server Error', status: 500, body: '<html>Bad gateway</html>' }),
   };
   const routes = {
     'the status said done, then a stop came while its result was read': 'read',

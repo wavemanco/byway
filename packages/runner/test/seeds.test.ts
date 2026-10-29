@@ -66,6 +66,10 @@ describe("a SEED step's string is kept in the run's seed range", () => {
     expect(await runSeeds(b.store, other.runId)).toEqual([`seed-3-${'x'.repeat(40)}`]);
     // The step's other memos (its answer, here) are not in the range.
     expect(await b.store.getMemo(run.runId, seedMemoKey(callOf(run, 'spark')))).toBe(`seed-1-${'x'.repeat(40)}`);
+    // The range is "seed/" to the slash: a memo whose key only begins with "seed" is not a seed (B-073 (1)).
+    expect(seedMemoKey({ key: 'k' })).toBe('seed/k');
+    await b.store.setMemo(run.runId, 'seedling/k', 'not a seed');
+    expect(await runSeeds(b.store, run.runId)).toEqual([`seed-1-${'x'.repeat(40)}`, `seed-2-${'x'.repeat(40)}`]);
   });
 
   it("its written direction never holds another step's seed either: both are kept out of the note", async () => {
