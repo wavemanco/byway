@@ -34,7 +34,7 @@ test.beforeEach(async ({ context }) => {
   await context.addInitScript(() => {
     const w = window as unknown as { __messages?: string[] };
     w.__messages = [];
-    window.addEventListener('message', (e) => w.__messages?.push(String(e.data)));
+    window.addEventListener('message', (e) => w.__messages?.push(String(e.data))); // nosemgrep: javascript.browser.security.insufficient-postmessage-origin-validation.insufficient-postmessage-origin-validation -- a test's recorder: it only stores the text any frame posts, so the test can see a hostile page ran; nothing acts on it
   });
 });
 

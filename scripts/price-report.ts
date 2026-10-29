@@ -209,7 +209,7 @@ function dollars(text: string): number[] {
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** A name as a whole word: not inside a longer name ("Claude Opus 5" in "Claude Opus 5.5", an id with a suffix). */
-const nameRe = (name: string) => new RegExp(`(?<![\\w.-])${escapeRe(name)}(?![\\w-]|\\.\\d)`, 'g');
+const nameRe = (name: string) => new RegExp(`(?<![\\w.-])${escapeRe(name)}(?![\\w-]|\\.\\d)`, 'g'); // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- the name is a model name from prices.ts, escaped by escapeRe
 /**
  * Any model id, as OpenAI's and Google's pages name them: lowercase words joined by hyphens, one of them starting with a
  * digit ("gpt-6-astra", "gemini-3.8-flash", "imagen-4.0-generate").
@@ -287,7 +287,7 @@ export function pageScripts(html: string, pageUrl: string): string[] {
  */
 function scriptObjects(script: string, key: string): string[] {
   const bodies: string[] = [];
-  for (const m of script.matchAll(new RegExp(`(?<![\\w$])${escapeRe(key)}:\\{`, 'g'))) {
+  for (const m of script.matchAll(new RegExp(`(?<![\\w$])${escapeRe(key)}:\\{`, 'g'))) { // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- the key is the constant 'standard', escaped by escapeRe
     const open = m.index + m[0].length - 1;
     let depth = 0;
     for (let i = open; i < script.length; i++) {
@@ -311,7 +311,7 @@ function scriptObjects(script: string, key: string): string[] {
 export function scriptStatesTier(script: string, row: PriceRow): boolean {
   const tier = row.longContext;
   if (!tier) return true;
-  const literal = new RegExp(`"${escapeRe(row.model)}":\\{([^{}]*)\\}`, 'g');
+  const literal = new RegExp(`"${escapeRe(row.model)}":\\{([^{}]*)\\}`, 'g'); // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- the model name is from prices.ts, escaped by escapeRe
   for (const m of scriptObjects(script, 'standard').flatMap((body) => [...body.matchAll(literal)])) {
     const v = Object.fromEntries([...m[1]!.matchAll(/(\w+):(-?(?:\d+\.?\d*|\.\d+))/g)].map((p) => [p[1]!, Number(p[2])]));
     if (

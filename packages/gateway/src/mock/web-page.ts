@@ -97,7 +97,7 @@ export function renderPage(o: PageOptions): string {
       : `<section class="hero ${layout}"><div class="copy"><h1>${e(headline)}</h1><p class="lede">${e(promise)}</p><a class="button" href="#start">${e(cta)}</a></div><figure class="art" data-slot="hero">${art}</figure></section>`;
 
   const features = points
-    .map((pt, i) => `<li><span class="num">${String(i + 1).padStart(2, '0')}</span><h3>${e(pt.title)}</h3><p>${e(pt.body)}</p></li>`)
+    .map((pt, i) => `<li><span class="num">${String(i + 1).padStart(2, '0')}</span><h3>${e(pt.title)}</h3><p>${e(pt.body)}</p></li>`) // nosemgrep: javascript.express.security.injection.raw-html-format.raw-html-format -- the demo mock's own page: both texts go through escapeHtml and the number is a padded index
     .join('');
   const steps = STEPS.map((s) => `<li>${e(s)}</li>`).join('');
 
@@ -194,7 +194,7 @@ export function integrateImages(html: string, images: { url: string; alt: string
   const fill = (slot: string, image: (typeof images)[number]): boolean => {
     const img = `<img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.alt)}">`;
     const before = out;
-    out = out.replace(new RegExp(`(<figure[^>]*data-slot="${escapeRegExp(slot)}"[^>]*>)[\\s\\S]*?(</figure>)`), (_m, open: string, close: string) => `${open}${img}${close}`);
+    out = out.replace(new RegExp(`(<figure[^>]*data-slot="${escapeRegExp(slot)}"[^>]*>)[\\s\\S]*?(</figure>)`), (_m, open: string, close: string) => `${open}${img}${close}`); // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- the slot name goes through escapeRegExp, which escapes every metacharacter
     return out !== before;
   };
   const slotted = images.some((i) => i.slot);

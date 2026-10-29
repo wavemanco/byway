@@ -80,7 +80,7 @@ export function lastFenced(text: string, langs: readonly string[]): string | und
 /** Text inside `<tag>…</tag>`, for the first tag present. */
 export function tagged(text: string, tags: readonly string[]): string | undefined {
   for (const tag of tags) {
-    const m = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'i').exec(text);
+    const m = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'i').exec(text); // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- every caller passes constant lowercase tag names ('problem', 'questions', ...), never text from a person or a page
     if (m?.[1]?.trim()) return m[1].trim();
   }
   return undefined;
@@ -89,7 +89,7 @@ export function tagged(text: string, tags: readonly string[]): string | undefine
 /** Text after a `Label:` line, up to the next blank line. */
 export function labelled(text: string, labels: readonly string[]): string | undefined {
   for (const label of labels) {
-    const m = new RegExp(`^\\s*(?:#+\\s*)?${label}\\s*:\\s*(.*(?:\\n(?!\\s*\\n).*)*)`, 'im').exec(text);
+    const m = new RegExp(`^\\s*(?:#+\\s*)?${label}\\s*:\\s*(.*(?:\\n(?!\\s*\\n).*)*)`, 'im').exec(text); // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- the only caller passes constant words ('Problem', 'Brief', ...), never text from a person or a page
     if (m?.[1]?.trim()) return m[1].trim();
   }
   return undefined;

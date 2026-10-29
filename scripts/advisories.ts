@@ -157,7 +157,7 @@ export interface AdvisoryOptions {
 const runAudit = (root: string) => () => {
   // pnpm audit exits 1 when it finds an advisory, so its status says nothing here; its output is read.
   // One fixed command line, through the shell, which finds pnpm's .cmd on Windows too.
-  const run = spawnSync('pnpm audit --prod --json', { cwd: root, encoding: 'utf8', shell: true, timeout: 120_000, maxBuffer: 64 * 1024 * 1024 });
+  const run = spawnSync('pnpm audit --prod --json', { cwd: root, encoding: 'utf8', shell: true, timeout: 120_000, maxBuffer: 64 * 1024 * 1024 }); // nosemgrep: javascript.lang.security.audit.spawn-shell-true.spawn-shell-true -- the command line is one constant string with no argument from outside; root is only the working folder
   if (run.error) throw run.error;
   return run.stdout;
 };

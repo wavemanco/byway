@@ -190,7 +190,7 @@ function keptDecline(value: string): GatewayError | undefined {
   const w = memo?.waitedCall;
   if (typeof w === 'object' && w !== null) {
     const err = new GatewayError('provider-error', w.message, false, w.billed !== undefined ? { billed: w.billed } : {});
-    return Object.assign(err, { waited: w.waited }, w.billing !== undefined ? { billing: w.billing } : {});
+    return Object.assign(err, { waited: w.waited }, w.billing !== undefined ? { billing: w.billing } : {}); // nosemgrep: javascript.lang.security.insecure-object-assign.insecure-object-assign -- the sources are literals with the fixed keys waited and billing; no key comes from the parsed memo, so nothing can be polluted
   }
   const d = memo?.declinedCall;
   if (typeof d !== 'object' || d === null) return undefined;
