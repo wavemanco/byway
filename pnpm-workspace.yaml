@@ -1,3 +1,4 @@
+# nosemgrep: package_managers.pnpm.pnpm-missing-minimum-release-age.pnpm-minimum-release-age -- not set yet: at the owner's two weeks (20160) the frozen install fails on the gateway's own pin undici@7.30.1 (2026-10-15); pnpm 11's default 1440 applies meanwhile (ADR-0103, 2026-10-28)
 packages:
   - packages/*
   - apps/*
@@ -9,3 +10,7 @@ allowBuilds:
   protobufjs: false
   # Not needed: @temporalio/worker pulls in @swc/core, but workflows are compiled with esbuild instead (ADR-0070).
   "@swc/core": false
+# Supply chain (the static scan's pnpm rules; ADR-0103's Later note of 2026-10-28): pnpm refuses a package whose trust
+# evidence drops from an earlier release, and lets only a direct dependency come from a git or tarball source.
+trustPolicy: no-downgrade
+blockExoticSubdeps: true

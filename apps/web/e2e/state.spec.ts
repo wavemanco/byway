@@ -79,8 +79,8 @@ async function currentRowTwice(page: Page): Promise<void> {
  * open after it was answered (reloaded while it was open).
  */
 async function awayAndBack(page: Page, to: 'History' | 'Settings'): Promise<void> {
-  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: new RegExp(to) }).click();
-  await expect(page).toHaveURL(new RegExp(`/${to.toLowerCase()}$`));
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: new RegExp(to) }).click(); // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- `to` is typed 'History' | 'Settings', two constant words
+  await expect(page).toHaveURL(new RegExp(`/${to.toLowerCase()}$`)); // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- `to` is typed 'History' | 'Settings', two constant words
   await page.goBack();
   await expect(page).toHaveURL(/\/runs\/[0-9a-f-]+$/);
 }

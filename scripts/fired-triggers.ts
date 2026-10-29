@@ -52,7 +52,7 @@ export const touches = (file: string, named: string): boolean => {
 
 /** The rows whose Trigger names a file the diff touches or a code name on a line it changes, in the rows' order. */
 export function firedTriggers(rows: readonly Row[], diff: Diff): Fired[] {
-  const onChangedLine = (c: string) => new RegExp(`(?<![\\w$])${c.replace('.', '\\.')}(?![\\w$])`).test(diff.lines);
+  const onChangedLine = (c: string) => new RegExp(`(?<![\\w$])${c.replace('.', '\\.')}(?![\\w$])`).test(diff.lines); // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- c is a CODE match from byway's own records: letters, digits, '_' and at most one '.', which is escaped
   return rows.flatMap((row) => {
     const { paths, code } = namedIn(row.cells.Trigger);
     const matched = [...paths.filter((p) => diff.files.some((f) => touches(f, p))), ...code.filter(onChangedLine)];

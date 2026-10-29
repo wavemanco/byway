@@ -331,7 +331,7 @@ export function landNowOf(cell: string): { land: 'yes' | 'maybe' | 'no'; why: st
 const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
 const escapeRe = (s: string) => s.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
 /** The code as a whole word (not part of a longer code: F01 is not in F010 or X-F01). */
-const wordRe = (code: string) => new RegExp(`(?<![\\w-])${escapeRe(code)}(?![\\w-])`);
+const wordRe = (code: string) => new RegExp(`(?<![\\w-])${escapeRe(code)}(?![\\w-])`); // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- the code is an umbrella code from byway's own records, escaped by escapeRe
 const isDay = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`)) && new Date(`${s}T00:00:00Z`).toISOString().startsWith(s);
 
 /** Every way the two files depart from the backlog format, by rule. Empty when they keep it. */

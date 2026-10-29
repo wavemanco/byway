@@ -58,13 +58,13 @@ export function parseCritic(text: string, lineup?: readonly string[]): Parsed<Cr
  */
 export function sectionOf(critique: string, label: string): string | undefined {
   const lines = critique.split('\n');
-  const head = new RegExp(`^(#{1,6})[ \\t]+\\**${label}\\**(?![A-Za-z0-9])`);
+  const head = new RegExp(`^(#{1,6})[ \\t]+\\**${label}\\**(?![A-Za-z0-9])`); // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- the label is byway's own lineup letter (critic.ts labelOf: A, B, ...), never text from a person or a model
   const levels = lines.map((l) => head.exec(l.trim())?.[1]?.length ?? 0);
   const top = Math.min(...levels.filter((n) => n > 0));
   const at = levels.indexOf(top);
   if (at < 0) return undefined;
   const level = top;
-  const stop = new RegExp(`^(#{1,${level}}[ \\t]|Ranking:)`, 'i');
+  const stop = new RegExp(`^(#{1,${level}}[ \\t]|Ranking:)`, 'i'); // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- level is a number, the length of a 1 to 6 '#' match
   const end = lines.findIndex((l, i) => i > at && stop.test(plain(l)));
   const body = lines
     .slice(at + 1, end < 0 ? undefined : end)
