@@ -115,6 +115,14 @@ export function c2c5Scenarios(use: () => Harness): void {
       // shot's still, which the check used to be shown and no regeneration of this shot could remove (F10).
       h.responders['check:media'] = (ctx) => (ctx.images > 2 ? '- Garbled lettering on the box in one of the frames.' : 'No defects.');
       const script = 'Less time on the road.\nMore time on the trail.';
+      // The second D2 pass's machine writes give the work another tagline (the demo writes the same copy on both passes),
+      // so the second late VOICE can tell the field-by-field box from the whole-answer one (B-075).
+      const tagline = 'Built for the long way home.';
+      h.responders['fix:media'] = (ctx) => {
+        const board = JSON.parse([...ctx.prompt.matchAll(/```json\n([\s\S]*?)\n```/g)].at(-1)![1]!) as { tagline?: string };
+        if (ctx.iteration > 0) board.tagline = tagline;
+        return '```json\n' + JSON.stringify(board) + '\n```';
+      };
       try {
         const headline = 'Less road. More trail.';
         let lateAsked = 0;
@@ -142,6 +150,10 @@ export function c2c5Scenarios(use: () => Harness): void {
         expect(late).toHaveLength(2);
         expect(late[0]!.initialText).not.toContain(`Headline: ${headline}`);
         expect(late[1]!.initialText).toContain(`Headline: ${headline}`);
+        // Only the line you wrote is carried: the tagline you left as offered is the work's new one, which the whole first
+        // answer would have put back (VOICE-RETRY's box, field by field; the owner's "Only the lines you wrote", 2026-10-23).
+        expect(late[0]!.initialText).not.toContain(`Tagline: ${tagline}`);
+        expect(late[1]!.initialText).toContain(`Tagline: ${tagline}`);
         expect(late[1]!.prompt).toBe(late[0]!.prompt);
         const purposes = h.succeeded(run.id).map((c) => c.purpose);
         expect(purposes.filter((p) => p === 'seed:media')).toHaveLength(8);
@@ -189,9 +201,10 @@ export function c2c5Scenarios(use: () => Harness): void {
         expect(ofType(view, 'step-finished', 'matte').every((e) => e.data.skipped === true)).toBe(true);
 
         // The storyboard carries each shot's frame and the clips; your script survived every machine write.
-        const sb = (await json(view.run.outputArtifactId!)) as { storyboard: { shot: number; imageArtifactId?: string; clipArtifactId?: string }[]; voiceover: string; headline?: string };
+        const sb = (await json(view.run.outputArtifactId!)) as { storyboard: { shot: number; imageArtifactId?: string; clipArtifactId?: string }[]; voiceover: string; headline?: string; tagline?: string };
         expect(sb.voiceover).toBe(script);
         expect(sb.headline).toBe(headline);
+        expect(sb.tagline).toBe(tagline);
         expect(sb.storyboard.every((s) => s.imageArtifactId)).toBe(true);
         expect(sb.storyboard.filter((s) => s.clipArtifactId).map((s) => s.shot)).toEqual([1, 2, 3, 4, 5]);
         // Clip and frame artifacts are announced with their shot.
@@ -207,6 +220,7 @@ export function c2c5Scenarios(use: () => Harness): void {
       } finally {
         delete h.responders['critic:media'];
         delete h.responders['check:media'];
+        delete h.responders['fix:media'];
       }
     }, 180_000);
 
