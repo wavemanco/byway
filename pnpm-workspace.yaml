@@ -1,4 +1,3 @@
-# nosemgrep: package_managers.pnpm.pnpm-missing-minimum-release-age.pnpm-minimum-release-age -- not set yet: at the owner's two weeks (20160) the frozen install fails on the gateway's own pin undici@7.30.1 (2026-10-15); pnpm 11's default 1440 applies meanwhile (ADR-0103, 2026-10-28)
 packages:
   - packages/*
   - apps/*
@@ -14,3 +13,9 @@ allowBuilds:
 # evidence drops from an earlier release, and lets only a direct dependency come from a git or tarball source.
 trustPolicy: no-downgrade
 blockExoticSubdeps: true
+# A version is installed only once it is two weeks old (the owner's rule for any dependency). The one exception is the
+# gateway's undici pin, moved early as a security fix at the owner's answer in block 2 (SECURITY-1); it turns two weeks
+# old on 2026-10-29, and the exception can go then.
+minimumReleaseAge: 20160
+minimumReleaseAgeExclude:
+  - undici@7.30.1
