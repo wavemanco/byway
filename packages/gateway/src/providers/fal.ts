@@ -445,15 +445,15 @@ type JobRole = ProviderJobRole;
 const JOB_WHAT: Record<JobRole, string> = { generation: 'the clip', extract: 'the last-frame job', middle: 'the middle-frame job' };
 
 /** A wait that a stop ended first (untilEnded). */
-const STOPPED = Symbol('stopped');
+export const STOPPED = Symbol('stopped');
 /** A wait that its own deadline ended first: the clip's wait, or the frame's bound (untilEnded). */
-const WAITED = Symbol('waited');
+export const WAITED = Symbol('waited');
 
 /**
  * `work`, or STOPPED once `stop` aborts, or WAITED once `deadline` does (at once when one already has; the stop first).
- * What `work` does afterwards is ignored.
+ * What `work` does afterwards is ignored. Exported for its test.
  */
-async function untilEnded<T>(work: Promise<T>, stop: AbortSignal | undefined, deadline?: AbortSignal): Promise<T | typeof STOPPED | typeof WAITED> {
+export async function untilEnded<T>(work: Promise<T>, stop: AbortSignal | undefined, deadline?: AbortSignal): Promise<T | typeof STOPPED | typeof WAITED> {
   if (!stop && !deadline) return work;
   work.catch(() => undefined);
   if (stop?.aborted) return STOPPED;

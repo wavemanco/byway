@@ -88,12 +88,12 @@ describe('workBound', () => {
     expect(workBound(fanOut(seedStep('s'))).batchBytes).toBe(workBound(fanOut(build('s'))).batchBytes);
   });
 
+  // By what it would cost, not by the clock: walked whole, each level doubles the walk, and 2^40 walks never end, so a
+  // walk that lost its memo would hold this test until vitest's hang guard stopped it (backlog row B-120).
   it('walks a nest of 40 loops in linear time (memoized by place and ports)', () => {
     let body: Node = seq(render('r'), critic('c'), fix('f'));
     for (let i = 0; i < 40; i++) body = loop(`l${i}`, body, scoreGate(1, 'policy-best-snapshot'));
-    const started = performance.now();
     expect(workBound(recipe(['D2', seq(build('b'), body)])).stepRuns).toBeGreaterThan(0);
-    expect(performance.now() - started).toBeLessThan(500);
   });
 });
 

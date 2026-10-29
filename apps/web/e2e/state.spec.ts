@@ -26,6 +26,13 @@ async function staysTrue(page: Page, ms: number, ok: () => Promise<boolean>, mes
   }
 }
 
+/**
+ * The server's answer to an intercepted request, on a connection of its own. Playwright's request context keeps its
+ * connections alive, and one the server closed as it idled can be taken for the next request, which then dies with
+ * ECONNRESET (main's Windows run 40063127719, at the "Sent" test): asking with `connection: close` leaves none to reuse.
+ */
+const fetchOwn = (route: Route) => route.fetch({ headers: { ...route.request().headers(), connection: 'close' } });
+
 const draftKeys = (page: Page) => page.evaluate(() => Object.keys(window.sessionStorage).filter((k) => k.startsWith('byway.draft.')));
 
 /** Open an earlier step from the timeline, then go back to the question with the button. */
@@ -97,7 +104,7 @@ test.describe('the Run screen applies only the newest snapshot (F15)', () => {
         if (hold.want && !hold.caught) {
           hold.want = false;
           // The server's answer as of now, delivered later: an older snapshot arriving after newer ones.
-          hold.caught = { route, response: await route.fetch() };
+          hold.caught = { route, response: await fetchOwn(route) };
           return;
         }
         try {
@@ -141,7 +148,7 @@ test.describe('the Run screen applies only the newest snapshot (F15)', () => {
     // so losing the connection does not restart the timer: the retry is the tick already due, which can come a few
     // hundred milliseconds after the failure and, answered at once, clear the banner between two checks of toBeVisible.
     await page.route(`**/api/runs/${runId}/checkpoints/**`, async (route) => {
-      const response = await route.fetch();
+      const response = await fetchOwn(route);
       fail.next = true;
       await route.fulfill({ response });
     });
@@ -314,7 +321,7 @@ test.describe('your unsent answer belongs to its question (F06), continued', () 
         await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'e2e: the answer was refused once' }) });
         return;
       }
-      const response = await route.fetch();
+      const response = await fetchOwn(route);
       failRefreshes = true;
       await route.fulfill({ response });
     });
@@ -353,7 +360,8 @@ test.describe('your unsent answer belongs to its question (F06), continued', () 
 
     // Once byway answers again, the question settles and its draft is gone; nothing is shown as unsent.
     failRefreshes = false;
-    await expect(t.turn).toHaveCount(0, { timeout: 30_000 });
+    // However long the engine takes to settle it: the test's own limit stops a question that never settles.
+    await expect(t.turn).toHaveCount(0, { timeout: 0 });
     await expect(page.getByText(NOT_ANSWERING)).toHaveCount(0);
     await expect(page.getByRole('region', { name: 'Your unsent words' })).toHaveCount(0);
     await expect.poll(() => draftKeys(page)).not.toContain(`byway.draft.${t.id}`);

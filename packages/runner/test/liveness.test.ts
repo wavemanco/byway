@@ -425,7 +425,7 @@ describe('a step whose run is ending, in an activity (ADR-0111)', () => {
     expect(result).toMatchObject({ artifactId: expect.any(String) });
     expect(held.seen).toHaveLength(1);
     expect(held.seen[0]?.operation?.stop?.aborted).toBe(false);
-  }, 30_000);
+  });
 
   it('TIMED_OUT with the run going, then Cancel: the call the step kept is cut off once the store shows the run ended, and the step ends as cancelled (RS-2)', async () => {
     const held = heldUntilStopped();
@@ -449,7 +449,7 @@ describe('a step whose run is ending, in an activity (ADR-0111)', () => {
     expect((err as Error).message).toBe(STOPPED_STEP);
     expect(held.seen).toHaveLength(1);
     expect(held.seen[0]?.operation?.stop?.aborted).toBe(true);
-  }, 30_000);
+  });
 });
 
 /**

@@ -18,8 +18,6 @@ import { humanPrompt, PAGE_LINES_RULE } from '../src/workflow/wording.ts';
 import { UNREAD_BRIEF } from './helpers/briefs.ts';
 import { benchRun, voiceBench, type VoiceBench } from './helpers/voice-activity.ts';
 
-vi.setConfig({ testTimeout: 60_000 });
-
 const state = vi.hoisted(() => ({
   bench: undefined as unknown as { deps: unknown; store: { getCheckpoint(id: string): Promise<{ prompt: string; initialText?: string } | undefined>; resolveCheckpoint(r: unknown): Promise<unknown>; artifacts: { putText(t: string, m: string): Promise<{ id: string }> } } },
   control: undefined as unknown as { pending: Map<string, { resolution?: unknown }> },

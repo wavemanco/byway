@@ -108,7 +108,7 @@ function screenOf(page: unknown): ReactElement<{ prices?: PricesChecked }> {
   return view as ReactElement<{ prices?: PricesChecked }>;
 }
 
-describe("the gateway's day reaches both screens from the server", { timeout: 30_000 }, () => {
+describe("the gateway's day reaches both screens from the server", () => {
   it('the service host reads it from @byway/gateway', async () => {
     const { host } = await services();
     expect(host.pricesCheckedOn).toBe(PRICES_CHECKED);

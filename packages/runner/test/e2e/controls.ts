@@ -50,7 +50,7 @@ export function controlScenarios(use: () => Harness): void {
       // The fix saw the person's reaction.
       expect(h.prompts.calls.find((c) => c.id === 'product.test.revise')?.slots.taste).toBe('Warmer and plainer, please; avoid jargon.');
       expect(view.run.costUsd).toBeGreaterThan(0);
-    }, 60_000);
+    });
   });
 
   describe('starting a run', () => {
@@ -59,7 +59,7 @@ export function controlScenarios(use: () => Harness): void {
       const broken = { ...tiny, stages: [{ stage: 'D1', body: { op: 'step', id: 'x' } }] } as unknown as typeof tiny;
       await expect(h.start(broken)).rejects.toThrow();
       expect((await h.store.listRuns(h.workspaceId)).length).toBe(before);
-    }, 30_000);
+    });
   });
 
   describe('checkpoint answers', () => {

@@ -34,7 +34,6 @@ const ALLOWED: { file: string; element: string; reason: string }[] = [
 
 const WEB = path.join(REPO, 'apps', 'web');
 const rel = (file: string) => path.relative(REPO, file).replace(/\\/g, '/');
-const SCANS = { timeout: 30_000 };
 
 describe('the disabled scan', () => {
   it('finds the attribute on any intrinsic element, bare or with a value, across lines, and DOM writes', () => {
@@ -71,7 +70,7 @@ describe('the disabled scan', () => {
   });
 });
 
-describe('native disabled state in apps/web (R5)', SCANS, () => {
+describe('native disabled state in apps/web (R5)', () => {
   it('is used only where reviewed', () => {
     const files = [...filesUnder(path.join(WEB, 'src'), /\.(ts|tsx)$/), ...filesUnder(path.join(WEB, 'app'), /\.(ts|tsx)$/)];
     const found = files.flatMap((file) => disabledUses(readFileSync(file, 'utf8')).map((use) => ({ key: `${rel(file)} <${use.element}>`, at: `${rel(file)}:${use.line} ${use.text}` })));

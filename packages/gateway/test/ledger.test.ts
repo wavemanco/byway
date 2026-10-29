@@ -115,7 +115,6 @@ describe('Ledger', () => {
     expect(await ledger.verify()).toBe('line:2');
   });
 
-  // 24 appends contend for the lock file: about 0.1 s alone, but 5.1 s on a loaded machine, over vitest's 5 s default.
   it('keeps the chain intact under concurrent appends from one and from several instances', async () => {
     const a = new Ledger({ path });
     const b = new Ledger({ path });
@@ -124,7 +123,7 @@ describe('Ledger', () => {
     expect(entries.map((e) => e.seq)).toEqual(Array.from({ length: 24 }, (_, i) => i + 1));
     expect(await a.verify()).toBeNull();
     expect(await b.verify()).toBeNull();
-  }, 30_000);
+  });
 
   it('sees entries appended by another instance', async () => {
     const a = await seed(2);

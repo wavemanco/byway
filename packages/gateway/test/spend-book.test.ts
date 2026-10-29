@@ -14,7 +14,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { GatewayError, ledgerEntryProblem, type CompletionRequest, type SpendBook } from '@byway/contracts';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGateway, type GatewayOptions, type ModelGateway } from '../src/gateway.ts';
 import { Ledger, type LedgerDraft } from '../src/ledger.ts';
 import { MemorySpendBook } from '../src/memory-book.ts';
@@ -87,13 +87,25 @@ function heldAdapter() {
   return { adapter, calls: () => calls, release: () => waiting.splice(0).forEach((r) => r()), waiting: () => waiting.length };
 }
 
-const until = async (cond: () => boolean | Promise<boolean>, ms = 5000) => {
-  const end = Date.now() + ms;
-  while (!(await cond())) {
-    if (Date.now() > end) throw new Error('timed out waiting');
-    await new Promise((r) => setTimeout(r, 10));
-  }
+/** Resolves once `cond` holds, looking every 10 ms; no clock bounds it, and vitest's hang guard stops one that never does. */
+const until = async (cond: () => boolean | Promise<boolean>) => {
+  while (!(await cond())) await new Promise((r) => setTimeout(r, 10));
 };
+
+/**
+ * Each wait for the ledger's lock from here on, by the lock's limit (Ledger.withLock's lockTimeoutMs): how long a call
+ * waits on a held lock is read from what it waits for, not from the clock (backlog row B-120).
+ */
+function lockWaits(): number[] {
+  const waits: number[] = [];
+  const proto = Ledger.prototype as unknown as { withLock(fn: () => Promise<unknown>, lockTimeoutMs: number): Promise<unknown> };
+  const real = proto.withLock;
+  vi.spyOn(proto, 'withLock').mockImplementation(function (this: unknown, fn, lockTimeoutMs) {
+    waits.push(lockTimeoutMs);
+    return real.call(this, fn, lockTimeoutMs);
+  });
+  return waits;
+}
 
 const lines = (): Record<string, unknown>[] => (existsSync(ledgerPath) ? readFileSync(ledgerPath, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>) : []);
 
@@ -230,9 +242,13 @@ describe('the audit file is written from the book (the outbox)', () => {
     const { client } = fakeAnthropic();
     const g = gateway({ clients: { anthropic: client }, drainWaitMs: 200, renewEveryMs: 50 });
     writeFileSync(`${ledgerPath}.lock`, '');
-    const started = Date.now();
+    const waits = lockWaits();
     const res = await g.complete(ask());
-    expect(Date.now() - started).toBeLessThan(2000);
+    vi.restoreAllMocks();
+    // Back with the lock still held: the call waited for at most two drains, each for the lock no longer than drainWaitMs.
+    expect(waits.length).toBeGreaterThan(0);
+    expect(waits.length).toBeLessThanOrEqual(2);
+    expect(waits.every((ms) => ms === 200)).toBe(true);
     expect((await g.spend('ws')).spentUsd).toBeCloseTo(res.costUsd, 9);
     expect(lines()).toEqual([]);
     expect((await g.spendRecords('ws')).notInAuditFile).toBe(1);
@@ -246,13 +262,20 @@ describe('the audit file is written from the book (the outbox)', () => {
 
   it('many calls settling while the lock is held each wait for at most two drains, not for every other call’s', async () => {
     caps.workspace = 10;
-    const { client } = fakeAnthropic();
-    const g = gateway({ clients: { anthropic: client }, drainWaitMs: 150 });
+    const held = heldAdapter();
+    const g = gateway({ adapters: { anthropic: held.adapter }, drainWaitMs: 150 });
     writeFileSync(`${ledgerPath}.lock`, '');
-    const started = Date.now();
-    const results = await Promise.all(Array.from({ length: 8 }, () => g.complete(ask())));
-    // Eight drains one after another would take at least 8 × 150 ms.
-    expect(Date.now() - started).toBeLessThan(900);
+    const calls = Array.from({ length: 8 }, () => g.complete(ask()));
+    await until(() => held.waiting() === 8);
+    const waits = lockWaits();
+    held.release();
+    const results = await Promise.all(calls);
+    vi.restoreAllMocks();
+    // Settling together, they share the drain under way and the one waiting behind it: at most two waits for the lock in
+    // all, each no longer than drainWaitMs, where a drain per call would be eight one after another.
+    expect(waits.length).toBeGreaterThan(0);
+    expect(waits.length).toBeLessThanOrEqual(2);
+    expect(waits.every((ms) => ms === 150)).toBe(true);
     expect(new Set(results.map((r) => r.ledgerEntryId)).size).toBe(8);
     await import('node:fs').then((fs) => fs.rmSync(`${ledgerPath}.lock`));
     await g.close();
@@ -297,8 +320,6 @@ describe('an existing ledger (spend from before the book)', () => {
     expect((await book.ledgeredCalls()).length).toBe(3);
   });
 
-  // 20 locked appends, then two gateways reading at once: about 0.05 s alone, but 5.1 s on a loaded machine, over
-  // vitest's 5 s default.
   it('read by two gateways at the same time leaves one row per entry', async () => {
     const ledger = new Ledger({ path: ledgerPath });
     for (let i = 0; i < 20; i++) await ledger.append(legacy(0.01));
@@ -306,7 +327,7 @@ describe('an existing ledger (spend from before the book)', () => {
     await Promise.all([a.spend('ws'), b.spend('ws'), a.spend('ws'), b.spend('ws')]);
     expect((await a.spend('ws')).spentUsd).toBeCloseTo(0.2, 9);
     expect((await book.ledgeredCalls()).length).toBe(20);
-  }, 30_000);
+  });
 
   it('a line in the middle that cannot be read stops paid calls until acknowledged; demo calls go on', async () => {
     caps.workspace = 10;

@@ -2,7 +2,7 @@
  * VOICE writes the person's copy exactly, without a model (F07, ADR-0081), and keepsVoice holds it exactly against
  * later machine writes. Activities on their own, against a temp store and a scripted gateway that records every call.
  */
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Medium } from '@byway/contracts';
 import { AnswerRejected, StepError } from '../src/activities/failures.ts';
 import { finishHumanStep } from '../src/activities/human.ts';
@@ -15,9 +15,6 @@ import { INPUT_MEDIA_TYPE } from '../src/stored-inputs.ts';
 import type { StepSpec } from '../src/types.ts';
 import { benchRun, putWork, stepCall, storyboard, voiceAsked, voiceBench, VoiceQuestion, voiceStep, type VoiceBench } from './helpers/voice-activity.ts';
 
-// The runner's own Chromium: a page's VOICE is checked by the browser (ADR-0081). Each page question reads the page
-// in it twice and each page write three times, so a test with many questions takes seconds on a loaded machine.
-vi.setConfig({ testTimeout: 60_000 });
 const chromium = playwrightPages();
 afterAll(() => chromium.close(), 60_000);
 

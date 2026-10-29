@@ -50,21 +50,13 @@ async function deps(): Promise<Deps> {
   return { services, workspaceId: ws.id, profileId: 'demo', heldKeyIn: host.heldKeyIn, questionEstimates: host.questionEstimates, pricesCheckedOn: host.pricesCheckedOn, modelWaits: host.modelWaits };
 }
 
-/**
- * Every test here runs the real store, gateway and advisor on a fresh data directory, so it creates a database and
- * writes artifact files that are flushed to disk. Alone, a test takes about 0.1 s; with the machine busy (several suites,
- * their Chromium and Temporal servers) the compose test has run past vitest's 5 s default. The limit is realistic for
- * that, and still bounded.
- */
-const PRODUCT_PATH = { timeout: 30_000 };
-
 async function openQuestion(d: Deps, runId: string): Promise<CheckpointRecord> {
   const open = (await d.services.runner.view(runId)).checkpoints.find((c) => c.status === 'open');
   if (!open) throw new Error('no open question');
   return open;
 }
 
-describe('route handler logic', PRODUCT_PATH, () => {
+describe('route handler logic', () => {
   it('takes a problem from Start to a recommendation, re-routes on a flipped answer, keeps it, and starts the run', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
@@ -280,7 +272,7 @@ describe('route handler logic', PRODUCT_PATH, () => {
   });
 });
 
-describe('examples you admire (ADR-0071)', PRODUCT_PATH, () => {
+describe('examples you admire (ADR-0071)', () => {
   it('stores pasted text and images, and passes them to the run as inputs.refs', async () => {
     const d = await deps();
     const text = await addRef(d, { text: '  A memo I admire.  ' });
@@ -308,7 +300,7 @@ describe('examples you admire (ADR-0071)', PRODUCT_PATH, () => {
   });
 });
 
-describe('the artifact route', PRODUCT_PATH, () => {
+describe('the artifact route', () => {
   it('serves stored artifacts with their headers, as downloads on request, and refuses bad ids', async () => {
     const d = await deps();
     const page = await d.services.store.artifacts.putText('<!doctype html><title>x</title>', 'text/html');
@@ -388,7 +380,7 @@ describe('the artifact route', PRODUCT_PATH, () => {
   });
 });
 
-describe('model errors while recommending or composing (UX-2)', PRODUCT_PATH, () => {
+describe('model errors while recommending or composing (UX-2)', () => {
   const gatewayError = (code: GatewayErrorCode, scope?: 'workspace' | 'run') =>
     Object.assign(new GatewayError(code, `${code} from the provider`), scope ? { budget: { scope, capUsd: 5, spentUsd: 5, reservedUsd: 0, estimateUsd: 0.1, shortfallUsd: 0.1 } } : {});
 
@@ -442,7 +434,7 @@ describe('model errors while recommending or composing (UX-2)', PRODUCT_PATH, ()
   });
 });
 
-describe('Recommendation screen commands return everything they change (F14, ADR-0082)', PRODUCT_PATH, () => {
+describe('Recommendation screen commands return everything they change (F14, ADR-0082)', () => {
   const rateLimited = () => new GatewayError('rate-limited', 'rate-limited from the provider');
 
   it('Try again ({ ensure: true }) makes and stores the recommendation once, and says what is left in the workspace', async () => {
@@ -505,7 +497,7 @@ describe('Recommendation screen commands return everything they change (F14, ADR
   });
 });
 
-describe('exports carry their images (EXP-1)', PRODUCT_PATH, () => {
+describe('exports carry their images (EXP-1)', () => {
   it('inlines byway-served images into a downloaded page or Markdown file, so it works away from byway', async () => {
     const d = await deps();
     const png = await d.services.store.artifacts.put(Buffer.from(TINY_PNG_BASE64, 'base64'), 'image/png');
@@ -535,7 +527,7 @@ describe('exports carry their images (EXP-1)', PRODUCT_PATH, () => {
   });
 });
 
-describe('Settings: checking the spend ledger on demand (ADR-0091)', PRODUCT_PATH, () => {
+describe('Settings: checking the spend ledger on demand (ADR-0091)', () => {
   it('says the ledger checks out, then names the damage once a line is broken', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
@@ -547,7 +539,7 @@ describe('Settings: checking the spend ledger on demand (ADR-0091)', PRODUCT_PAT
   });
 });
 
-describe('Settings: Spending records (F03, ADR-0095)', PRODUCT_PATH, () => {
+describe('Settings: Spending records (F03, ADR-0095)', () => {
   /** A call admitted and sent in the spend book whose answer never came: it may have been billed. */
   async function interruptedCall(d: Deps, usd: number): Promise<string> {
     const book = d.services.store.spendBook;
@@ -601,7 +593,7 @@ describe('Settings: Spending records (F03, ADR-0095)', PRODUCT_PATH, () => {
 
 // RS-5: the run shows Cancelled at once (ADR-0111), while a call byway does not cut off is still under way; its cost is
 // added to the run when it settles. What the Run screen polls says so, from the spend book, until none is left.
-describe('what the Run screen polls once its run has ended (ADR-0111)', PRODUCT_PATH, () => {
+describe('what the Run screen polls once its run has ended (ADR-0111)', () => {
   async function startedRun(d: Deps): Promise<string> {
     const { intakeId } = await createIntake(d, { text: 'Tighten my quarterly memo', recipeId: 'c4' });
     return (await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 })).runId;
@@ -671,7 +663,7 @@ describe('what the Run screen polls once its run has ended (ADR-0111)', PRODUCT_
   });
 });
 
-describe('the first recommendation is asked for once per intake (F03, ADR-0091)', PRODUCT_PATH, () => {
+describe('the first recommendation is asked for once per intake (F03, ADR-0091)', () => {
   const intakeCalls = () =>
     readFileSync(path.join(current!.dataDir, 'ledger.jsonl'), 'utf8')
       .trim()

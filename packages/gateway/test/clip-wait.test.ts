@@ -6,8 +6,9 @@
  * job's id; already done: kept), and never submits it again. The job carries a start deadline below the wait, by clip
  * length, under both of fal's names for it; the last frame is bounded by the time left on its clip's wait plus 2 minutes.
  *
- * setTimeout, clearTimeout and Date are faked (the adapter measures from acceptance by the clock); nothing waits on the
- * real one.
+ * setTimeout, clearTimeout and Date are faked (the adapter measures from acceptance by the clock), and no wait here is
+ * bounded by the real one or by a count of turns of the event loop: a test waits for what it awaits, however long a
+ * loaded machine takes to write the gateway's files, and vitest's hang guard stops one that never comes.
  */
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -18,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGateway, type GatewayOptions, type ModelGateway } from '../src/gateway.ts';
 import { MemorySpendBook } from '../src/memory-book.ts';
 import { encodePng } from '../src/mock/png.ts';
-import { FAL_EXTRACT_FRAME, FAL_START_TIMEOUT_HEADERS, falStartTimeoutSeconds, FRAME_GRACE_MS, submitJob, type FalCancel, type FalClientLike } from '../src/providers/fal.ts';
+import { FAL_EXTRACT_FRAME, FAL_START_TIMEOUT_HEADERS, falStartTimeoutSeconds, FRAME_GRACE_MS, RESULT_LOOK_MS, STOPPED, submitJob, untilEnded, WAITED, type FalCancel, type FalClientLike } from '../src/providers/fal.ts';
 import { fakeFetch, MemoryArtifacts } from './fakes.ts';
 
 const KEYS = { FAL_KEY: '0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6:00112233445566778899aabbccddeeff' };
@@ -195,35 +196,33 @@ function clipFal(
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 /**
- * `p`, once it settles, with the fake clock moved on a tenth of a second at a time meanwhile (at most 200 seconds): what
- * follows a clip's answer (keeping it, writing its ledger entry under the ledger's lock) waits on files and timers.
+ * `p`, once it settles, with the fake clock moved on a tenth of a second at each real turn of the event loop meanwhile:
+ * what follows a clip's answer (keeping it, writing its ledger entry under the ledger's lock) waits on files, and on the
+ * ledger's timers when Windows answers a lock or a rename with a transient error. Nothing but its settling ends the wait:
+ * a count of turns ran out on main's Windows run 40076504268 while the files were still being written, and the clock,
+ * no longer moved, then held the call on a timer until the test timed out.
  */
 async function settled<T>(p: Promise<T>): Promise<T> {
   let done = false;
   const out = p.finally(() => (done = true));
-  for (let i = 0; i < 2000 && !done; i++) {
+  while (!done) {
     await turn();
     await vi.advanceTimersByTimeAsync(100);
   }
   return out;
 }
 
-/** Settles once `fal` has been polled `n` times in all, the fake clock left where it is. */
-async function polled(fal: { polls: unknown[] }, n: number): Promise<void> {
-  for (let i = 0; i < 20_000 && fal.polls.length < n; i++) await turn();
-  expect(fal.polls.length).toBeGreaterThanOrEqual(n);
-}
-
 /**
- * Settles once `seen` holds, by real turns of the event loop only, the fake clock left where it is. Real time, not a
- * count of turns, bounds the wait (performance.now is not faked): under a loaded gate the gateway's files take longer
- * than any fixed number of turns allows, and a `seen` that never comes still fails an assertion.
+ * Settles once `seen` holds, by real turns of the event loop only, the fake clock left where it is. Neither real time nor
+ * a count of turns bounds it: under a loaded gate the gateway's files take as long as they take, and a `seen` that never
+ * comes is stopped by vitest's hang guard.
  */
 async function untilSeen(seen: () => boolean): Promise<void> {
-  const realBound = performance.now() + 30_000;
-  while (!seen() && performance.now() < realBound) await turn();
-  expect(seen()).toBe(true);
+  while (!seen()) await turn();
 }
+
+/** Settles once `fal` has been polled `n` times in all, the fake clock left where it is. */
+const polled = (fal: { polls: unknown[] }, n: number): Promise<void> => untilSeen(() => fal.polls.length >= n);
 
 /**
  * What `fal` was asked, in order, its status polls left out: a poll that a wait ended may still be tried again by the
@@ -344,6 +343,8 @@ describe('a fal clip waits its video model’s wait from fal’s acceptance, the
     // Over with the fake clock where it was: the stop ended the look, not its bound.
     await untilSeen(() => over);
     expect(Date.now()).toBe(T0 + 30 * MINUTE);
+    // The look's bound ended with it (seenDone's bound.end): no timer of the call is left waiting to fire (B-073 (7)).
+    expect(vi.getTimerCount()).toBe(0);
     expect(await err).toMatchObject({ billing: 'maybe', message: lateClip(BALANCED_VIDEO, 'req-1', 30, failedCancel, true), waited: { minutes: 30, how: 'clip', cancel: failedCancel } });
     expect(asked(fal)).toEqual(['cancel req-1', 'status req-1']);
     expect(fal.submitted.map((s) => s.endpoint)).toEqual([BALANCED_VIDEO]);
@@ -466,7 +467,7 @@ describe('a resumed clip keeps its clock: its wait counts from when fal accepted
     const until = new AbortController();
     const err = failure(g.video(clipOf({ operation: { key, until: until.signal } })));
     // Cancelled with the clock where it was: nothing waited more.
-    for (let i = 0; i < 20_000 && fal.cancels.length === 0; i++) await turn();
+    await untilSeen(() => fal.cancels.length > 0);
     expect(fal.cancels).toEqual([{ endpoint: BALANCED_VIDEO, requestId: 'req-earlier', at: T0 + 45 * MINUTE }]);
     const e = await settled(err);
     expect(fal.log[0]).toBe('status req-earlier');
@@ -508,13 +509,23 @@ describe('a resumed clip keeps its clock: its wait counts from when fal accepted
     const until = new AbortController();
     const stop = new AbortController();
     const err = failure(g.video(clipOf({ operation: { key, until: until.signal, stop: stop.signal } })));
-    for (let i = 0; i < 20_000 && !fal.log.includes('status req-earlier'); i++) await turn();
+    await untilSeen(() => fal.log.includes('status req-earlier'));
     stop.abort();
     const e = await settled(err);
     expect(asked(fal)).toEqual(['status req-earlier', 'cancel req-earlier']);
     expect(e).toMatchObject({ billing: 'maybe', cutOff: true });
     expect(e).not.toHaveProperty('waited');
     expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ reason: 'interrupted', providerJobs: { generation: 'req-earlier' } })]);
+  });
+});
+
+// B-073 (5): which of the two ended a wait decides only the reason Spending records give (waited or stopped), so the order
+// is pinned here, where it is decided.
+describe('a wait that its stop and its deadline have both already ended', () => {
+  it('is a stop: the stop is looked at first', async () => {
+    const never = new Promise<never>(() => undefined);
+    expect(await untilEnded(never, AbortSignal.abort(), AbortSignal.abort())).toBe(STOPPED);
+    expect(await untilEnded(never, new AbortController().signal, AbortSignal.abort())).toBe(WAITED);
   });
 });
 
@@ -649,7 +660,7 @@ describe('a clip job fal dropped at its start deadline (504, timeout type "user"
     void call.finally(() => (over = true));
     await polled(fal, 1);
     await vi.advanceTimersByTimeAsync(MINUTE);
-    for (let i = 0; i < 20_000 && fal.log.filter((l) => l === 'result req-1').length < 2; i++) await turn();
+    await untilSeen(() => fal.log.filter((l) => l === 'result req-1').length >= 2);
     expect(fal.log.filter((l) => l === 'result req-1')).toHaveLength(2);
     await vi.advanceTimersByTimeAsync(LOOK_BOUND_MS - 1);
     for (let i = 0; i < 200; i++) await turn();
@@ -659,7 +670,7 @@ describe('a clip job fal dropped at its start deadline (504, timeout type "user"
     expect(e).toMatchObject({ code: 'byway-failure', billed: true, message: 'fal made the clip and billed it (its cost is recorded), but its run was ending, so byway did not download it.' });
     expect(fal.cancels).toEqual([]);
     expect(fetch.requested).toEqual([]);
-    // Over at its bound, not only after it (R-MONEY-3, Block 2's re-check: settled() moves the clock up to 200 seconds, so
+    // Over at its bound, not only after it (R-MONEY-3, Block 2's re-check: settled() moves the clock on until the call is over, so
     // a look of two minutes passed too). The gateway reads the clock as the adapter answers (the entry's latencyMs, from
     // the call's start at T0): the clip was done a minute in, so its answer came LOOK_BOUND_MS later, to the
     // millisecond. That reading comes before the files that follow, whose lock waits are timers too, so it holds however
@@ -695,6 +706,8 @@ describe('a stopped clip fal reported done, whose result fal answers with a fail
     ...Object.fromEntries(
       [408, 429, 502, 503, 504, 401, 403].map((status) => [`a ${status} with fal’s body (about the read, not the job)`, () => new ApiError({ message: `HTTP ${status}`, status, body: { detail: 'Try again later' } })]),
     ),
+    // fal's body is its JSON object; a body of text is not its word on the job (B-073 (6): falFailure reads its shape).
+    'a 500 whose body is text, not fal’s JSON object': () => new ApiError({ message: 'HTTP 500: Internal Server Error', status: 500, body: '<html>Bad gateway</html>' }),
   };
   const routes = {
     'the status said done, then a stop came while its result was read': 'read',
@@ -830,28 +843,18 @@ describe('the last frame is bounded by the time left on its clip’s wait plus 2
     await polled(fal, 2);
     const frameFrom = Date.now();
     await vi.advanceTimersByTimeAsync(MINUTE);
-    // Real time, not a count of turns, bounds these waits: under a loaded gate the clip's files take longer to write than
-    // any fixed number of turns allows (performance.now is not faked here), and a missing bound still fails an assertion.
-    const realBound = performance.now() + 30_000;
-    while (!fal.log.includes('result req-2') && performance.now() < realBound) await turn();
-    expect(fal.log).toContain('result req-2');
+    await untilSeen(() => fal.log.includes('result req-2'));
     // 2 minutes left on the clip's wait and 2 more: 4 minutes from the frame job's start, 3 of them left now.
     await vi.advanceTimersByTimeAsync(3 * MINUTE - 1);
     for (let i = 0; i < 200; i++) await turn();
     expect(over).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     // Given up then: it ends once its clip is ledgered and kept (files and timers), not on fal's answer.
-    const endBound = performance.now() + 30_000;
-    while (!over && performance.now() < endBound) {
-      await turn();
-      await vi.advanceTimersByTimeAsync(100);
-    }
-    expect(over).toBe(true);
-    const e = await err;
+    const e = await settled(err);
     expect(e).toMatchObject({ billed: true });
     expect(e.message).toMatch(/: last-frame job req-2 did not finish within the time left on the clip’s wait plus 2 minutes, so byway stopped waiting$/);
     // Done when its bound ran out, so not cancelled; the clip is ledgered and kept. Given up at the bound, not only after
-    // it (R-MONEY-3, Block 2's re-check: the loop above moves the clock until the call is over, so a read bounded apart
+    // it (R-MONEY-3, Block 2's re-check: settled() moves the clock until the call is over, so a read bounded apart
     // from the frame's, and longer, passed too): the gateway read the clock as the adapter answered (the entry's
     // latencyMs, from the call's start at T0), 4 minutes from the frame job's start to the millisecond. That reading
     // comes before the files that follow, whose lock waits are timers too, so the loop's steps do not move it.
@@ -875,7 +878,7 @@ describe('the last frame is bounded by the time left on its clip’s wait plus 2
     await vi.advanceTimersByTimeAsync(28 * MINUTE);
     await polled(fal, 2);
     await vi.advanceTimersByTimeAsync(MINUTE);
-    for (let i = 0; i < 20_000 && frames.length === 0; i++) await turn();
+    await untilSeen(() => frames.length > 0);
     expect(frames).toHaveLength(1);
     // 2 minutes left on the clip's wait and 2 more: 4 minutes from the frame job's start, 3 of them left now.
     await vi.advanceTimersByTimeAsync(3 * MINUTE - 1);
