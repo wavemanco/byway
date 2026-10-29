@@ -48,6 +48,12 @@ export class RunStartInvalidError extends Error {
 /** A run id a caller may choose: a lowercase UUID, as crypto.randomUUID() makes. */
 const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+/**
+ * How long a run start asks Temporal for the run's workflow after its workflow start failed. A running engine answers a
+ * describe in milliseconds; an engine that is down would take the client's retries, about 20 s (measured 2026-10-21).
+ */
+export const DESCRIBE_AFTER_FAILED_START_MS = 5_000;
+
 /** The code the store's errors carry (StoreError), read by shape: the client does not depend on @byway/store. */
 const storeCode = (e: unknown): unknown => (e as { code?: unknown } | null)?.code;
 
@@ -102,11 +108,12 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
    * Whether Temporal has a workflow under a run's id, asked after that run's workflow start failed: it 'exists' (the
    * start reached Temporal after all, or another delivery's did), it is 'absent' (the run did not start, and a start
    * that lands later finds the run failed, so its calls are refused), or byway could not ask ('unknown'). This second RPC
-   * is made only after a start that failed.
+   * is made only after a start that failed, and within DESCRIBE_AFTER_FAILED_START_MS: with the engine down, the start
+   * has already spent the Temporal client's retries, and the describe would spend them again (B-041).
    */
   const workflowAfterFailedStart = async (runId: string): Promise<'exists' | WorkflowAfterFailedStart> => {
     try {
-      await handle(runId).describe();
+      await client.withDeadline(Date.now() + DESCRIBE_AFTER_FAILED_START_MS, () => handle(runId).describe());
       return 'exists';
     } catch (e) {
       return e instanceof WorkflowNotFoundError ? 'absent' : 'unknown';
