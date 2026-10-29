@@ -337,8 +337,8 @@ describe('a decline is kept like an answer (ADR-0102)', () => {
     expect((err as Error).message).toBe(
       'The model declined an image this step asked for, and this attempt of the step ended before byway could ask it once more (byway is stopping, so it did not start this call). byway tries the step again while it has tries left, and that try asks the model once more without buying the declined call again. If this was the step’s last try, the run stops here: start the run again.',
     );
-    // Retried by Temporal (a plain error), unlike a step failure.
-    expect(toFailure(err)).toBe(err);
+    // Retried by Temporal (typed by its name, not non-retryable), unlike a step failure; its cause is not handed on (B-026).
+    expect(toFailure(err)).toMatchObject({ type: 'DeclineRetryPending', message: (err as Error).message, nonRetryable: false, cause: undefined });
     expect(ops).toHaveLength(1);
   });
 
