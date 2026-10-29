@@ -904,6 +904,41 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     expect(unapplied(seq(d, audit('au', [{ name: 'l', body: loop('l', seq(build, render('r'), briefCritic), gate('critic-score')) }])))).toEqual(['d']);
   });
 
+  it('followed to the work the run delivers: a later writer that drafts from scratch, or a pick of candidates made before the writer, replaces it (F01 (b))', () => {
+    const fresh = step({ id: 'fresh', role: 'build', actor: 'model', tier: 'mid', consumes: ['intent'], produces: ['artifact'], writes: true });
+    const seed = step({ id: 'seed', role: 'seed', block: 'SEED', actor: 'model', tier: 'mid', consumes: ['intent'], produces: ['artifact'], writes: true });
+    const onWork = step({ ...fresh, id: 'on-work', consumes: ['intent', 'artifact'] });
+    const trim = seq(render('r'), personCut('cut'), fix('f'));
+    // A draft from the intent alone, or a seed, after the fix: the version it writes holds nothing of the list.
+    expect(unapplied(seq(trim, fresh))).toEqual(['cut']);
+    expect(unapplied(seq(trim, seed))).toEqual(['cut']);
+    // A writer that takes the work in keeps what it held, and so does an ASSET placing images in it.
+    expect(unapplied(seq(trim, onWork))).toEqual([]);
+    expect(unapplied(seq(trim, step({ id: 'img', role: 'asset', block: 'ASSET', actor: 'model', tier: 'mid', consumes: ['brief'], produces: ['artifact'], writes: true })))).toEqual([]);
+    // A from-scratch writer you may skip leaves a path on which the list is delivered.
+    expect(unapplied(seq(trim, optional('o', 'start again', fresh)))).toEqual([]);
+    // A pick of candidates made before the fix: the work becomes one of them (the round-9 verification's idx 16404).
+    expect(unapplied(seq(replicate('x', 2, fresh), trim, pick('p', 'H', 1, 'human')))).toEqual(['cut']);
+    // Candidates built on the fixed work carry the list into the pick.
+    expect(unapplied(seq(trim, replicate('x', 2, onWork), pick('p', 'H', 1, 'human')))).toEqual([]);
+    // In a loop you hold whose round ends with a seed: the next round's fix applies the list, and the seed replaces it.
+    expect(unapplied(loop('l', seq(trim, seed), gate('human')))).toEqual(['cut']);
+  });
+
+  it('followed through the candidates: an AI step that reads them, by the options or a pool view, carries what they hold (F01 (c))', () => {
+    const renderPool = step({ id: 'pool', role: 'render', glue: 'RENDER', actor: 'tool', consumes: ['option_set<artifact>'], produces: ['view'] });
+    const trimmed = replicate('x', 2, seq(render('r'), personCut('cut'), fix('f')));
+    const poolCritic = step({ ...critic('pc'), consumes: ['view'] });
+    const optionsCheck = step({ ...check('oc'), consumes: ['option_set<artifact>'] });
+    // Each candidate applies your list; a critic of their pool, or a check of the options, makes a critique from them,
+    // and the fix after it applies that to the work.
+    expect(unapplied(seq(trimmed, renderPool, poolCritic, fix('apply')))).toEqual([]);
+    expect(unapplied(seq(trimmed, optionsCheck, fix('apply')))).toEqual([]);
+    // Not where nothing takes that critique in, nor where the view is of the work, not of the candidates.
+    expect(unapplied(seq(trimmed, renderPool, poolCritic))).toEqual(['cut']);
+    expect(unapplied(seq(trimmed, render('w'), poolCritic, fix('apply')))).toEqual(['cut']);
+  });
+
   it('followed through as many rounds as it takes: a list carried on in the next round reaches your draft in the round after', () => {
     // Your check at the end of each round you hold; the next round's AI sweep takes it in, and its flags are shown beside
     // your draft the round after that (the differential's C6a variant). Two walks of the body never see the third round.

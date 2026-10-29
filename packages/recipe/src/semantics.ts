@@ -1121,9 +1121,10 @@ export function critiqueSources(recipe: Recipe): Map<Step, Step> {
 
 /**
  * What the run hands on that can carry a person's answer: the text ports it fills, the notes beside the work, the work
- * of a candidate (what its steps have taken in), and the options (the candidates' work, and what a dedupe kept them by).
+ * (what its steps have taken in), the options (the candidates' work, and what a dedupe kept them by), and the view where
+ * it is a pool render of the options (`pool`: what those hold).
  */
-type Carrier = AnswerPort | 'notes' | 'work' | 'options';
+type Carrier = AnswerPort | 'notes' | 'work' | 'options' | 'pool';
 const ANSWER_PORTS: readonly AnswerPort[] = ['critique', 'brief', 'taste'];
 
 /** The option set: what a pick chooses from, and what an AI writer that takes it in drafts from. */
@@ -1134,6 +1135,15 @@ const OPTIONS: PortType = 'option_set<artifact>';
  * it writes, as `appliesPort` decides for a text port.
  */
 const appliesOptions = (s: Step, contained: boolean, medium: Medium | undefined): boolean => !contained && machineWrites(s) && takesIn(s, OPTIONS, medium) && !hasNoExecutor(s);
+
+/**
+ * An AI writer that drafts the work from scratch: its prompt never shows it the work (a seed, a draft from the intent
+ * alone, C2's option map), so the version it writes takes the place of the one before, and what that held is not in it
+ * (ADR-0098's residual, F01 (b)). An ASSET or RELAY step puts its images or clips into the work it is handed, whatever its
+ * prompt shows, and one that finishes skipped changes nothing.
+ */
+const fromScratch = (s: Step, contained: boolean, medium: Medium | undefined): boolean =>
+  !contained && s.actor === 'model' && machineWrites(s) && s.role !== 'asset' && s.role !== 'relay' && !takesIn(s, 'artifact', medium) && !hasNoExecutor(s);
 
 /**
  * Marks in what `answersReachingWork` and `critiqueFlow` follow through a lens or a gate body, never an answer's place
@@ -1237,9 +1247,9 @@ function decidesWork(recipe: Recipe): Set<string> {
  * The places of a person's lists and critiques (`personCritique`) whose answer reaches the work on some path: something
  * that writes the work or picks which version it is takes it in (an AI writer, a draft of the person's own shown it, an
  * AI step that decides which version or option is the work: `decidesWork`), directly or as it is carried on, and what
- * it makes or decides is the work where it runs, not a candidate that nothing takes up. (A later writer that drafts from
- * scratch, or a later pick of candidates made before it, may still put another version in its place: ADR-0098 names
- * these as residuals.) An AI step takes a port in only where its prompt shows it (`takesIn`, `promptShows`, ADR-0097):
+ * it makes or decides is still the work the run delivers at its end: not a candidate that nothing takes up, nor a version
+ * that a later AI writer drafting from scratch (`fromScratch`), or a later pick of candidates made before it, puts
+ * another in place of (F01 (b)). An AI step takes a port in only where its prompt shows it (`takesIn`, `promptShows`, ADR-0097):
  * a writer, a decider or a step that makes text of its own whose template never renders the port is shown nothing of
  * what it holds. Read on the exit-aware flow walk, `exactLoops` and `untilStable`, with a state that says, for each text
  * port, the notes beside the work, the work of a candidate and the options, which of those answers what is there may
@@ -1248,8 +1258,9 @@ function decidesWork(recipe: Recipe): Set<string> {
  * - A person's answer fills the ports it fills (`answerPorts`): its own place, with whatever they were shown beside it
  *   (the latest notes) or in place (the port a reaction revises in place, `revisedInPlace`, which it fills on some runs
  *   only: it may go on as it was). Any other step that fills a port (`fillsPort`) puts there what it carries: an AI
- *   step that makes text of its own (`carriesOn`) carries what it took in by the text ports it takes in, into the ports
- *   it fills and its note; any other carries nothing. A step that leaves a note of its own (`leavesNote`) puts it in
+ *   step that makes text of its own (`carriesOn`) carries what it took in by the text ports it takes in, and what the
+ *   candidates hold where it reads them, by the options or a pool render of them (F01 (c)), into the ports it fills and
+ *   its note; what it reads of the work itself is not followed. Any other carries nothing. A step that leaves a note of its own (`leavesNote`) puts it in
  *   place of the notes before it: on every run, or, for a seed whose prompt asks for the fenced block alone, only on
  *   runs where it writes a direction anyway, so the notes before it may stay. A seed's direction carries nothing.
  * - An AI writer that applies a port (`appliesPort`) applies what that port carries, and one that takes the options in
@@ -1257,10 +1268,13 @@ function decidesWork(recipe: Recipe): Set<string> {
  *   body) is shown the latest notes, and so takes in what they carry. An AI step that decides which version or option is
  *   the work decides by what the ports it takes in carry; a dedupe decides only which options are kept, so the options
  *   carry it.
- * - Outside any candidate, what those take in reaches the work. Inside one (replicate or each) it reaches only that
- *   candidate's work, which replicate and each hand on as the options, and nothing else: each candidate of `each`
- *   starts from an option. The options reach the work where a pick takes one up, or an AI writer takes them in, outside
- *   a lens or a gate body; inside a candidate, that candidate's work.
+ * - What those take in is then in the work (`work`), and the run delivers what the work holds at its end. Inside a
+ *   candidate (replicate or each) it is only that candidate's work, which replicate and each hand on as the options:
+ *   a candidate of replicate starts from the work, and one of `each` from its option. A from-scratch writer leaves the
+ *   work holding only what it takes in itself; a pick, outside a lens or a gate body, makes the work the option it
+ *   chooses, holding what the options hold and what its judge decided by (inside a candidate, that candidate's work);
+ *   an AI writer that takes the options in drafts from what they hold. A one-shot gate's critic decides whether the
+ *   work passes, so the gate keeps what its body's work holds.
  * - An audit hands on its lenses' critique and notes (the interpreter's audit()): those of the lenses that made something
  *   new, joined, and where none did on some run, what it was handed. A lens that ended with what it was handed, or with
  *   a person's empty answer, made nothing new: the interpreter drops an empty answer with its lens. So a lens in which a
@@ -1279,23 +1293,23 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
   const medium = recipe.medium;
   const skippable = skippableJudges(recipe);
   const decides = decidesWork(recipe);
-  const reached = new Set<string>();
   /** For each carrier, the answers it may carry; `cand`: inside a candidate. */
   type State = Readonly<Record<Carrier, readonly string[]> & { cand: boolean }>;
-  const START: State = { critique: [], brief: [], taste: [], notes: [], work: [], options: [], cand: false };
-  const CARRIERS: readonly Carrier[] = [...ANSWER_PORTS, 'notes', 'work', 'options'];
+  const START: State = { critique: [], brief: [], taste: [], notes: [], work: [], options: [], pool: [], cand: false };
+  const CARRIERS: readonly Carrier[] = [...ANSWER_PORTS, 'notes', 'work', 'options', 'pool'];
   /** A state made carrier by carrier. */
-  const each = (f: (c: Carrier) => readonly string[], cand: boolean): State => ({ critique: f('critique'), brief: f('brief'), taste: f('taste'), notes: f('notes'), work: f('work'), options: f('options'), cand });
-  /** What takes these answers to the work: outside a candidate it is the work; inside one, that candidate's work. */
+  const each = (f: (c: Carrier) => readonly string[], cand: boolean): State => ({ critique: f('critique'), brief: f('brief'), taste: f('taste'), notes: f('notes'), work: f('work'), options: f('options'), pool: f('pool'), cand });
+  /** What takes these answers to the work: the work, or inside a candidate, that candidate's work. */
   const land = (st: State, xs: readonly string[]): State => {
     const answers = answersIn(xs);
-    if (st.cand) return answers.length ? { ...st, work: union(st.work, answers) } : st;
-    for (const x of answers) reached.add(x);
-    return st;
+    return answers.length ? { ...st, work: union(st.work, answers) } : st;
   };
-  flowRecipe<State>(recipe, START, {
+  /** What a pick's model judge decides by: the answers the ports its prompt shows carry. */
+  const judgeTakes = (p: PickNode, st: State): string[] => (p.judge?.actor === 'model' ? answersIn(unionAll(ANSWER_PORTS.filter((q) => takesIn(p.judge!, q, medium)).map((q) => st[q]))) : []);
+  const end = flowRecipe<State>(recipe, START, {
     step(s, path, _stage, st, contained) {
-      let next = st;
+      // A writer that drafts from scratch puts a version of its own in place of the work, and what that held is gone.
+      let next = fromScratch(s, contained, medium) ? { ...st, work: [] } : st;
       for (const q of ANSWER_PORTS) if (appliesPort(s, q, contained, medium)) next = land(next, st[q]);
       if (appliesOptions(s, contained, medium)) next = land(next, st.options);
       if (authorWrite(s) && !contained) next = land(next, st.notes);
@@ -1305,7 +1319,10 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
       }
       // What the step puts in a port it fills: what it carries on, and a person's answer its own place too.
       const inPlace = revisedInPlace(s);
-      const inPrompt = answersIn(unionAll(ANSWER_PORTS.filter((q) => takesIn(s, q, medium)).map((q) => st[q])));
+      // An AI step that reads the candidates themselves, by the options or a pool render of them, makes its text from
+      // what they hold too (F01 (c)); a view of the work is not followed, as what a step reads of the work is not.
+      const ofCandidates = [...(takesIn(s, OPTIONS, medium) ? st.options : []), ...(takesIn(s, 'view', medium) ? st.pool : [])];
+      const inPrompt = answersIn(union(unionAll(ANSWER_PORTS.filter((q) => takesIn(s, q, medium)).map((q) => st[q])), ofCandidates));
       const carried = carriesOn(s) ? inPrompt : shownNotes(s) ? answersIn(union(st.notes, inPlace ? st[inPlace] : [])) : [];
       const out: Record<Carrier, readonly string[]> & { cand: boolean } = { ...next };
       for (const q of ANSWER_PORTS) {
@@ -1330,6 +1347,8 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
         const made = carriesOn(s) ? inPrompt : [];
         out.notes = note === 'sometimes' || skippable.get(path) === false ? union(st.notes, made) : made;
       }
+      // A render makes the view: of the options, holding what they hold, or of the work, which is not followed.
+      if (s.role === 'render' && s.actor === 'tool') out.pool = s.consumes.includes(OPTIONS) && !s.consumes.includes('artifact') ? st.options : [];
       return out;
     },
     join: (states) => each((c) => unionAll(states.map((x) => x[c])), states.some((x) => x.cand)),
@@ -1340,8 +1359,9 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
           return { ...st, critique: handed(st.critique), notes: handed(st.notes) };
         case 'replicate':
           return { ...st, cand: true };
+        // A candidate of replicate starts from the work; one of each from its option alone.
         case 'each':
-          return { ...st, cand: true, work: union(st.work, st.options), options: [] };
+          return { ...st, cand: true, work: st.options, options: [], pool: [] };
         case 'gate':
           return st;
       }
@@ -1350,17 +1370,17 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
       switch (node.op) {
         case 'audit':
           return { ...entry, critique: lensesHandOn(entry.critique, parts.map((p) => p.critique)), notes: lensesHandOn(entry.notes, parts.map((p) => p.notes)) };
-        // Its body's critique, an empty answer's included (R-GATE-MARK): that carries nothing.
+        // Its body's critique, an empty answer's included (R-GATE-MARK): that carries nothing. Its critic's score decides
+        // whether the work passes, so what that took in stays with the work.
         case 'gate':
-          return { ...entry, critique: without(parts[0]!.critique, EMPTY_ANSWER) };
+          return { ...entry, critique: without(parts[0]!.critique, EMPTY_ANSWER), work: parts[0]!.work };
         case 'replicate':
         case 'each':
           return { ...entry, options: parts[0]!.work };
-        case 'pick': {
-          // Its judge, inside a candidate, decides that candidate's work.
-          const judged: State = { ...entry, work: parts[0]!.work };
-          return contained ? judged : land(judged, entry.options);
-        }
+        // The option it chooses is the work from then on (inside a candidate, that candidate's), in place of the work
+        // before it, and its judge's choice decides which.
+        case 'pick':
+          return contained ? entry : { ...entry, work: union(answersIn(entry.options), judgeTakes(node, entry)) };
       }
     },
     exit: (_s, path, before, after) => (skippable.get(path) ? each((c) => union(before[c], after[c]), after.cand) : after),
@@ -1368,7 +1388,8 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
     exactLoops: true,
     untilStable: true,
   });
-  return reached;
+  // What the run delivers is the work at its end, on some path.
+  return new Set(end.work);
 }
 
 /**
