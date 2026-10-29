@@ -41,19 +41,27 @@ function textInfo(mediaType: string, bytes: Uint8Array): ArtifactInfo {
   return { mediaType, excerpt, complete, bytes: bytes.length, ...wholeFacts(mediaType, bytes) };
 }
 
+/**
+ * An artifact the Run screen reads, or undefined when it is missing or damaged. A damaged file is left out, as a missing
+ * one is, so one bad artifact does not fail the whole run's screen and every poll: both artifactInfo and the price beside
+ * an open question (api.ts questionCosts) read through here. Matched by name: the store may come from another server
+ * bundle.
+ */
+export async function readIntact(services: Services, id: string): Promise<Awaited<ReturnType<Services['store']['artifacts']['get']>> | undefined> {
+  if (!(await services.store.artifacts.has(id))) return undefined;
+  try {
+    return await services.store.artifacts.get(id);
+  } catch (e) {
+    if (e instanceof Error && e.name === 'ArtifactCorruptError') return undefined;
+    throw e;
+  }
+}
+
 export async function artifactInfo(services: Services, ids: Iterable<string>): Promise<Record<string, ArtifactInfo>> {
   const out: Record<string, ArtifactInfo> = {};
   for (const id of new Set(ids)) {
-    if (!(await services.store.artifacts.has(id))) continue;
-    let got;
-    try {
-      got = await services.store.artifacts.get(id);
-    } catch (e) {
-      // A damaged file is left out, as a missing one is, so one bad artifact does not fail the whole run's screen and
-      // every poll. Matched by name: the store may come from another server bundle.
-      if (e instanceof Error && e.name === 'ArtifactCorruptError') continue;
-      throw e;
-    }
+    const got = await readIntact(services, id);
+    if (!got) continue;
     const { record, bytes } = got;
     const mediaType = record.mediaType.split(';')[0]?.trim() ?? 'application/octet-stream';
     out[id] = TEXT_TYPES.has(mediaType) ? textInfo(mediaType, bytes) : { mediaType };
