@@ -31,9 +31,11 @@ import { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE, workflowBundleHash } from '..
  * limits (model and image steps under a 24-hour backstop, and TRY_CANCEL named on every proxy); and the relay's waits (a
  * quick step reads them just before each relay step, whose limit is worked out from them and whose calls keep them).
  * Block 2's other branches (the answer waits, the prices, the lost-run pass, the browser helper) change no workflow
- * code. Runs waiting under an older bundle end plainly (ADR-0078).
+ * code. The recipe-semantics batch of 2026-10-28 changes it on purpose, from b0a4e13b… to 34618d85…: replicate takes
+ * as an option's view only one its branch made (B-063), and the run order that `lockedScripts` reads knows a route's
+ * branches exclude each other (B-057). Runs waiting under an older bundle end plainly (ADR-0078).
  */
-const PINNED_WORKFLOW_HASH = 'b0a4e13bc112a94946bd2394f9bd743047f6985d3cbc45b00e70a158d2cdf2b7';
+const PINNED_WORKFLOW_HASH = '34618d85032b9373bd0949fd50c0692fd3fb06ba9c96cf011495d2a36574bdfe';
 
 describe('the workflow bundle', () => {
   it('inlines the workspace and leaves only the Temporal workflow SDK external', async () => {
