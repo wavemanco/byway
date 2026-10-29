@@ -68,6 +68,25 @@ export const trimmed = recipe(
 );
 export const trimmedByHand = recipe('trimmed-by-hand', 'prose', seq(build('draft'), render('render'), step({ id: 'trim', role: 'cut', block: 'CUT', actor: 'human', consumes: ['view'], produces: ['critique'] }), applyCut));
 
+/**
+ * Your list, then a route (F01 (a)): the AI applies it, or you revise the draft yourself, which is shown the work and
+ * never your list. Admitted on decision 7's some-path reading (the AI branch hands it on); on the other branch it goes
+ * unused, and the run says so.
+ */
+export const routedTrim = recipe(
+  'routed-trim',
+  'prose',
+  seq(
+    build('draft'),
+    render('render'),
+    step({ id: 'trim', role: 'cut', block: 'CUT', actor: 'human', consumes: ['view'], produces: ['critique'] }),
+    route('who', 'who applies your list', [
+      { name: 'ai', body: applyCut },
+      { name: 'own', body: step({ id: 'own-revise', role: 'build', actor: 'human', consumes: ['artifact'], produces: ['artifact'], writes: true }) },
+    ]),
+  ),
+);
+
 /** A seeded draft (SEED: the runner's random string, never written into the work). */
 export const seeded = recipe('seeded', 'prose', step({ id: 'spark', role: 'seed', block: 'SEED', actor: 'model', tier: 'mid', prompt: 'product.test.spark', consumes: ['intent'], produces: ['artifact'], writes: true, knobs: { source: 'shell-string' } }));
 

@@ -8,3 +8,4 @@ export * from './prompt-shows.ts';
 export * from './shape.ts';
 export * from './limits.ts';
 export * from './projection.ts';
+export * from './unused.ts';

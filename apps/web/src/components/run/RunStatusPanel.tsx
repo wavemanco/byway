@@ -4,7 +4,7 @@ import type { RunRecord } from '@byway/contracts';
 import Link from 'next/link';
 import { exportLabel } from '../../view/history.ts';
 import { CUT_OFF_NOTE, underWayNote } from '../../view/labels.ts';
-import type { ArtifactInfo } from '../../view/rundata.ts';
+import type { ArtifactInfo, UnusedAnswerNote } from '../../view/rundata.ts';
 import type { TimelineStage, TimelineStep } from '../../view/timeline.ts';
 import { codeForLabel, stepTitle } from '../../view/vocabulary.ts';
 import { artifactUrl } from '../api.ts';
@@ -27,10 +27,12 @@ interface Props {
   artifacts: Record<string, ArtifactInfo>;
   /** For a run that has ended: how many of its AI calls are still under way (RunData.ended); 0 otherwise. */
   callsUnderWay: number;
+  /** For a finished run: the answers of yours it left unused (F01 (a)), said with how it ended. */
+  unused?: readonly UnusedAnswerNote[];
 }
 
 /** The working area when nothing is asked of you: what the AI is doing, or how the run ended. */
-export function RunStatusPanel({ run, step, stages, artifacts, callsUnderWay }: Props) {
+export function RunStatusPanel({ run, step, stages, artifacts, callsUnderWay, unused = [] }: Props) {
   const technical = useTechnicalNames();
   const paused = run.status === 'paused';
   // What the run made most recently: every output of the last step that made something (all its drafts, not
@@ -44,6 +46,12 @@ export function RunStatusPanel({ run, step, stages, artifacts, callsUnderWay }: 
     return (
       <section className="state state-done" aria-labelledby="state-title">
         <h2 id="state-title">{DELIVERABLE[run.medium]}</h2>
+        {/* Nothing was refused for it: the run went a way on which no later step took the answer in (ADR-0098 decision 7). */}
+        {unused.map((u) => (
+          <p key={u.checkpointId} className="notice notice-caution" data-unused-answer={u.checkpointId}>
+            {u.note}
+          </p>
+        ))}
         <div className="state-actions">
           <Link className="button button-primary" href={`/runs/${run.id}/result`}>
             See the result

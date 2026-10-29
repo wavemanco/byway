@@ -78,7 +78,11 @@ export type RunEventType =
 export interface RunEventPayloads {
   'run-started': { recipeId: string; profileId: string; budgetUsd: number };
   'step-started': { label: string; stage: 'D1' | 'D2' | 'D3'; role: string; actor: 'model' | 'human' | 'policy' | 'tool'; block?: string; glue?: string };
-  'step-finished': { costUsd: number; skipped?: boolean; note?: string; outputArtifactIds?: string[] };
+  /**
+   * `skipped`: the product could not run the step. `passed`: the step had nothing to do (the fix after "Nothing to
+   * remove", a keep-or-revert with nothing to compare), so it finished at once with the work unchanged and asked no model.
+   */
+  'step-finished': { costUsd: number; skipped?: boolean; passed?: boolean; note?: string; outputArtifactIds?: string[] };
   'step-failed': { error: string; retryable: boolean };
   'checkpoint-opened': { checkpointId: string; kind: CheckpointKind };
   'checkpoint-resolved': { checkpointId: string };

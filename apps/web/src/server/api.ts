@@ -20,7 +20,9 @@ import { onlyProtocolChecks } from '../view/composed.ts';
 import type { QuestionCosts } from '../view/questions.ts';
 import { COMPOSED_CHANGED, COMPOSED_REFUSED } from '../view/refusals.ts';
 import { isEnded } from '../view/run.ts';
+import type { UnusedAnswerNote } from '../view/rundata.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
+import { unusedAnswerNotes } from '../view/unused.ts';
 import { artifactHeaders, isArtifactId, mediaServing, pageScriptsGranted } from './artifacts.ts';
 import { exportsInline, selfContained } from './export.ts';
 import { firstRecommendation, sharedCall } from './first-recommendation.ts';
@@ -409,6 +411,17 @@ export async function questionCosts(deps: Deps, run: RunRecord, checkpoints: rea
     out[cp.id] = { asks: q.asks, answer, lowUsd, highUsd, calls: modelCalls, images, ...(clips ? { clips } : {}) };
   }
   return out;
+}
+
+/**
+ * The answers of yours a finished run left unused (F01 (a), view/unused.ts), read from all its events and the recipe it
+ * ran. Undefined when the run's recipe is not known; empty for a run that has not finished.
+ */
+export async function unusedAnswersOf(deps: Deps, run: RunRecord): Promise<UnusedAnswerNote[] | undefined> {
+  if (run.status !== 'done') return [];
+  const { recipe } = await recipeForRun(deps, run);
+  if (!recipe) return undefined;
+  return unusedAnswerNotes(recipe, await deps.services.runner.view(run.id));
 }
 
 export async function resolveInRun(deps: Deps, runId: string, checkpointId: string, input: z.infer<typeof ResolutionInput>): Promise<void> {

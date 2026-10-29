@@ -15,7 +15,7 @@ import { parseUnifiedDiff } from '../view/diff.ts';
 import { ArtifactData, read } from '../view/events.ts';
 import { parseOptions } from '../view/result.ts';
 import { isEnded } from '../view/run.ts';
-import type { ArtifactInfo, EndedSpend, RunData } from '../view/rundata.ts';
+import type { ArtifactInfo, EndedSpend, RunData, UnusedAnswerNote } from '../view/rundata.ts';
 
 export type { ArtifactInfo, RunData } from '../view/rundata.ts';
 
@@ -72,7 +72,10 @@ export async function artifactInfo(services: Services, ids: Iterable<string>): P
 /** Prices the run's open questions (api.ts questionCosts); undefined when the run's recipe is not known. */
 export type QuestionPricer = (run: RunRecord, checkpoints: RunView['checkpoints']) => Promise<QuestionCosts | undefined>;
 
-export async function getRunData(services: Services, runId: string, afterSeq = 0, price?: QuestionPricer): Promise<RunData> {
+/** A finished run's unused answers (api.ts unusedAnswersOf, F01 (a)); undefined when the run's recipe is not known. */
+export type UnusedReader = (run: RunRecord) => Promise<UnusedAnswerNote[] | undefined>;
+
+export async function getRunData(services: Services, runId: string, afterSeq = 0, price?: QuestionPricer, unusedOf?: UnusedReader): Promise<RunData> {
   const view = await services.runner.view(runId, afterSeq);
   const ids: string[] = [];
   for (const e of view.events) {
@@ -88,7 +91,8 @@ export async function getRunData(services: Services, runId: string, afterSeq = 0
   if (view.run.outputArtifactId) ids.push(view.run.outputArtifactId);
   const ended = isEnded(view.run.status) ? await endedSpend(services, view.run) : undefined;
   const questions = price ? await price(view.run, view.checkpoints) : undefined;
-  return { view, artifacts: await artifactInfo(services, ids), ...(ended ? { ended } : {}), ...(questions ? { questions } : {}) };
+  const unused = unusedOf && view.run.status === 'done' ? await unusedOf(view.run) : undefined;
+  return { view, artifacts: await artifactInfo(services, ids), ...(ended ? { ended } : {}), ...(questions ? { questions } : {}), ...(unused ? { unused } : {}) };
 }
 
 /**

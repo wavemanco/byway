@@ -77,7 +77,7 @@ export function operatorScenarios(use: () => Harness): void {
         const trim = ofType(view, 'step-finished', 'trim')[0]!;
         expect(await h.store.artifacts.getText((trim.data.outputArtifactIds as string[])[0]!)).toBe('Nothing to remove.\n');
         expect(ofType(view, 'step-started', 'apply-cut')).toHaveLength(1);
-        expect(ofType(view, 'step-finished', 'apply-cut').map((e) => e.data)).toEqual([{ costUsd: 0, note: NOTHING_TO_REMOVE }]);
+        expect(ofType(view, 'step-finished', 'apply-cut').map((e) => e.data)).toEqual([{ costUsd: 0, passed: true, note: NOTHING_TO_REMOVE }]);
       } finally {
         delete h.responders['cut:prose'];
       }
@@ -224,7 +224,7 @@ export function operatorScenarios(use: () => Harness): void {
         expect(view.run.status).toBe('done');
         checkEvents(view);
         expect(h.succeeded(run.id).some((c) => c.stepId === 'swaps')).toBe(false);
-        expect(ofType(view, 'step-finished', 'swaps').map((e) => e.data)).toEqual([{ costUsd: 0, note: NO_SWAPS_CHOSEN }]);
+        expect(ofType(view, 'step-finished', 'swaps').map((e) => e.data)).toEqual([{ costUsd: 0, passed: true, note: NO_SWAPS_CHOSEN }]);
         expect(NO_SWAPS_CHOSEN).toBe('No swaps chosen');
         expect(view.checkpoints.some((c) => c.kind === 'compare')).toBe(false);
         expect(ofType(view, 'step-finished', 'compare').map((e) => e.data.note)).toEqual([NOTHING_TO_COMPARE]);

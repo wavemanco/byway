@@ -75,7 +75,9 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
 
   const { run, events, checkpoints } = data.view;
   const runId = run.id;
-  const stages = useMemo(() => buildTimeline(events, checkpoints, run.status, steps), [events, checkpoints, run.status, steps]);
+  // A finished run's unused answers of yours are said with the step that asked them, and with how the run ended (F01 (a)).
+  const unused = data.unused;
+  const stages = useMemo(() => buildTimeline(events, checkpoints, run.status, steps, unused), [events, checkpoints, run.status, steps, unused]);
   const active = activeCheckpoint(checkpoints);
   // R3: the turn is shown only while its question is open AND the run has not ended, read from the whole snapshot.
   const turn = active && answerable(active, run.status) ? active : undefined;
@@ -296,7 +298,7 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
               />
             ) : null
           ) : (
-            <RunStatusPanel run={run} step={step} stages={stages} artifacts={data.artifacts} callsUnderWay={after?.callsUnderWay ?? 0} />
+            <RunStatusPanel run={run} step={step} stages={stages} artifacts={data.artifacts} callsUnderWay={after?.callsUnderWay ?? 0} unused={unused ?? []} />
           )}
         </div>
         <aside className="run-timeline" aria-label="Steps">
