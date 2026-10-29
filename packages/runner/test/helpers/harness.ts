@@ -20,7 +20,7 @@ import { GatewayError, type CheckpointRecord, type CheckpointResolution, type Co
 import type { ModelGateway, ProviderAdapter, Responder } from '@byway/gateway';
 import type { Recipe } from '@byway/recipe';
 import { buildWorkflows } from '../../src/build.ts';
-import { cachedTemporalExecutable } from '../../src/dev-engine.ts';
+import { cachedTemporalExecutable, startOnceMore } from '../../src/dev-engine.ts';
 import { createRunnerClient, ResolutionRejectedError } from '../../src/client.ts';
 import { createWorker, type RunnerWorker } from '../../src/worker.ts';
 import { workflowIdFor } from '../../src/types.ts';
@@ -235,7 +235,9 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
   const prompts = opts.prompts ? recordPrompts(opts.prompts) : fakePrompts();
   const pages = fakePages();
   const executable = cachedTemporalExecutable();
-  const env = await TestWorkflowEnvironment.createLocal(executable ? { server: { executable } } : {});
+  // No port is named, so a second start (startOnceMore, B-117) is on a fresh one: a first that could not bind its port,
+  // or missed Temporal's 5 s on a loaded machine, has been killed by Temporal's core.
+  const env = await startOnceMore(() => TestWorkflowEnvironment.createLocal(executable ? { server: { executable } } : {}));
   const taskQueue = `runner-test-${path.basename(dir)}`;
   const bundle = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..', 'dist', `test-${path.basename(dir)}.js`);
   const workflowsPath = await buildWorkflows({ outfile: bundle });

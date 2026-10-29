@@ -196,21 +196,49 @@ export function assertPortFree(port: number): Promise<void> {
   });
 }
 
+/**
+ * Whether a failed start is Temporal's own wait running out: its core gives the dev server 5 s to answer (a fixed wait in
+ * @temporalio/core-bridge 1.24.0, which the SDK's options do not set) and, when it says so, has already killed and
+ * awaited the server. A server that could not bind its port ends the same way.
+ */
+export const startedTooSlowly = (e: unknown): boolean => e instanceof Error && /did not start within/.test(e.message);
+
+/**
+ * Starts Temporal's dev server with `start`, and once more when it missed Temporal's 5 s (startedTooSlowly), after
+ * `beforeRetry` has made sure the first is gone (the owner's "Retry once, tests and byway's start, on the follow-up
+ * branch (Recommended)", 2026-10-23 10:10; backlog row B-117). Any other failure, or a second miss, is thrown as it came.
+ * Used by byway's own engine start and by the runner tests' harness.
+ */
+export async function startOnceMore<T>(start: () => Promise<T>, beforeRetry: () => Promise<void> = async () => undefined): Promise<T> {
+  try {
+    return await start();
+  } catch (e) {
+    if (!startedTooSlowly(e)) throw e;
+    await beforeRetry();
+    return start();
+  }
+}
+
 export async function startDevEngine(opts: DevEngineOptions): Promise<DevEngine> {
   const port = opts.port ?? Number(DEFAULT_TEMPORAL_ADDRESS.split(':')[1]);
   await assertPortFree(port);
   const cacheDir = path.join(opts.dataDir, TEMPORAL_BIN_DIR);
   mkdirSync(cacheDir, { recursive: true, mode: 0o700 });
   const dbFilename = path.join(opts.dataDir, TEMPORAL_DB_FILENAME);
-  const env = await TestWorkflowEnvironment.createLocal({
-    server: {
-      dbFilename,
-      port,
-      ip: '127.0.0.1',
-      executable: temporalExecutable({ cacheDir, tmpDir: tmpdir(), version: sdkVersion() }),
-      extraArgs: devServerArgs(opts.httpPort !== undefined ? { httpPort: opts.httpPort } : {}),
-    },
-  });
+  // The port is byway's own (OPS-1), so the second start uses it too, once nothing listens there: the first server is gone.
+  const env = await startOnceMore(
+    () =>
+      TestWorkflowEnvironment.createLocal({
+        server: {
+          dbFilename,
+          port,
+          ip: '127.0.0.1',
+          executable: temporalExecutable({ cacheDir, tmpDir: tmpdir(), version: sdkVersion() }),
+          extraArgs: devServerArgs(opts.httpPort !== undefined ? { httpPort: opts.httpPort } : {}),
+        },
+      }),
+    () => assertPortFree(port),
+  );
   try {
     // The server we reached keeps its state in this data directory, so it is the one we started.
     if (!existsSync(dbFilename)) throw new Error(`The Temporal server on port ${port} is not the one byway started (it does not use ${dbFilename}). ${portInUseMessage(port)}`);
