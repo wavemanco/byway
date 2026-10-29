@@ -169,6 +169,10 @@ export class MemorySpendBook implements SpendBook {
   async accept(opId: string, role: ProviderJobRole, providerJobId: string): Promise<void> {
     const r = this.rows.get(opId);
     if (!r) return;
+    // As the store's book: a role keeps the first job it was accepted with, and the same job again changes nothing.
+    const held = r.providerJobs?.[role];
+    if (held === providerJobId) return;
+    if (held !== undefined) throw new Error(`paid operation ${JSON.stringify(opId)} already holds ${role} job ${held}, so job ${providerJobId} was not recorded in its place`);
     if (r.state === 'open' || r.state === 'sent') r.state = 'accepted';
     const at = this.stamp();
     r.providerJobs = { ...r.providerJobs, [role]: providerJobId };
@@ -345,7 +349,8 @@ export class MemorySpendBook implements SpendBook {
     let cleared = 0;
     for (const id of new Set(opIds)) {
       const r = this.rows.get(id);
-      if (!r || r.workspaceId !== workspaceId || r.clearedAt !== undefined) continue;
+      // As the store's book: a call still in flight is not cleared until it ends.
+      if (!r || r.workspaceId !== workspaceId || r.clearedAt !== undefined || inFlight(r, now)) continue;
       if (!uncertain(r, now) && r.retainedUsd <= 0) continue;
       Object.assign(r, { clearedAt: at, updatedAt: at });
       cleared += 1;

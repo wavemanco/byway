@@ -34,7 +34,8 @@ export function uncertainReason(call: UncertainCall): string {
     case 'failed':
       return `The request may have reached ${who} before the connection failed, so ${who} may have done the work and billed it.${ids}${earlierSend(call)}`;
     case 'resent':
-      // Only what was retained for an earlier send is counted here: the call sent again settled, or was not billed.
+      // Only what was retained for an earlier send is counted here: the call sent again is still in flight (and cannot
+      // be cleared until it ends), settled, or was not billed.
       if (call.retainedWaited) {
         return `An earlier attempt went unanswered: ${waitRanOut(call, call.retainedWaited)}, so byway stopped waiting and sent the call again. That attempt may have billed the work, and this row counts it; the call sent again has its own cost, counted separately. ${WAIT_LONGER}${ids}`;
       }
@@ -109,6 +110,14 @@ export function inFlightNote(records: Pick<SpendRecords, 'inFlight'>): string | 
   if (n === 0) return null;
   const usd = records.inFlight.reduce((sum, c) => sum + c.usd, 0);
   return `${n} ${n === 1 ? 'call is' : 'calls are'} under way, counted at ${formatUsd(usd)} until ${n === 1 ? 'it settles' : 'they settle'}.`;
+}
+
+/**
+ * Whether Clear can act on a listed call: not while the call is still under way (sent again after a send it retained),
+ * since the spend book clears it only once it ends (F03 (f)).
+ */
+export function clearable(call: Pick<UncertainCall, 'opId'>, records: Pick<SpendRecords, 'inFlight'>): boolean {
+  return !records.inFlight.some((c) => c.opId === call.opId);
 }
 
 /** Settled calls not yet in ledger.jsonl, or null. */

@@ -18,7 +18,7 @@ import { createGateway, type GatewayOptions, type ModelGateway } from '../src/ga
 import { MemorySpendBook } from '../src/memory-book.ts';
 import { encodePng } from '../src/mock/png.ts';
 import { PRICES, type PriceRow } from '../src/prices.ts';
-import type { FalClientLike } from '../src/providers/fal.ts';
+import { falAdapter, type FalClientLike } from '../src/providers/fal.ts';
 import type { ProviderAdapter, ProviderCompletion } from '../src/providers/types.ts';
 import { fakeFal, fakeFetch, MemoryArtifacts } from './fakes.ts';
 
@@ -301,8 +301,17 @@ describe('a fal clip accepted by the provider is resumed, never submitted again 
 
   // MONEY-3, Block 2's check: a call whose lease ran out while it was getting its clip ready, and that found on marking
   // itself sent another attempt's job fal had already accepted (PaidCall.markSent's takeover), submitted a second clip
-  // anyway, and its acceptance wrote over the first job's id: two clips billed, one of them recorded nowhere.
-  it('a call that finds, as it comes to submit, another attempt’s clip already accepted does not submit a second: that job is counted as may have been billed, with its id', async () => {
+  // anyway, and its acceptance wrote over the first job's id: two clips billed, one of them recorded nowhere. Since then
+  // it submitted nothing; it failed as may have been billed until B-071, and now polls that job in the same call.
+  const otherAttempt = async (key: string, job: () => Promise<string>) => {
+    const other = { opId: 'other', owner: 'other-worker', leaseMs: 1000, operationKey: key, workspaceId: 'ws', runId: 'run-1', stepId: 'relay', purpose: 'relay:media', kind: 'video' as const, provider: 'fal' as const, model: MODEL };
+    expect(await book.admit({ ...other, reserveUsd: 0.5, paid: true, caps: { workspaceUsd: 10, runUsd: 10 } })).toEqual({ admitted: true });
+    expect(await book.markSent('other', 'other-worker')).toBe(true);
+    await book.accept('other', 'generation', await job());
+    clock.t += 1001;
+  };
+
+  it('a call that finds, as it comes to submit, another attempt’s clip already accepted polls that job instead of submitting a second', async () => {
     const fal = fakeFal();
     const media = fakeFetch();
     const key = 'run-1/run-1/relay/-/1/video/abc/1';
@@ -316,23 +325,51 @@ describe('a fal clip accepted by the provider is resumed, never submitted again 
           a.cancel.abort(new Error('TIMED_OUT'));
           await sleep(40);
           clock.t += LEASE + 1;
-          const other = { opId: 'other', owner: 'other-worker', leaseMs: 1000, operationKey: key, workspaceId: 'ws', runId: 'run-1', stepId: 'relay', purpose: 'relay:media', kind: 'video' as const, provider: 'fal' as const, model: MODEL };
-          expect(await book.admit({ ...other, reserveUsd: 0.5, paid: true, caps: { workspaceUsd: 10, runUsd: 10 } })).toEqual({ admitted: true });
-          expect(await book.markSent('other', 'other-worker')).toBe(true);
-          await book.accept('other', 'generation', 'job-other');
-          clock.t += 1001;
+          await otherAttempt(key, async () => (await fal.client.queue.submit(MODEL, { input: {} })).request_id);
           return fal.client.storage.upload(file);
         },
       },
     };
     const g = gateway({ clients: { fal: client }, fetch: media.fetch });
+    const out = await g.video(await clip(a.operation));
+    expect(out).toMatchObject({ provider: 'fal', mediaType: 'video/mp4' });
+    expect(fal.uploads).toHaveLength(1);
+    // One clip, the other attempt's: this call submitted only the last-frame job, and polled the clip by its id.
+    expect(fal.calls.map((c) => c.endpoint)).toEqual([MODEL, 'fal-ai/ffmpeg-api/extract-frame']);
+    expect(fal.polls).toContain('req-1');
+    const records = await g.spendRecords('ws');
+    expect(records.inFlight).toEqual([]);
+    expect(records.uncertain).toEqual([]);
+    expect(await g.spend('ws')).toMatchObject({ spentUsd: out.costUsd, uncertainUsd: 0 });
+    expect((await book.ledgeredCalls()).map((c) => [c.opId, c.costUsd])).toEqual([['other', out.costUsd]]);
+  });
+
+  it('an adapter that cannot poll the other attempt’s job submits nothing: the call fails as may have been billed, listed with that job’s id', async () => {
+    const fal = fakeFal();
+    const key = 'run-1/run-1/relay/-/1/video/abc/1';
+    const a = attempt(key);
+    const submitted: string[] = [];
+    const g = gateway({
+      adapters: {
+        fal: {
+          ...falAdapter({ client: fal.client }),
+          async video(req) {
+            // As it gets the clip ready, its lease runs out and another attempt's clip is accepted on the key's row.
+            a.cancel.abort(new Error('TIMED_OUT'));
+            await sleep(40);
+            clock.t += LEASE + 1;
+            await otherAttempt(key, async () => 'job-other');
+            await req.submit(async () => submitted.push('clip'), 'the clip');
+            throw new Error('unreachable: the submission above was refused');
+          },
+        },
+      },
+    });
     const err = await g.video(await clip(a.operation)).then(
       () => undefined,
       (e: unknown) => e,
     );
-    expect(fal.uploads).toHaveLength(1);
-    // Nothing submitted: the other attempt's job is the call's.
-    expect(fal.calls).toEqual([]);
+    expect(submitted).toEqual([]);
     expect(err).toBeInstanceOf(GatewayError);
     expect(err).toMatchObject({ code: 'provider-error', retryable: false, billing: 'maybe', message: expect.stringContaining('clip job job-other') });
     const records = await g.spendRecords('ws');

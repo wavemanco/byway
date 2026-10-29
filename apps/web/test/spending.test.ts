@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { UncertainCall } from '@byway/contracts';
 import { waitedWords } from '@byway/gateway';
-import { auditText, callPurpose, FAULT_ADVICE, inFlightNote, outboxNote, quietNote, setAsideNote, uncertainReason } from '../src/view/spending.ts';
+import { auditText, callPurpose, clearable, FAULT_ADVICE, inFlightNote, outboxNote, quietNote, setAsideNote, uncertainReason } from '../src/view/spending.ts';
 
 const call = (over: Partial<UncertainCall> = {}): UncertainCall => ({ opId: 'op', purpose: 'build:prose', runId: 'run-12345678-abcd', provider: 'anthropic', model: 'claude-opus-5-5', usd: 0.4, since: '2026-10-08T12:00:00.000Z', reason: 'interrupted', ...over });
 
@@ -74,6 +74,13 @@ describe('Spending records in words', () => {
     );
     // A call that retained nothing says nothing of an earlier send.
     expect(uncertainReason(call({ reason: 'failed' }))).not.toMatch(/earlier/);
+  });
+
+  it('offers Clear only for a listed call that is no longer under way', () => {
+    const flying = { opId: 'a', purpose: 'p', provider: 'anthropic' as const, model: 'm', usd: 0.25, since: 'now' };
+    expect(clearable({ opId: 'a' }, { inFlight: [flying] })).toBe(false);
+    expect(clearable({ opId: 'b' }, { inFlight: [flying] })).toBe(true);
+    expect(clearable({ opId: 'a' }, { inFlight: [] })).toBe(true);
   });
 
   it('notes calls under way, calls not yet written to the ledger, and set-aside tails, and nothing when there are none', () => {

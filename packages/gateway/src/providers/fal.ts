@@ -1,6 +1,6 @@
 import { createFalClient as createFalSdkClient } from '@fal-ai/client';
 import { GatewayError } from '@byway/contracts';
-import { cutOffError, isCutOff } from '../errors.ts';
+import { cutOffError, isCutOff, takenOverOf } from '../errors.ts';
 import { makeRedactor } from '../redact.ts';
 import { isNotStarted, notStartedError, waitedError, waitMinutes } from '../waited.ts';
 import { Deadline } from './deadline.ts';
@@ -600,7 +600,20 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
     // Stopped before its submission: nothing more is submitted (ADR-0111), so nothing billable was sent for this job.
     if (req.signal?.aborted) throw cutOffError('fal', 'none', `${JOB_WHAT[role]} was not submitted`);
     const start = opts.startTimeoutSeconds;
-    const { request_id: requestId } = await req.submit(() => queue.submit(endpointId, { input: body, ...(start !== undefined ? { startTimeoutSeconds: start } : {}) }), JOB_WHAT[role]);
+    let requestId: string;
+    try {
+      ({ request_id: requestId } = await req.submit(() => queue.submit(endpointId, { input: body, ...(start !== undefined ? { startTimeoutSeconds: start } : {}) }), JOB_WHAT[role]));
+    } catch (e) {
+      // Another attempt's jobs fal had already accepted, which this call now holds (B-071): this and any later job of
+      // the call are polled by those ids, as a resumed call's are, and not submitted. The request is updated in place so
+      // the last-frame job and the stored request body see them too.
+      const taken = takenOverOf(e);
+      if (taken?.resume[role] === undefined) throw e;
+      req.resume = taken.resume;
+      if (taken.acceptedAt) req.acceptedAt = taken.acceptedAt;
+      else delete req.acceptedAt;
+      return runJob(req, role, endpointId, input, opts);
+    }
     const acceptedAt = Date.now();
     await req.accepted?.(role, requestId);
     return pollJob(req, role, endpointId, requestId, opts.deadline?.(acceptedAt));

@@ -33,7 +33,7 @@ import {
 } from '@byway/contracts';
 import { cleanReason, declineAdvice, declineStory, notMadeProblem, stoppedBeforeRetry } from './declines.ts';
 import { configuredProviders, isConfigured, KEY_VARS, keyFor, loadEnvFile, type Env } from './env.ts';
-import { billingOf, cutOffError, isCutOff, toGatewayError, type ClassifiedError } from './errors.ts';
+import { billingOf, cutOffError, isCutOff, toGatewayError, type ClassifiedError, type TakenOver } from './errors.ts';
 import { estimateInputTokens, imageSize, maxCompletionCost, maxImageCost, maxVideoCost, textTokens } from './estimate.ts';
 import { ExposureRegister, exposurePath } from './exposure.ts';
 import { findHeldKey, heldKeyError } from './held-key.ts';
@@ -676,10 +676,11 @@ export class ModelGateway implements Gateway {
             // Marking it sent found another attempt's jobs the provider had already accepted (PaidCall.markSent: this
             // call's lease ran out while it got the job ready, and it was admitted again onto that attempt's row). The
             // job is not submitted again, since a second would be billed again, and its acceptance would write over the
-            // first job's id, which would then be counted nowhere (MONEY-3, Block 2's check). The call ends here, as may
-            // have been billed, listed with that job's id. (A call resumed from the start polls its jobs instead, and
-            // submits only the ones not listed: `resume` below.)
-            if (fresh && op.resumed) throw takenOver(ref.provider, what, op.resumed, redact);
+            // first job's id, which would then be counted nowhere (MONEY-3, Block 2's check). The error carries those jobs:
+            // an adapter that polls jobs by id polls them in this call (takenOverOf; B-071); with any other, the call ends
+            // here, as may have been billed, listed with that job's id. (A call resumed from the start polls its jobs
+            // instead, and submits only the ones not listed: `resume` below.)
+            if (fresh && op.resumed) throw takenOver(ref.provider, what, op.resumed, op.resumedAt, redact);
             try {
               return await withRetries(mapped(fn), this.retry, BILLABLE_JOB, stopping);
             } catch (e) {
@@ -1120,7 +1121,7 @@ function stopIfEnding(op: PaidCall, stop: AbortSignal | undefined, provider: Pro
  * (PaidCall.markSent's takeover): not submitted, not retryable, and counted as may have been billed, since those jobs
  * may be, with their ids in the words as in the spend book, where the person can look them up.
  */
-function takenOver(provider: ProviderId, what: string, jobs: Partial<Record<'generation' | 'extract', string>>, redact: Redactor): ClassifiedError {
+function takenOver(provider: ProviderId, what: string, jobs: Partial<Record<'generation' | 'extract', string>>, at: Partial<Record<'generation' | 'extract', string>> | undefined, redact: Redactor): ClassifiedError {
   const listed = Object.entries(jobs).map(([role, id]) => `${role === 'extract' ? 'last-frame' : 'clip'} job ${id}`);
   const them = listed.length > 1 ? 'Those jobs may have been billed: they are listed with their ids' : 'That job may have been billed: it is listed with its id';
   const err: ClassifiedError = new GatewayError(
@@ -1131,7 +1132,8 @@ function takenOver(provider: ProviderId, what: string, jobs: Partial<Record<'gen
     false,
   );
   err.billing = 'maybe';
-  return err;
+  const taken: TakenOver = { resume: { ...jobs }, ...acceptedTimes(at) };
+  return Object.assign(err, { takenOver: taken });
 }
 
 /** When a resumed call's jobs were accepted (the spend book's ISO times), in milliseconds, for the adapter; a time that cannot be read is left out. */
