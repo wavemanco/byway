@@ -5,7 +5,7 @@
  * nothing; and the README's platform claim names exactly the systems CI runs on.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -164,6 +164,29 @@ describe('the CI workflow (ADR-0103)', () => {
       const relative = run({ XDG_CACHE_HOME: 'cache' });
       expect(relative.status).toBe(1);
       expect(relative.stderr).toContain("Playwright's folder, cache/ms-playwright, is not a full path");
+      // As root (an `id` of its own on the PATH says 0): refused before anything else (D2 (h)).
+      const bin = mkdtempSync(path.join(tmpdir(), 'byway-id-'));
+      writeFileSync(path.join(bin, 'id'), '#!/bin/sh\necho 0\n', { mode: 0o755 });
+      const root = run({ PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}` });
+      expect(root.status).toBe(1);
+      expect(root.stderr).toContain('Run this as yourself, not as root');
+      rmSync(bin, { recursive: true, force: true });
+      // The two refusals after the restriction is read, on a Linux whose AppArmor restricts user namespaces (CI's):
+      // each stops before sudo, so the real profile is never written.
+      if (existsSync('/proc/sys/kernel/apparmor_restrict_unprivileged_userns')) {
+        const tmp = mkdtempSync(path.join(tmpdir(), 'byway-apparmor-'));
+        const missing = run({ XDG_CACHE_HOME: tmp });
+        expect(missing.status).toBe(1);
+        expect(missing.stderr).toContain(`Playwright's folder, ${tmp}/ms-playwright, does not exist yet`);
+        mkdirSync(path.join(tmp, 'a b', 'ms-playwright'), { recursive: true });
+        mkdirSync(path.join(tmp, 'cache'));
+        symlinkSync(path.join(tmp, 'a b', 'ms-playwright'), path.join(tmp, 'cache', 'ms-playwright'));
+        const linked = run({ XDG_CACHE_HOME: path.join(tmp, 'cache') });
+        expect(linked.status).toBe(1);
+        expect(linked.stdout).toContain(`Playwright's folder, ${tmp}/cache/ms-playwright, leads to ${realpathSync(tmp)}/a b/ms-playwright`);
+        expect(linked.stderr).toContain(`Playwright's folder, ${realpathSync(tmp)}/a b/ms-playwright, has a space or one of`);
+        rmSync(tmp, { recursive: true, force: true });
+      }
     }
   });
 
