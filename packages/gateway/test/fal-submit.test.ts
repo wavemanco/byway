@@ -149,25 +149,27 @@ describe('gateway: a relay link over fal HTTP, the SDK reading status and result
   it('submits each job once, reads its status and result through the SDK, and ledgers the clip', async () => {
     const http = fakeFalHttp();
     const res = await gateway(http).video(req());
-    expect(http.posts.map((p) => p.url)).toEqual([`${QUEUE}/${MODEL}`, `${QUEUE}/${FAL_EXTRACT_FRAME}`]);
+    expect(http.posts.map((p) => p.url)).toEqual([`${QUEUE}/${MODEL}`, `${QUEUE}/${FAL_EXTRACT_FRAME}`, `${QUEUE}/${FAL_EXTRACT_FRAME}`]);
     expect(http.posts[0]?.body).toEqual({ prompt: req().prompt, image_url: 'https://v3.fal.media/files/upload-0.png', duration: '5' });
     expect(http.reads.map((u) => new URL(u).pathname)).toEqual([
       '/fal-ai/kling-video/requests/req-1/status',
       '/fal-ai/kling-video/requests/req-1',
       '/fal-ai/ffmpeg-api/requests/req-2/status',
       '/fal-ai/ffmpeg-api/requests/req-2',
+      '/fal-ai/ffmpeg-api/requests/req-3/status',
+      '/fal-ai/ffmpeg-api/requests/req-3',
     ]);
-    expect(res).toMatchObject({ provider: 'fal', mediaType: 'video/mp4', costUsd: 0.352 });
+    expect(res).toMatchObject({ provider: 'fal', mediaType: 'video/mp4', costUsd: 0.354 });
     const [entry] = ledgerLines();
-    const response = JSON.parse(await artifacts.getText(entry?.responseSha256 as string)) as { wire: { requestId: string; frame: { requestId: string } } };
+    const response = JSON.parse(await artifacts.getText(entry?.responseSha256 as string)) as { wire: { requestId: string; frame: { requestId: string }; middleFrame: { requestId: string } } };
     // The ids fal gave the jobs are the ones recorded.
-    expect([response.wire.requestId, response.wire.frame.requestId]).toEqual(['req-1', 'req-2']);
+    expect([response.wire.requestId, response.wire.frame.requestId, response.wire.middleFrame.requestId]).toEqual(['req-1', 'req-2', 'req-3']);
   });
 
   it("re-sends a submission refused with fal's own 503 body, and buys one clip", async () => {
     const http = fakeFalHttp({ [MODEL]: [json({ detail: 'Service temporarily unavailable' }, 503)] });
-    await expect(gateway(http).video(req())).resolves.toMatchObject({ costUsd: 0.352 });
-    expect(http.posts.map((p) => p.url)).toEqual([`${QUEUE}/${MODEL}`, `${QUEUE}/${MODEL}`, `${QUEUE}/${FAL_EXTRACT_FRAME}`]);
+    await expect(gateway(http).video(req())).resolves.toMatchObject({ costUsd: 0.354 });
+    expect(http.posts.map((p) => p.url)).toEqual([`${QUEUE}/${MODEL}`, `${QUEUE}/${MODEL}`, `${QUEUE}/${FAL_EXTRACT_FRAME}`, `${QUEUE}/${FAL_EXTRACT_FRAME}`]);
     expect(ledgerLines()).toHaveLength(1);
   });
 

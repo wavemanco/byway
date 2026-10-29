@@ -37,13 +37,13 @@ import type {
   UnledgeredCall,
   WaitedFor,
 } from '@byway/contracts';
-import { ledgerEntryConflict, ledgerEntryProblem, ledgerOperationId, spendFaultDetail } from '@byway/contracts';
+import { ledgerEntryConflict, ledgerEntryProblem, ledgerOperationId, PROVIDER_JOB_ROLES, spendFaultDetail } from '@byway/contracts';
 import { migrate } from './migrations.ts';
 import { openDatabase, writeTransaction } from './db.ts';
 import { StoreError } from './errors.ts';
 
 const roundUsd = (n: number) => Math.round(n * 1e6) / 1e6;
-const ROLES: ReadonlySet<ProviderJobRole> = new Set(['generation', 'extract']);
+const ROLES: ReadonlySet<ProviderJobRole> = new Set(PROVIDER_JOB_ROLES);
 /** A book-side comparison tolerance: amounts are rounded to the micro-dollar. */
 const EPSILON = 1e-9;
 
@@ -144,7 +144,7 @@ export class SqliteSpendBook implements SpendBook {
   }
 
   async accept(opId: string, role: ProviderJobRole, providerJobId: string): Promise<void> {
-    if (!ROLES.has(role)) throw new StoreError('invalid', `a provider job role is generation or extract, got ${String(role)}`);
+    if (!ROLES.has(role)) throw new StoreError('invalid', `a provider job role is generation, extract or middle, got ${String(role)}`);
     const job = textOf('providerJobId', providerJobId);
     this.#durable(() => {
       // When the job was accepted is kept beside its id (provider_jobs_at, migration 10): a resumed fal clip's wait counts from it.

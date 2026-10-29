@@ -152,12 +152,15 @@ const FAL_MEDIA = 'https://v3.fal.media/files';
  */
 export function fakeFal(
   failures: Record<string, Error[]> = {},
-  opts: { clipUrl?: string; frameUrl?: string; pollFailures?: Record<string, Error[]>; cancel?: (endpoint: string, requestId: string) => FalCancel } = {},
+  opts: { clipUrl?: string; frameUrl?: string; middleUrl?: string; pollFailures?: Record<string, Error[]>; cancel?: (endpoint: string, requestId: string) => FalCancel } = {},
 ) {
   /** Each job cancelled (ADR-0111), by endpoint and request id. */
   const cancels: { endpoint: string; requestId: string }[] = [];
   const clipUrl = opts.clipUrl ?? `${FAL_MEDIA}/clip.mp4`;
   const frameUrl = opts.frameUrl ?? `${FAL_MEDIA}/last.png`;
+  /** The middle frame's (F10 (a)): its own URL, so a test can tell its download from the last frame's. */
+  const middleUrl = opts.middleUrl ?? `${FAL_MEDIA}/middle.png`;
+  const middles = new Set<string>();
   const calls: { endpoint: string; input: Record<string, unknown> }[] = [];
   const polls: string[] = [];
   const uploads: { type: string; bytes: number }[] = [];
@@ -177,6 +180,7 @@ export function fakeFal(
         if (error) throw error;
         const id = `req-${jobs.size + 1}`;
         jobs.set(id, endpoint);
+        if (options.input.frame_type === 'middle') middles.add(id);
         return { request_id: id };
       },
       async subscribeToStatus(endpoint, options) {
@@ -193,7 +197,7 @@ export function fakeFal(
       },
       async result(endpoint, options) {
         const data = endpoint.includes('extract-frame')
-          ? { images: [{ url: frameUrl, content_type: 'image/png', width: 1280, height: 720 }] }
+          ? { images: [{ url: middles.has(options.requestId) ? middleUrl : frameUrl, content_type: 'image/png', width: 1280, height: 720 }] }
           : { video: { url: clipUrl, content_type: 'video/mp4', file_size: 9 } };
         return { data, requestId: options.requestId };
       },
@@ -203,7 +207,7 @@ export function fakeFal(
       },
     },
   };
-  return { client, calls, polls, uploads, uploadedUrl, clipUrl, frameUrl, cancels };
+  return { client, calls, polls, uploads, uploadedUrl, clipUrl, frameUrl, middleUrl, cancels };
 }
 
 /** The start of a real MP4: an ISO-BMFF `ftyp` box (size 24, brand isom), then a little of an `mdat` box. */

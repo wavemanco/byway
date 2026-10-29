@@ -33,8 +33,9 @@ import type { BudgetDetails, LedgerEntry, ProviderId } from './gateway.ts';
 
 export type PaidOperationState = 'open' | 'sent' | 'accepted' | 'settled' | 'released' | 'uncertain';
 
-/** A fal relay link submits two queue jobs: the clip, then its last frame. */
-export type ProviderJobRole = 'generation' | 'extract';
+/** A fal relay link submits up to three queue jobs: the clip, its last frame, then a frame from its middle (F10 (a)). */
+export const PROVIDER_JOB_ROLES = ['generation', 'extract', 'middle'] as const;
+export type ProviderJobRole = (typeof PROVIDER_JOB_ROLES)[number];
 
 export interface AdmitRequest {
   /** A fresh id the caller chose for this operation. */

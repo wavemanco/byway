@@ -136,6 +136,8 @@ export const ShotSchema = z.object({
    * the link sees it beside the frame the clip started from (F10, ADR-0090). Never in the storyboard's text (BLIND-1).
    */
   lastFrameArtifactId: z.string().optional(),
+  /** Added with the clip when the gateway could take one: a frame from its middle, which the shot check sees too (F10 (a)). */
+  middleFrameArtifactId: z.string().optional(),
 });
 /**
  * A storyboard (spec §3.3): shots, the voice-over (locked after the early VOICE), and the on-screen headline and

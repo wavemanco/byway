@@ -1,6 +1,6 @@
 import { c1, c2, c3, c4, c5, c6a, c7, PROTOCOL_CONFIGS } from '@byway/catalog';
 import type { CostEstimate } from '@byway/contracts';
-import { PRICES, PROFILES } from '@byway/gateway';
+import { EXTRACT_FRAME_SECONDS_BOUND, FAL_EXTRACT_FRAME, PRICES, PROFILES } from '@byway/gateway';
 import { withHash, type Node, type Recipe } from '@byway/recipe';
 import { describe, expect, it } from 'vitest';
 import { createAdvisor, estimateRecipe, HUMAN_MINUTES, TOKEN_ASSUMPTIONS } from '../src/index.ts';
@@ -193,6 +193,21 @@ describe('estimate: the structure of a recipe times the profile prices', () => {
     for (const role of ['build', 'fix', 'critic', 'judge', 'check', 'cut', 'tells-sweep', 'vision', 'relay', 'asset.briefs']) {
       expect(TOKEN_ASSUMPTIONS[role]).toBeDefined();
     }
+  });
+
+  it('prices each clip with both of its frame extractions, the last and the middle frame, at their bound (F10 (a))', () => {
+    const balanced = PROFILES.find((p) => p.id === 'balanced')!;
+    const at = new Date('2026-10-07T12:00:00Z');
+    const rows = (over: (row: (typeof PRICES)[number]) => Partial<(typeof PRICES)[number]>) => PRICES.map((row) => ({ ...row, ...over(row) }));
+    const est = (prices: readonly (typeof PRICES)[number][]) => estimateRecipe(c5, { profile: balanced, images: true, video: true, at, prices });
+    const isClip = (row: (typeof PRICES)[number]) => row.provider === 'fal' && row.model === balanced.video!.model;
+    const isFrame = (row: (typeof PRICES)[number]) => row.provider === 'fal' && row.model === FAL_EXTRACT_FRAME;
+    const none = est(rows((r) => (isClip(r) || isFrame(r) ? { perSecondUsd: 0 } : {})));
+    // At $1 a second, clips of CLIP_SECONDS.low (5 s, a length the model makes) say how many clips the low end counts.
+    const clips = (est(rows((r) => (isClip(r) ? { perSecondUsd: 1 } : isFrame(r) ? { perSecondUsd: 0 } : {}))).lowUsd - none.lowUsd) / 5;
+    expect(clips).toBeGreaterThanOrEqual(3);
+    const frames = est(rows((r) => (isFrame(r) ? { perSecondUsd: 1 } : isClip(r) ? { perSecondUsd: 0 } : {}))).lowUsd - none.lowUsd;
+    expect(frames).toBeCloseTo(clips * 2 * EXTRACT_FRAME_SECONDS_BOUND, 1);
   });
 
   it('rejects a profile the gateway does not know', () => {

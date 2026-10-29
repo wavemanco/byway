@@ -293,7 +293,7 @@ describe('a fal clip waits its video model’s wait from fal’s acceptance, the
     expect(clip.costUsd).toBeGreaterThan(0);
     expect(fal.cancels).toEqual([{ endpoint: BALANCED_VIDEO, requestId: 'req-1', at: T0 + 30 * MINUTE }]);
     expect(asked(fal).slice(0, 3)).toEqual(['cancel req-1', 'status req-1', 'result req-1']);
-    expect(fal.submitted.map((s) => s.endpoint)).toEqual([BALANCED_VIDEO, FAL_EXTRACT_FRAME]);
+    expect(fal.submitted.map((s) => s.endpoint)).toEqual([BALANCED_VIDEO, FAL_EXTRACT_FRAME, FAL_EXTRACT_FRAME]);
     expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video', costUsd: clip.costUsd })]);
     expect((await g.spendRecords('ws')).uncertain).toEqual([]);
   });
@@ -357,8 +357,14 @@ describe('a fal clip waits its video model’s wait from fal’s acceptance, the
     await vi.advanceTimersByTimeAsync(MINUTE);
     const clip = await settled(res);
     expect(clip.costUsd).toBeGreaterThan(0);
-    expect(fal.cancels).toEqual([{ endpoint: BALANCED_VIDEO, requestId: 'req-1', at: T0 + 30 * MINUTE }]);
-    expect(fal.submitted.map((s) => s.endpoint)).toEqual([BALANCED_VIDEO, FAL_EXTRACT_FRAME]);
+    // The last frame took a minute of the frame's bound, so the middle frame (F10 (a)) had a minute left, which ran out
+    // as it was made: cancelled, best effort, and the clip is used without it.
+    expect(fal.cancels).toEqual([
+      { endpoint: BALANCED_VIDEO, requestId: 'req-1', at: T0 + 30 * MINUTE },
+      { endpoint: FAL_EXTRACT_FRAME, requestId: 'req-3', at: T0 + 32 * MINUTE },
+    ]);
+    expect(fal.submitted.map((s) => s.endpoint)).toEqual([BALANCED_VIDEO, FAL_EXTRACT_FRAME, FAL_EXTRACT_FRAME]);
+    expect(clip.middleFrameArtifactId).toBeUndefined();
     expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video', costUsd: clip.costUsd })]);
     expect((await g.spendRecords('ws')).uncertain).toEqual([]);
   });
@@ -439,8 +445,8 @@ describe('a resumed clip keeps its clock: its wait counts from when fal accepted
     expect(fal.log.slice(0, 2)).toEqual(['status req-earlier', 'result req-earlier']);
     expect(fal.log).not.toContain('poll req-earlier');
     expect(fal.cancels).toEqual([]);
-    // Polled by its id, never submitted again: only its last frame's job is.
-    expect(fal.submitted.map((s) => s.endpoint)).toEqual([FAL_EXTRACT_FRAME]);
+    // Polled by its id, never submitted again: only its last and middle frames' jobs are.
+    expect(fal.submitted.map((s) => s.endpoint)).toEqual([FAL_EXTRACT_FRAME, FAL_EXTRACT_FRAME]);
     expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video', costUsd: clip.costUsd })]);
     expect((await g.spendRecords('ws')).uncertain).toEqual([]);
   });
@@ -538,7 +544,7 @@ describe('fal’s start deadline: below the wait by about one clip’s making, u
     await settled(g.video(clipOf({ profileId, durationSec: seconds })));
     // The clip's wait and its frame's bound ended with the call: no timer of it is left waiting to fire.
     expect(vi.getTimerCount()).toBe(0);
-    expect(fal.submitted.map(({ at: _at, ...job }) => job)).toEqual([{ endpoint: model, startTimeoutSeconds: minutes * 60 }, { endpoint: FAL_EXTRACT_FRAME }]);
+    expect(fal.submitted.map(({ at: _at, ...job }) => job)).toEqual([{ endpoint: model, startTimeoutSeconds: minutes * 60 }, { endpoint: FAL_EXTRACT_FRAME }, { endpoint: FAL_EXTRACT_FRAME }]);
   });
 
   it('submitJob sends it under both names, as whole seconds', async () => {
@@ -714,14 +720,14 @@ describe('a stopped clip fal reported done, whose result fal answers with a fail
     });
     expect(e.billed).toBeUndefined();
     expect(ledger()).toEqual([]);
-    expect((await g.spendRecords('ws')).uncertain.map((u) => [u.reason, u.usd, u.providerJobs])).toEqual([['interrupted', 0.352, { generation: 'req-1' }]]);
-    expect(await g.spend('ws')).toMatchObject({ spentUsd: 0, byRun: {}, inFlightUsd: 0, uncertainUsd: 0.352 });
+    expect((await g.spendRecords('ws')).uncertain.map((u) => [u.reason, u.usd, u.providerJobs])).toEqual([['interrupted', 0.354, { generation: 'req-1' }]]);
+    expect(await g.spend('ws')).toMatchObject({ spentUsd: 0, byRun: {}, inFlightUsd: 0, uncertainUsd: 0.354 });
   });
 
   it.each(cases(notFals))('%s, its result answered with %s: no word from fal on the job, so it is settled as made, as before', async (_what, _answer, route, fails) => {
     const { e, g } = await stoppedDone(route, fails);
     expect(e).toMatchObject({ code: 'byway-failure', billed: true, message: 'fal made the clip and billed it (its cost is recorded), but its run was ending, so byway did not download it.' });
-    expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video', costUsd: 0.352 })]);
+    expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video', costUsd: 0.354 })]);
     expect((await g.spendRecords('ws')).uncertain).toEqual([]);
   });
 });

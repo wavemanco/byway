@@ -101,6 +101,8 @@ export function mockAdapter(opts: MockAdapterOptions = {}): ProviderAdapter {
       return {
         clip: { bytes: new TextEncoder().encode(svg), mediaType: 'image/svg+xml' },
         lastFrame: { bytes: placeholderFrame(seed), mediaType: 'image/png' },
+        // A frame of its own for the middle (F10 (a)), so the shot check sees three different images.
+        middleFrame: { bytes: placeholderFrame(seedOf(`${shot}\n${req.prompt}\nmiddle`)), mediaType: 'image/png' },
         servedModel: req.model,
         usage: { inputTokens: 0, outputTokens: 0, units: req.durationSec },
         requestBody: { model: req.model, prompt: req.prompt, durationSec: req.durationSec, ...(req.startFrame ? { startFrame: `artifact:${req.startFrame.artifactId}` } : {}) },

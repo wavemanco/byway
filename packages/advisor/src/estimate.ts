@@ -1,5 +1,5 @@
 import type { CostEstimate, Medium, ModelProfile, Tier } from '@byway/contracts';
-import { EXTRACT_FRAME_SECONDS_BOUND, FAL_EXTRACT_FRAME, PRICES, falVideoSeconds, priceFor, tokenCost, type PriceRow } from '@byway/gateway';
+import { FAL_VIDEO_EXTRAS, PRICES, falVideoSeconds, priceFor, tokenCost, type PriceRow } from '@byway/gateway';
 import { asksSwaps, audioAsset, loopRounds, type Gate, type Node, type Recipe, type Stage, type Step } from '@byway/recipe';
 import { AdvisorError } from './errors.ts';
 
@@ -198,7 +198,7 @@ function images(w: Walk, n: Count): Span {
   return { low: { ...ZERO, images: n.low, usd: each * n.low }, high: { ...ZERO, images: n.high, usd: each * n.high } };
 }
 
-/** One relay clip through Gateway.video (ADR-0069): the model's seconds at its per-second price, plus frame extraction. */
+/** One relay clip through Gateway.video (ADR-0069): the model's seconds at its per-second price, plus its frame extractions. */
 function clip(w: Walk): Span {
   const v = w.priced.video;
   if (!v) return NONE;
@@ -383,8 +383,10 @@ function resolvePrices(recipe: Recipe, ctx: PricingContext): Priced {
   if (ctx.images && ctx.profile.image) priced.image = price(rows, ctx.profile.image.provider, ctx.profile.image.model, ctx.at);
   const video = ctx.profile.video;
   if (ctx.video && video) {
-    const extract = video.provider === 'fal' ? priceFor(rows, 'fal', FAL_EXTRACT_FRAME, ctx.at) : undefined;
-    priced.video = { row: price(rows, video.provider, video.model, ctx.at), model: video.model, extraUsd: (extract?.perSecondUsd ?? 0) * EXTRACT_FRAME_SECONDS_BOUND };
+    // fal's frame extractions (the last frame, and the middle frame for the shot check: F10 (a)), at the gateway's bound.
+    const extras = video.provider === 'fal' ? FAL_VIDEO_EXTRAS : [];
+    const extraUsd = extras.reduce((usd, x) => usd + (priceFor(rows, 'fal', x.model, ctx.at)?.perSecondUsd ?? 0) * x.seconds, 0);
+    priced.video = { row: price(rows, video.provider, video.model, ctx.at), model: video.model, extraUsd };
   }
   return priced;
 }

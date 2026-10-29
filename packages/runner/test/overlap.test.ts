@@ -445,7 +445,7 @@ describe('a relay link’s clip, attempt 1 lost while fal makes it (F03 stage 3)
     const second = attempt();
     const clip = await memoGateway(workerB, store, relayScope, { ...QUICK, operation: second.operation }).video(link());
     expect(clip).toMatchObject({ provider: 'fal', mediaType: 'video/mp4' });
-    expect(f.submissions).toEqual([MODEL, 'fal-ai/ffmpeg-api/extract-frame']);
+    expect(f.submissions).toEqual([MODEL, 'fal-ai/ffmpeg-api/extract-frame', 'fal-ai/ffmpeg-api/extract-frame']);
     expect(await workerB.spend(workspaceId)).toMatchObject({ inFlightUsd: 0, uncertainUsd: 0, spentUsd: clip.costUsd });
     second.invocation.stop();
     first.invocation.stop();

@@ -258,6 +258,12 @@ export interface VideoResult {
   lastFrameArtifactId: string;
   /** Stored under its real type (the provider's frame extractor does not promise PNG). */
   lastFrameMediaType: MediaType;
+  /**
+   * A frame from the middle of the clip, for the shot check (F10 (a)), when byway could take one: best effort, so a clip
+   * without it is still the call's result. Its extraction is counted in the clip's cost either way.
+   */
+  middleFrameArtifactId?: string;
+  middleFrameMediaType?: MediaType;
   servedModel: string;
   provider: ProviderId;
   costUsd: number;
