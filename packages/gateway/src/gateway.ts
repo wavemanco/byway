@@ -709,17 +709,29 @@ export class ModelGateway implements Gateway {
             if (fresh && op.resumed) throw takenOver(ref.provider, what, op.resumed, op.resumedAt, redact);
             // A submission after the call's first (a last-frame or middle-frame job) goes out only while this call still
             // holds its row in the spend book. An attempt that took the row over (this one's lease ran out while its
-            // process slept) polls the same clip and submits its own frame jobs, so this one submits nothing more, and its
-            // clip settles as made (MONEY-1, the check of fix/fx-landnow; F03 (e)). A book that cannot say submits nothing.
-            if (later) {
+            // process slept, or after a cancel, which renews nothing) polls the same clip and submits its own frame jobs,
+            // so this one submits nothing more, and its clip settles as made (MONEY-1, the check of fix/fx-landnow; F03
+            // (e)). A book that cannot say submits nothing. The row is asked about before every try of such a job, its
+            // resends after a certainly-not-billed refusal (503, 429) included: the lease can lapse during the wait before
+            // a resend, and a resend then would be a second job billed beside the other attempt's, counted in no row
+            // (R3-MONEY-1). The refusal is not retried: it is byway's, and nothing was sent.
+            const holdsRow = async () => {
               const holds = await op.holdsRow().catch(() => undefined);
               if (holds === undefined) throw notSubmitted(ref.provider, what, 'byway could not read its spending records to see that this attempt of the step still holds the call');
               if (!holds) throw notSubmitted(ref.provider, what, 'another attempt of this step took the call over, and it makes this job');
+            };
+            if (later) {
+              await holdsRow();
               // This attempt holds the row: the made clip's frames are its to finish, cancel or not.
               framing = true;
             }
+            const send = mapped(fn);
+            const tryOnce = async (n: number) => {
+              if (later && n > 0) await holdsRow();
+              return send();
+            };
             try {
-              return await withRetries(mapped(fn), this.retry, BILLABLE_JOB, framing ? finishing : stopping);
+              return await withRetries(tryOnce, this.retry, BILLABLE_JOB, framing ? finishing : stopping);
             } catch (e) {
               if ((e as ClassifiedError).billing !== 'maybe') throw e;
               // Not sent again (ADR-0091): a second submission is a second job, billed again.
