@@ -1003,7 +1003,25 @@ describe('whose directions your next VISION is shown (directionsReactedTo)', () 
     expect(reacted(recipeOf(seq(ai('v'), audit('au', [{ name: 'c', body: critic('c') }]), yours('p'))))).toEqual([]);
     // Directions made inside a candidate stay there.
     expect(reacted(recipeOf(seq(replicate('x', 2, ai('v')), yours('p'))))).toEqual([]);
-    expect(reacted(recipeOf(seq(audit('au', [{ name: 'v', body: ai('v') }]), yours('p'))))).toEqual([]);
+    // Made in a lens, they are among the notes the audit hands on (B-060).
+    expect(reacted(recipeOf(seq(audit('au', [{ name: 'v', body: ai('v') }]), yours('p'))))).toEqual(['v']);
+    expect(reacted(recipeOf(seq(audit('au', [{ name: 'v', body: ai('v') }, { name: 'c', body: critic('c') }]), yours('p'))))).toEqual(['v']);
+    expect(reacted(recipeOf(seq(audit('au', [{ name: 'v', body: seq(ai('v'), critic('c')) }]), yours('p'))))).toEqual([]);
+  });
+
+  it('directions inside a lens, a candidate that runs alone or a final check, reacted to there (B-060)', () => {
+    // A VISION of yours after them in the same lens, or in a replicate of one, is shown them.
+    expect(reacted(recipeOf(seq(audit('au', [{ name: 'v', body: seq(ai('v'), yours('p')) }]), critic('c'))))).toEqual(['v']);
+    expect(reacted(recipeOf(seq(replicate('one', 1, seq(ai('v'), yours('p'))), critic('c'))))).toEqual(['v']);
+    const pass = { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' } as const;
+    expect(reacted(recipeOf(oneShotGate('g', seq(ai('v'), yours('p'), critic('gc')), pass)))).toEqual(['v']);
+    expect(reacted(recipeOf(seq(oneShotGate('g', seq(ai('v'), critic('gc')), pass), yours('p'))))).toEqual([]);
+    // Not where they wait past the candidate: the replicate hands on the notes it started with.
+    expect(reacted(recipeOf(seq(replicate('one', 1, ai('v')), yours('p'))))).toEqual([]);
+    // Nor beside candidates or lenses where you react, run side by side: your next VISION may be another one's.
+    expect(reacted(recipeOf(replicate('two', 2, seq(ai('v'), yours('p')))))).toEqual([]);
+    expect(reacted(recipeOf(seq(render('r'), each('per', seq(ai('v'), yours('p'))))))).toEqual([]);
+    expect(reacted(recipeOf(audit('au', [{ name: 'v', body: seq(ai('v'), yours('p')) }, { name: 'q', body: yours('q') }])))).toEqual([]);
   });
 
   it("a final check that re-runs the directions' stage starts it again without them", () => {

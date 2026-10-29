@@ -1444,7 +1444,10 @@ export function unappliedCritiques(recipe: Recipe): Placement[] {
  *   (a loop's next round, a relay's next link) before a VISION of the person's: the later directions are shown, never
  *   the earlier.
  * - replicate, each, a pick and a one-shot gate hand on the notes they started with, so a note made inside them stays
- *   there; directions made inside a candidate, a lens, a gate body or a judge are never claimed.
+ *   there: directions made inside one are claimed only where a VISION of yours there is shown them, and an audit hands
+ *   on its lenses' notes, so directions made in a lens may be shown after it (B-060). Not inside candidates that run
+ *   side by side (each, a replicate of more than one), nor in an audit beside another lens where you react: your next
+ *   VISION may be another candidate's or lens's.
  * - A final check that re-runs the directions' stage, or an earlier one, starts it again from that stage's entry: what
  *   the directions left is gone, so where it can still be waiting for its reaction there, no claim is made.
  *
@@ -1462,7 +1465,10 @@ export function directionsReactedTo(recipe: Recipe): Set<Step> {
     const v = p.step;
     if (v.actor !== 'model' || v.role !== 'vision') continue;
     let shown = false;
-    let missed = p.contained || p.perCandidate;
+    const around = enclosing(recipe, p.path);
+    // Inside candidates that run side by side, or beside a lens where a person reacts, the next VISION of theirs may be
+    // another candidate's or lens's, which is not shown these directions.
+    let missed = around.some((n) => n.op === 'each' || (n.op === 'replicate' && n.n > 1) || (n.op === 'audit' && n.lenses.some((l) => l.body !== v && !around.includes(l.body) && hasPersonVision(l.body))));
     if (!missed) {
       const at = stageAt(p.stage);
       flowRecipe<number>(recipe, IDLE, {
@@ -1480,18 +1486,61 @@ export function directionsReactedTo(recipe: Recipe): Set<Step> {
         join: (states) => states.reduce((a, b) => a | b, 0),
         key: String,
         after(node, entry, inner) {
+          // An audit hands on its lenses' notes, the directions made in one of them included.
           if (node.op === 'audit') return inner;
           if (node.op === 'gate' && node.retry && node.retry.times > 0) {
             const from = stageAt(node.retry.stage);
             if (from >= 0 && from <= at && inner & (LIVE | LOST)) missed = true;
           }
-          return entry;
+          // The others hand on the notes they started with: directions made inside one and still waiting are not shown
+          // after it.
+          return around.includes(node) && inner & (LIVE | LOST) ? entry | LOST : entry;
         },
       });
     }
     holds.set(v, (holds.get(v) ?? true) && shown && !missed);
   }
   return new Set([...holds].flatMap(([s, ok]) => (ok ? [s] : [])));
+}
+
+/** The nodes around the place at `path` (a walk path, as `placements` gives it), outermost first; the place itself not. */
+function enclosing(recipe: Recipe, path: string): Node[] {
+  const out: Node[] = [];
+  const visit = (n: Node, at: string): boolean => {
+    if (at === path) return true;
+    if (!path.startsWith(`${at}.`)) return false;
+    out.push(n);
+    const children: [Node, string][] =
+      n.op === 'seq' ? n.steps.map((c, i) => [c, `${at}.steps[${i}]`])
+      : n.op === 'route' ? n.branches.map((b, i) => [b.body, `${at}.branches[${i}].body`])
+      : n.op === 'audit' ? n.lenses.map((l, i) => [l.body, `${at}.lenses[${i}].body`])
+      : n.op === 'pick' ? (n.judge ? [[n.judge, `${at}.judge`]] : [])
+      : n.op === 'step' ? []
+      : [[n.body, `${at}.body`]];
+    if (children.some(([c, p]) => visit(c, p))) return true;
+    out.pop();
+    return false;
+  };
+  recipe.stages.some((s, i) => visit(s.body, `stages[${i}].body`));
+  return out;
+}
+
+/** Whether a person's VISION sits anywhere in a node. */
+function hasPersonVision(n: Node): boolean {
+  switch (n.op) {
+    case 'step':
+      return n.actor === 'human' && n.role === 'vision';
+    case 'seq':
+      return n.steps.some(hasPersonVision);
+    case 'route':
+      return n.branches.some((b) => hasPersonVision(b.body));
+    case 'audit':
+      return n.lenses.some((l) => hasPersonVision(l.body));
+    case 'pick':
+      return n.judge !== undefined && hasPersonVision(n.judge);
+    default:
+      return hasPersonVision(n.body);
+  }
 }
 
 // ---- Field roles ------------------------------------------------------------------------------------------------
