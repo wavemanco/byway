@@ -1,8 +1,8 @@
 import { c1, c2, c3, c4, c5, c6, c6a, c7, PROTOCOL_CONFIGS, presentationOf, presentedStepFor } from '@byway/catalog';
 import { lockedScripts, walk, withHash, type Node, type Recipe, type Step } from '@byway/recipe';
 import { describe, expect, it } from 'vitest';
-import { checkAnswer, COMPOSED_EXPLAINERS, diffFromNearest, nodeIds, presentComposed, stepLabel } from '../src/index.ts';
-import { fencedJson, PROMPTS } from './helpers.ts';
+import { checkAnswer, COMPOSED_EXPLAINERS, createAdvisor, diffFromNearest, nodeIds, presentComposed, stepLabel } from '../src/index.ts';
+import { demoAdvisor, fencedJson, PROMPTS, WS } from './helpers.ts';
 
 const COPY = { code: 'X (composed)', name: 'Your recipe', promise: 'Not tested.', bestFor: ['Your problem'] };
 const asComposed = (r: Recipe): Recipe => withHash({ ...r, id: `composed-${r.id}`, kind: 'composed', channel: 'workspace' });
@@ -674,10 +674,11 @@ describe('explainers claim only what the recipe establishes about the steps arou
 
 /**
  * F08 round 4: every catalog recipe as composed, step by step, with what it is said to do. Each line was checked
- * against what the runner runs: the obvious-answer check's plain drafts never become the work; C5's motion outside the
- * chain is one clip from the latest start frame; its compositing and voice-over audio have no executor in this version
- * and finish skipped (ADR-0069); a seed in a fan-out is separate sessions; a script is locked only where nothing asks
- * for it again. A change to any of them is a change to what a person is told, made here on purpose.
+ * against what the runner runs: the obvious-answer check's plain drafts never become the work, and are shown as part
+ * of that check (B-059); C5's motion outside the chain is one clip from the latest start frame; its compositing and
+ * voice-over audio have no executor in this version and finish skipped (ADR-0069); a seed in a fan-out is separate
+ * sessions; a script is locked only where nothing asks for it again. A change to any of them is a change to what a
+ * person is told, made here on purpose.
  */
 describe('every catalog recipe as composed, as it is presented (F08 round 4)', () => {
   type Key = keyof typeof COMPOSED_EXPLAINERS;
@@ -696,8 +697,7 @@ describe('every catalog recipe as composed, as it is presented (F08 round 4)', (
     c2: [
       ['Explore', 'Random spark', 'ai', 'seeded-options,seed-option', 'seed'],
       ['Explore', 'Merge near-duplicates', 'ai', 'dedupe', 'dedupe'],
-      ['Explore', 'Draft', 'ai', 'pool-render,annotate,vanilla-x3,vanilla-build', 'aside'],
-      ['Explore', 'Obvious-answer check', 'ai', 'vanilla-flag', 'overlap'],
+      ['Explore', 'Obvious-answer check', 'ai', 'pool-render,annotate,vanilla-x3,vanilla-build,vanilla-flag', 'overlap'],
       ['Explore', 'Outside critique', 'ai', 'critic', 'critic'],
       ['Explore', 'Your direction', 'you', 'vision,react', 'visionYours'],
       ['Explore', 'Directions to react to', 'ai', 'sharpen', 'visionAiToReact'],
@@ -707,8 +707,7 @@ describe('every catalog recipe as composed, as it is presented (F08 round 4)', (
     ],
     c3: [
       ['Explore', 'Random spark', 'ai', 'seeded-angles,seed-angle', 'seed'],
-      ['Explore', 'Draft', 'ai', 'cards-render,vanilla-check,vanilla-x3,vanilla-build', 'aside'],
-      ['Explore', 'Obvious-answer check', 'ai', 'vanilla-flag', 'overlap'],
+      ['Explore', 'Obvious-answer check', 'ai', 'cards-render,vanilla-check,vanilla-x3,vanilla-build,vanilla-flag', 'overlap'],
       ['Explore', 'Pick one', 'you', 'pick-angle', 'pickYours'],
       ['Explore', 'Your direction', 'you', 'thesis', 'visionYours'],
       ['Refine', 'Draft', 'ai', 'draft,ai-draft', 'build'],
@@ -734,8 +733,7 @@ describe('every catalog recipe as composed, as it is presented (F08 round 4)', (
     c5: [
       ['Explore', 'Random spark', 'ai', 'seeded-territories,seed-territory', 'seed'],
       ['Explore', 'Merge near-duplicates', 'ai', 'dedupe', 'dedupe'],
-      ['Explore', 'Draft', 'ai', 'territories-render,vanilla-check,vanilla-x3,vanilla-build', 'aside'],
-      ['Explore', 'Obvious-answer check', 'ai', 'vanilla-flag', 'overlap'],
+      ['Explore', 'Obvious-answer check', 'ai', 'territories-render,vanilla-check,vanilla-x3,vanilla-build,vanilla-flag', 'overlap'],
       ['Explore', 'Pick 3', 'you', 'shortlist', 'pickYours'],
       ['Explore', 'Your direction', 'you', 'direction', 'visionYours'],
       ['Explore', 'Draft', 'ai', 'concepts,concept', 'build'],
@@ -764,8 +762,7 @@ describe('every catalog recipe as composed, as it is presented (F08 round 4)', (
     ],
     c6a: [
       ['Explore', 'Random spark', 'ai', 'seeded-cards,seed-card', 'seed'],
-      ['Explore', 'Draft', 'ai', 'cards-render,vanilla-check,vanilla-x3,vanilla-build', 'aside'],
-      ['Explore', 'Obvious-answer check', 'ai', 'vanilla-flag', 'overlap'],
+      ['Explore', 'Obvious-answer check', 'ai', 'cards-render,vanilla-check,vanilla-x3,vanilla-build,vanilla-flag', 'overlap'],
       ['Explore', 'Pick one', 'you', 'pick-card', 'pickYours'],
       ['Explore', 'Your direction', 'you', 'vision,react', 'visionYours'],
       ['Explore', 'Directions to react to', 'ai', 'sharpen', 'visionAiToReact'],
@@ -796,5 +793,53 @@ describe('every catalog recipe as composed, as it is presented (F08 round 4)', (
       const shown = presentComposed(asComposed(recipe), COPY).stages.flatMap((s) => s.steps.map((x) => [s.stage, x.label, x.who, x.stepIds.join(','), x.explainer]));
       expect(shown, recipe.id).toEqual(PRESENTED[recipe.id]!.map(([stage, label, who, ids, key]) => [stage, label, who, ids, COMPOSED_EXPLAINERS[key]]));
     }
+  });
+});
+
+/**
+ * B-055: an image or motion step says it is skipped where the profile the recipe is presented for has no image or video
+ * model (the runner's mediaStatus: such a step finishes skipped with ADR-0069's note, and the work passes through).
+ */
+describe('image and motion steps without an image or video model (B-055)', () => {
+  const E = COMPOSED_EXPLAINERS;
+  const said = (r: Recipe, id: string, media?: { images: boolean; video: boolean }) =>
+    presentComposed(asComposed(r), COPY, media).stages.flatMap((s) => s.steps).find((s) => s.stepIds.includes(id))!.explainer;
+
+  it('says an image step makes no images, and the work passes through, without an image model', () => {
+    for (const [r, id] of [[c1, 'asset'], [c2, 'mood-boards'], [c3, 'asset'], [c5, 'anchor-frames']] as const) {
+      expect(said(r, id), r.id).toBe(E.asset);
+      expect(said(r, id, { images: true, video: false }), r.id).toBe(E.asset);
+      expect(said(r, id, { images: false, video: true }), r.id).toBe(E.imagesSkipped);
+    }
+  });
+
+  it('says a motion step makes no clip without a video model, in the chain and outside it', () => {
+    for (const id of ['clip', 'render-in-scene']) {
+      expect(said(c5, id, { images: true, video: true })).not.toBe(E.videoSkipped);
+      expect(said(c5, id, { images: true, video: false })).toBe(E.videoSkipped);
+    }
+    // Compositing and voice-over audio are skipped in this version whatever the profile.
+    expect(said(c5, 'matte', { images: true, video: true })).toBe(E.compositingSkipped);
+    expect(said(c5, 'vo-audio', { images: false, video: false })).toBe(E.audioSkipped);
+  });
+
+  it('the advisor presents a composed recipe for the profile it is estimated for', () => {
+    const stored = asComposed(c5);
+    const admitted = (advisor: ReturnType<typeof createAdvisor>) =>
+      advisor.admit({ recipe: stored, nearestRecipeId: 'c5' }, { problem: { text: 'A launch ad' }, profileId: WS.profileId }).presentation.stages.flatMap((s) => s.steps);
+    const { advisor: withMedia, gateway } = demoAdvisor();
+    const noMedia = { ...gateway, demo: gateway.demo, profileStatus: () => gateway.profileStatus().map((s) => ({ ...s, images: false, video: false })) };
+    const without = admitted(createAdvisor({ gateway: noMedia, prompts: PROMPTS }));
+    expect(without.find((s) => s.stepIds.includes('anchor-frames'))!.explainer).toBe(E.imagesSkipped);
+    expect(without.find((s) => s.stepIds.includes('clip'))!.explainer).toBe(E.videoSkipped);
+    expect(admitted(withMedia).find((s) => s.stepIds.includes('anchor-frames'))!.explainer).toBe(E.asset);
+  });
+});
+
+/** B-058: a pick with no more options than it keeps takes them all, and no one is asked (the interpreter's pick). */
+describe('a pick that has no more options than it keeps (B-058)', () => {
+  it('each pick sentence says that every option goes on then', () => {
+    for (const key of ['pickYours', 'pickAi', 'pickRandom'] as const) expect(COMPOSED_EXPLAINERS[key]).toMatch(/no more options than it keeps, every one goes on/);
+    expect(COMPOSED_EXPLAINERS.pickYours).toMatch(/you are not asked/);
   });
 });

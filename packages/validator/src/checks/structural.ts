@@ -182,7 +182,8 @@ function checkGate(recipe: Recipe, node: Extract<Node, { op: 'gate' }>, path: st
   }
 }
 
-function knobDefs(step: Step): Record<string, KnobDef> {
+/** The knobs a step may set: its block's, or its role's for the roles that have their own (ST7; the composed profile reads it too). */
+export function knobDefs(step: Step): Record<string, KnobDef> {
   if (step.block) return BLOCKS[step.block].knobs;
   if (step.role === 'build' || step.role === 'fix' || step.role === 'select') return ROLE_KNOBS[step.role];
   return {};
@@ -201,7 +202,7 @@ function checkKnobs(step: Step, path: string, findings: Findings): void {
   }
 }
 
-function knobValueOk(def: KnobDef, value: Json): boolean {
+export function knobValueOk(def: KnobDef, value: Json): boolean {
   switch (def.type) {
     case 'enum':
       return typeof value === 'string' && def.values.includes(value);

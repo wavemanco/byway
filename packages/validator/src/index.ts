@@ -149,3 +149,4 @@ export function scopeTyping(recipe: Recipe): Typing {
 export type { Finding } from './context.ts';
 export type { Producer, ScopeState, Typing } from './scope.ts';
 export { flowRecipe, withoutFlowMemo, type FlowOps } from './flow.ts';
+export { knobDefs, knobValueOk } from './checks/structural.ts';
