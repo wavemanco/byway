@@ -60,7 +60,7 @@ export function firedTriggers(rows: readonly Row[], diff: Diff): Fired[] {
 
 /** The branch's diff from where HEAD left `base` to the working tree. */
 export function branchDiff(base = 'main', root = ROOT): Diff {
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'core.quotePath=false', ...args], { encoding: 'utf8', maxBuffer: 1 << 28 });
+  const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'core.quotePath=false', ...args], { encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'pipe'] });
   const from = git('merge-base', base, 'HEAD').trim();
   const list = (text: string) => text.split('\n').map((l) => l.trim()).filter((l) => l !== '');
   const files = [...new Set([...list(git('diff', '--name-only', from)), ...list(git('ls-files', '--others', '--exclude-standard'))])];
