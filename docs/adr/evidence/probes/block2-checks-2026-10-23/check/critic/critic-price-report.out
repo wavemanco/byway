@@ -1,0 +1,8 @@
+byway's price table was last read in full on 2026-10-22, 1 day ago.
+OpenRouter: the prompt and completion prices of anthropic/claude-fable-5.1, anthropic/claude-opus-5.5, anthropic/claude-sonnet-5.5 match its model list exactly.
+Anthropic: every figure byway records was found on https://platform.claude.com/docs/en/about-claude/pricing.md.
+OpenAI: every figure byway records was found on https://developers.openai.com/api/docs/pricing.
+Google: every figure byway records was found on https://ai.google.dev/gemini-api/docs/pricing?hl=en.
+fal (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): every figure byway records was found on https://fal.ai/models/fal-ai/kling-video/v2.5-turbo/pro/image-to-video.
+fal (fal-ai/kling-video/v3/pro/image-to-video): every figure byway records was found on https://fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video.
+fal (fal-ai/ffmpeg-api/extract-frame): every figure byway records was found on https://fal.ai/models/fal-ai/ffmpeg-api/extract-frame.

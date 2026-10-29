@@ -1,0 +1,4 @@
+[
+ {"id":"R1e2-falFailure-in-every-read-same-words","file":"packages/gateway/src/providers/fal.ts","old":"      if (role !== 'generation' || !droppedAtStart(e)) throw e;","new":"      if (role === 'generation' && !droppedAtStart(e) && falFailure(e) !== undefined) throw cutOffError('fal', 'maybe', `fal reported clip job ${requestId} done, but answered its result with a failure, ${falFailure(e)}`);\n      if (role !== 'generation' || !droppedAtStart(e)) throw e;"},
+ {"id":"R2g-seenDone-no-bound-end","file":"packages/gateway/src/providers/fal.ts","old":"    } catch {\n      return false;\n    } finally {\n      bound.end();\n    }","new":"    } catch {\n      return false;\n    } finally {\n    }"}
+]

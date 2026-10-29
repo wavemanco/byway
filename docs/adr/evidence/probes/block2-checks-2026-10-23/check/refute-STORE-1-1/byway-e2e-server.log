@@ -1,0 +1,27 @@
+byway (demo: sample outputs, no AI calls)
+  data       C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-STORE-1-1-tmp\byway-e2e-JkjJSY
+  providers  anthropic, openai, google, openrouter, fal
+(node:47064) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  checked    the database and its 0 artifact files are complete; the spend ledger's chain is intact, and it holds every call the spend book records as written to it, at the same cost
+  engine     starting Temporal and the runner worker…
+  web        building the app (next build)…
+Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+
+Temporal Server:      localhost:58580
+Temporal Persistence: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-STORE-1-1-tmp\byway-e2e-JkjJSY\temporal.sqlite
+Temporal Metrics:     http://localhost:53356/metrics
+  engine     127.0.0.1:58580
+  renderer   Playwright's Chromium, ready, inside its OS sandbox
+             Playwright's browsers folder: C:\Users\arvik\AppData\Local\ms-playwright
+  web        http://127.0.0.1:58579
+▲ Next.js 16.3.8
+- Local:         http://127.0.0.1:58579
+- Network:       http://127.0.0.1:58579
+✓ Ready in 1275ms
+✓ Running next.config.ts took 487ms
+(node:33236) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+Stopping byway…
+Stopped.

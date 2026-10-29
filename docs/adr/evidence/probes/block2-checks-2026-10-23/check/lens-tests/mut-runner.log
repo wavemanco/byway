@@ -1,0 +1,46 @@
+R2	KILLED	Test Files  1 failed | 2 passed (3) | Tests  1 failed | 30 passed (31)	9s
+    packages/runner/test/step-limits.test.ts > the waits read just before a relay step (relayWaits) > what was chosen for the profile’s link model (its model for the step’s tier) and for its video model, 
+R8	KILLED	Test Files  1 failed | 2 passed (3) | Tests  1 failed | 30 passed (31)	8s
+    packages/runner/test/step-limits.test.ts > the waits read just before a relay step (relayWaits) > the demo’s mock models, a profile of mock models and a profile byway does not list wait the defaults
+R9	KILLED	Test Files  1 failed | 2 passed (3) | Tests  1 failed | 30 passed (31)	9s
+    packages/runner/test/caps.test.ts > the answer waits the gateway reads from the store > are the choice for the call’s own provider and model, none when it has none, and read afresh on every call
+R3	KILLED	Test Files  1 failed | 2 passed (3) | Tests  1 failed | 30 passed (31)	11s
+    packages/runner/test/step-limits.test.ts > a relay step’s calls keep the waits it was handed > a wait raised in Settings as the step begins and during it changes none of its calls; the next step reads
+M1	KILLED	Test Files  1 failed | 2 passed (3) | Tests  1 failed | 30 passed (31)	11s
+    packages/runner/test/step-limits.test.ts > a relay step’s calls keep the waits it was handed > a wait raised in Settings as the step begins and during it changes none of its calls; the next step reads
+M2	KILLED	Test Files  1 failed | 2 passed (3) | Tests  1 failed | 30 passed (31)	8s
+    packages/runner/test/step-limits.test.ts > a relay step’s calls keep the waits it was handed > a wait raised in Settings as the step begins and during it changes none of its calls; the next step reads
+H1	KILLED	Test Files  1 failed | 1 passed (2) | Tests  3 failed | 24 passed (27)	4s
+    packages/runner/test/held-voice-writers.test.ts > every keepsVoice call site holds its write to the held voice, not the latest answer alone > assetStep on a storyboard (C5’s anchor frames): the attach
+    packages/runner/test/held-voice-writers.test.ts > every keepsVoice call site holds its write to the held voice, not the latest answer alone > assetStep on a web page: an integrate answer that changes 
+    packages/runner/test/held-voice-writers.test.ts > a fixed copy deck the run was given, read by its id until a VOICE answers (P2) > modelStep, relayLink and assetStep each hold a keepsVoice write to th
+H2	KILLED	Test Files  1 failed | 1 passed (2) | Tests  2 failed | 25 passed (27)	6s
+    packages/runner/test/held-voice-writers.test.ts > every keepsVoice call site holds its write to the held voice, not the latest answer alone > relayLink: the link’s write is checked against the held vo
+    packages/runner/test/held-voice-writers.test.ts > a fixed copy deck the run was given, read by its id until a VOICE answers (P2) > modelStep, relayLink and assetStep each hold a keepsVoice write to th
+H3	KILLED	Test Files  1 failed | 1 passed (2) | Tests  4 failed | 23 passed (27)	9s
+    packages/runner/test/held-voice-writers.test.ts > every keepsVoice call site holds its write to the held voice, not the latest answer alone > modelStep: a fix that changes the held on-screen words is 
+    packages/runner/test/held-voice-writers.test.ts > a fixed copy deck the run was given, read by its id until a VOICE answers (P2) > modelStep, relayLink and assetStep each hold a keepsVoice write to th
+    packages/runner/test/held-voice-writers.test.ts > a fixed copy deck the run was given, read by its id until a VOICE answers (P2) > a step that neither takes the words in nor is held to them never read
+    packages/runner/test/held-voice-writers.test.ts > a VOICE answer is kept as a text file, and held by its id (P2) > a keepsVoice write held to an empty answer is held to it; a held answer whose file is
+H4	KILLED	Test Files  2 failed (2) | Tests  6 failed | 21 passed (27)	26s
+    packages/runner/test/held-voice-writers.test.ts > every keepsVoice call site holds its write to the held voice, not the latest answer alone > modelStep: a fix that changes the held on-screen words is 
+    packages/runner/test/held-voice-writers.test.ts > every keepsVoice call site holds its write to the held voice, not the latest answer alone > relayLink: the link’s write is checked against the held vo
+    packages/runner/test/held-voice-writers.test.ts > every keepsVoice call site holds its write to the held voice, not the latest answer alone > assetStep on a storyboard (C5’s anchor frames): the attach
+    packages/runner/test/held-voice-writers.test.ts > a VOICE answer is kept as a text file, and held by its id (P2) > a keepsVoice write held to an empty answer is held to it; a held answer whose file is
+V1	KILLED	Test Files  2 failed (2) | Tests  8 failed | 15 passed (23)	24s
+    packages/runner/test/page-voice-prompt.test.ts > a page VOICE's question as shown: the workflow's question, then how a page's copy is written > asked again after the final check sent the work back: th
+    packages/runner/test/voice-retry.test.ts > the interpreter carries each VOICE answer across a gate’s retry, to that VOICE asked again > the late VOICE asked again gets its last answer and the deck it 
+    packages/runner/test/voice-retry.test.ts > the interpreter carries each VOICE answer across a gate’s retry, to that VOICE asked again > a retry into the VOICE’s own stage carries it too, and so does e
+    packages/runner/test/voice-retry.test.ts > the interpreter carries each VOICE answer across a gate’s retry, to that VOICE asked again > a VOICE in each branch of a fan-out gets its own branch’s answer
+V2	KILLED	Test Files  1 failed | 1 passed (2) | Tests  1 failed | 22 passed (23)	18s
+    packages/runner/test/voice-retry.test.ts > the interpreter carries each VOICE answer across a gate’s retry, to that VOICE asked again > a VOICE in a loop takes its carried answer once: its next round 
+V3	KILLED	Test Files  1 failed | 1 passed (2) | Tests  1 failed | 22 passed (23)	16s
+    packages/runner/test/voice-retry.test.ts > the interpreter carries each VOICE answer across a gate’s retry, to that VOICE asked again > a VOICE in each branch of a fan-out gets its own branch’s answer
+V5	KILLED	Test Files  1 failed | 1 passed (2) | Tests  3 failed | 20 passed (23)	8s
+    packages/runner/test/voice-retry.test.ts > the interpreter on the real activities: a storyboard’s late VOICE after the final check sent the work back > lines that still fit: the box starts from them, 
+    packages/runner/test/voice-retry.test.ts > the box after a retry, per deck (human.ts openCheckpoint) > a deck of named fields: lines that still read as an answer to the work’s deck are the box, whatev
+    packages/runner/test/voice-retry.test.ts > the box after a retry, per deck (human.ts openCheckpoint) > a refused answer is asked again with the work’s lines still the measure: the earlier lines sent b
+V7	KILLED	Test Files  1 failed | 1 passed (2) | Tests  3 failed | 20 passed (23)	8s
+    packages/runner/test/voice-retry.test.ts > the box after a retry, per deck (human.ts openCheckpoint) > prose, only while the work’s deck has not changed
+    packages/runner/test/voice-retry.test.ts > the box after a retry, per deck (human.ts openCheckpoint) > a claim log is prose: its earlier corrections are the box while the claims are the same
+    packages/runner/test/voice-retry.test.ts > the box after a retry, per deck (human.ts openCheckpoint) > many earlier lines: five are quoted, each at most 80 characters, and the rest counted

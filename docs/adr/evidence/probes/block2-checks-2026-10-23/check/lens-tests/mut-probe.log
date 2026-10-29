@@ -1,0 +1,4 @@
+G5	KILLED	Test Files  1 failed (1) | Tests  1 failed | 1 passed (2)	5s
+    packages/gateway/test/zz-lens-probe.test.ts > video: a wait that cannot be read holds nothing and sends nothing
+G5b	KILLED	Test Files  1 failed (1) | Tests  1 failed | 1 passed (2)	4s
+    packages/gateway/test/zz-lens-probe.test.ts > image: a wait that cannot be read holds nothing and sends nothing

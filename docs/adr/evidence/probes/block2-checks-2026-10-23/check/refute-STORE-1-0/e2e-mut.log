@@ -1,0 +1,65 @@
+$ tsx scripts/e2e.ts keyboard.spec.ts
+e2e: starting byway in demo mode at http://127.0.0.1:65083 (engine port 65084, data C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-STORE-1-0-tmp\byway-e2e-YDxb69)
+e2e: byway is ready; running the suite
+(node:12316) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 10 tests using 1 worker
+
+(node:13640) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok  1 [chromium] › e2e\keyboard.spec.ts:91:3 › a control that starts something keeps focus, and a second press sends nothing (R5) › Yes on a confirm, pressed with Enter twice, while the answer is on its way and after it is refused (2.1s)
+  ok  2 [chromium] › e2e\keyboard.spec.ts:101:3 › a control that starts something keeps focus, and a second press sends nothing (R5) › Send reaction, pressed with Enter twice; the words stay (2.0s)
+  ok  3 [chromium] › e2e\keyboard.spec.ts:111:3 › a control that starts something keeps focus, and a second press sends nothing (R5) › “Choose all” and “Clear” keep focus when pressing them leaves nothing for them to do (488ms)
+  ok  4 [chromium] › e2e\keyboard.spec.ts:134:3 › a control that starts something keeps focus, and a second press sends nothing (R5) › Start, the paid Start button, Build my own and the examples’ image input (7.2s)
+  ok  5 [chromium] › e2e\keyboard.spec.ts:183:1 › Start: each attachment added by keyboard takes focus in its name field, the fifth too, when the attach button goes and a note says why (762ms)
+  ok  6 [chromium] › e2e\keyboard.spec.ts:206:3 › a step opened from the timeline (R5) › closing it with Escape or Back returns focus to the row that opened it, with no question open (510ms)
+  x   7 [chromium] › e2e\keyboard.spec.ts:227:3 › a step opened from the timeline (R5) › [F06] with a question open, a step opened and closed by keyboard gives the turn back with your words, in its field (1.0m)
+(node:61212) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok  8 [chromium] › e2e\keyboard.spec.ts:243:1 › [F05] the viewer’s scripts switch is reached with Tab, named, and turned on and off with Space (759ms)
+  ok  9 [chromium] › e2e\keyboard.spec.ts:281:1 › [F13 compare view] each version of a page compare is a named picture of its first screen, said so, and opens whole from the keyboard (1.6s)
+  ok 10 [chromium] › e2e\keyboard.spec.ts:347:1 › [F07] after a nav link of a page is edited, every link on the page still has a name (20.0s)
+
+
+  1) [chromium] › e2e\keyboard.spec.ts:227:3 › a step opened from the timeline (R5) › [F06] with a question open, a step opened and closed by keyboard gives the turn back with your words, in its field 
+
+    TimeoutError: locator.fill: Timeout 60000ms exceeded.
+    Call log:
+      - waiting for locator('section.turn').locator('textarea')
+
+
+      229 |     const words = 'F06 sentinel: typed, then a step looked at by keyboard.';
+      230 |     const field = turn(page).locator('textarea');
+    > 231 |     await field.fill(words);
+          |                 ^
+      232 |     await page.locator('.tl-title', { hasText: KB.earlierStep }).focus();
+      233 |     await page.keyboard.press('Enter');
+      234 |     await expect(page.locator('section.detail')).toBeVisible();
+        at C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-STORE-1-0\apps\web\e2e\keyboard.spec.ts:231:17
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\keyboard-a-step-opened-fro-10506-ith-your-words-in-its-field-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\keyboard-a-step-opened-fro-10506-ith-your-words-in-its-field-chromium\error-context.md
+
+    Error Context: test-results\keyboard-a-step-opened-fro-10506-ith-your-words-in-its-field-chromium\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\keyboard-a-step-opened-fro-10506-ith-your-words-in-its-field-chromium\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\keyboard-a-step-opened-fro-10506-ith-your-words-in-its-field-chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › e2e\keyboard.spec.ts:227:3 › a step opened from the timeline (R5) › [F06] with a question open, a step opened and closed by keyboard gives the turn back with your words, in its field 
+  9 passed (1.7m)
+e2e: the server's output is in C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-STORE-1-0-tmp\byway-e2e-server.log
+e2e: byway stopped cleanly
+e2e: renderer Playwright's Chromium, ready, inside its OS sandbox
+e2e: checked the database and its 0 artifact files are complete; the spend ledger's chain is intact, and it holds every call the spend book records as written to it, at the same cost
+e2e: no stand-in key under apps/web/.next-e2e
+[ELIFECYCLE] Command failed with exit code 1.

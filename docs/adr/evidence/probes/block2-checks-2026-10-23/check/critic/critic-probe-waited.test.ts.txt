@@ -1,0 +1,16 @@
+import { describe, expect, it } from 'vitest';
+import { waitedError } from '../../../packages/gateway/src/waited.ts';
+import { modelProblem } from '../src/server/model-errors.ts';
+
+describe('critic probe: an advisor call whose wait ran out, as the web screens word it', () => {
+  it('a Google intake call that did not answer within its wait', () => {
+    const err = waitedError({ provider: 'google', model: 'gemini-3.1-pro-preview' }, { minutes: 15, how: 'answer' }, { retryable: false, billing: 'maybe' });
+    console.log('GATEWAY:', err.message);
+    console.log('SCREEN :', JSON.stringify(modelProblem(err)));
+  });
+  it('an Anthropic compose call silent twice', () => {
+    const err = waitedError({ provider: 'anthropic', model: 'claude-opus-5-5' }, { minutes: 60, how: 'silence' }, { retryable: true, billing: 'maybe' });
+    console.log('SCREEN :', JSON.stringify(modelProblem(err)));
+    expect(modelProblem(err)?.message).toBeDefined();
+  });
+});

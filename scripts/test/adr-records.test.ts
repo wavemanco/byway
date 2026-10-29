@@ -9,16 +9,18 @@
  * - An Accepted record's Decision does not open as a proposal ("Proposed, not decided.").
  * - The index agrees with the records: each row's status with its record's header, each "changed by" link names a
  *   later record that names the one it changes, and each record on main has a row.
+ * - A Later note headed by another record has that record's "changed by" link on its index row, unless that record
+ *   lists it as "unchanged by it" (R3 (a); ADR-0103's Later note of 2026-10-28). A change with no note is not seen.
  *
  * The known exceptions are named below with their reasons. A temporary git repository proves the rule itself: an
  * edited Decision fails and an appended note passes.
  */
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { ADR_DIR, checkLog, describeBreach, describeLinkBreach, git, INDEX, isAccepted, opensAsProposal, parseIndex, parseRecord, recordNumber, statusWord, WORKING_TREE, type Exception, type LinkException } from './adr-log.ts';
+import { ADR_DIR, checkLog, describeBreach, describeLinkBreach, describeNoteLinkBreach, git, INDEX, isAccepted, noteLinkBreaches, notesHeadedByRecords, opensAsProposal, parseIndex, parseRecord, recordNumber, statusWord, WORKING_TREE, type Exception, type LinkException } from './adr-log.ts';
 import { read, REPO } from './docs.ts';
 
 /** The record that made the rule; the same-commit link rule applies from it on. */
@@ -163,6 +165,12 @@ describe('the records and the index agree', () => {
       proposed: rows.filter((r) => statusWord(r.status) === 'Proposed').length,
     });
     expect(total, 'one row per record').toBe(files.size);
+  });
+
+  it('each Later note headed by another record has that record’s "changed by" link on its index row, unless that record lists it as unchanged', () => {
+    const records = new Map([...files].map(([n, file]) => [n, read(file)]));
+    expect([...records].flatMap(([n, text]) => notesHeadedByRecords(n, text)).length).toBeGreaterThan(25);
+    expect(noteLinkBreaches(records, rows).map(describeNoteLinkBreach)).toEqual([]);
   });
 
   it('each record that has reached main has an index row', () => {
@@ -438,6 +446,28 @@ describe('the rule, on a temporary repository', { timeout: 60_000 }, () => {
     const [message] = late.check().linkBreaches.map(describeLinkBreach);
     expect(message).toMatch(/"Protect main" ruleset blocks force pushes/);
     expect(message).toContain('LINK_EXCEPTIONS in scripts/test/adr-records.test.ts with its reason');
+  });
+
+  it('a Later note headed by a later record fails without that record’s "changed by" link, and passes with it or when that record lists it as unchanged', () => {
+    const r = fixture();
+    const notes = () => {
+      const dir = path.join(r.dir, 'docs', 'adr');
+      const records = new Map(readdirSync(dir).flatMap((name) => (/^\d{4}-/.test(name) ? [[name.slice(0, 4), readFileSync(path.join(dir, name), 'utf8')] as const] : [])));
+      return noteLinkBreaches(records, parseIndex(readFileSync(path.join(dir, 'README.md'), 'utf8'))).map((b) => [b.record, b.by]);
+    };
+    r.write('0001', 'Accepted', 'We do X.');
+    r.write('0002', 'Accepted', 'ADR-0001 is amended: we do X twice.');
+    r.append('0001', '\n## Later notes\n\n- **2026-10-28, a correction of our own.** No record heads it.\n- **2026-10-28, [ADR-0002](0002-a-decision.md).** We now do X twice.\n');
+    r.index([row('0001', 'Accepted'), row('0002', 'Accepted')]);
+    r.commit('0002 and its note, without the link');
+    expect(notes()).toEqual([['0001', '0002']]);
+    expect(describeNoteLinkBreach({ record: '0001', by: '0002', heading: 'x' })).toMatch(/Add the link in the same commit as the note/);
+    r.index([row('0001', 'Accepted; changed by [ADR-0002](0002-a-decision.md)'), row('0002', 'Accepted')]);
+    expect(notes()).toEqual([]);
+    // A record that changes nothing in the one its note is on says so, and then needs no link.
+    r.index([row('0001', 'Accepted'), row('0002', 'Accepted')]);
+    r.append('0002', '\n## What this changes in earlier records\n\n- Read with this record, and unchanged by it:\n  - [ADR-0001](0001-a-decision.md): its Consequences item is done.\n');
+    expect(notes()).toEqual([]);
   });
 
   it('a link added after its record is on main, not yet committed, says to commit it and name that commit', () => {

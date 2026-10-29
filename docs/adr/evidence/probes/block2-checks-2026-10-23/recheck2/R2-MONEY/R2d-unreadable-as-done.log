@@ -1,0 +1,40 @@
+
+ RUN  v5.0.3 C:/Users/arvik/AppData/Local/Temp/claude/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422/scratchpad/b2rc2/m
+
+ ❯ packages/gateway/test/clip-wait.test.ts (53 tests | 1 failed) 622ms
+   ❯ a resumed clip keeps its clock: its wait counts from when fal accepted it, as the spend book recorded (6)
+     × a job resumed after its wait has passed, fal whose status cannot be read, is cancelled then, with no wait more, and counted by the cancel’s answer 72ms
+
+ Test Files  1 failed | 28 passed (29)
+      Tests  1 failed | 1005 passed (1006)
+   Start at  10:30:50
+   Duration  6.61s (import 54%, tests 33%, transform 13%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/gateway/test/clip-wait.test.ts > a resumed clip keeps its clock: its wait counts from when fal accepted it, as the spend book recorded > a job resumed after its wait has passed, fal whose status cannot be read, is cancelled then, with no wait more, and counted by the cancel’s answer
+AssertionError: expected [] to deeply equal [ { …(3) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "at": 1792673100000,
+-     "endpoint": "fal-ai/kling-video/v2.5-turbo/pro/image-to-video",
+-     "requestId": "req-earlier",
+-   },
+- ]
++ []
+
+ ❯ packages/gateway/test/clip-wait.test.ts:460:25
+    458|     // Cancelled with the clock where it was: nothing waited more.
+    459|     for (let i = 0; i < 20_000 && fal.cancels.length === 0; i++) await…
+    460|     expect(fal.cancels).toEqual([{ endpoint: BALANCED_VIDEO, requestId…
+       |                         ^
+    461|     const e = await settled(err);
+    462|     expect(fal.log[0]).toBe('status req-earlier');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
