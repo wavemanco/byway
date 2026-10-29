@@ -5,7 +5,7 @@
  * (examples you admire, Start attachments) survives a detour. Memo Polish (C4) is used because it asks every kind of
  * text question early.
  */
-import { expect, test, type APIResponse, type Page, type Route } from '@playwright/test';
+import { expect, request, test, type Page, type Route } from '@playwright/test';
 import type { CheckpointKind } from '@byway/contracts';
 import { answerField as field, answerTurn, answerUntilDone, describeProblem, nextTurn, startRecommended, timelineLabels, turnAfter, untilTurn, type Turn } from './flow.ts';
 
@@ -26,12 +26,25 @@ async function staysTrue(page: Page, ms: number, ok: () => Promise<boolean>, mes
   }
 }
 
+/** What an intercepted request is answered with: the server's own answer, read in full. */
+type Answer = { status: number; headers: Record<string, string>; body: Buffer };
+
 /**
- * The server's answer to an intercepted request, on a connection of its own. Playwright's request context keeps its
- * connections alive, and one the server closed as it idled can be taken for the next request, which then dies with
- * ECONNRESET (main's Windows run 40063127719, at the "Sent" test): asking with `connection: close` leaves none to reuse.
+ * The server's answer to an intercepted request, asked through a request context made for it alone and disposed once the
+ * answer is read. route.fetch asks through the browser context's request pool, which keeps connections alive; Node's
+ * server closes one that idles 5 s, and a later fetch that takes it dies with ECONNRESET on Windows (main's runs
+ * 40063127719 and 40819626580, at the "Sent" test; a `connection: close` header did not stop the pool reusing one).
+ * A context of its own has no connection to reuse.
  */
-const fetchOwn = (route: Route) => route.fetch({ headers: { ...route.request().headers(), connection: 'close' } });
+async function fetchOwn(route: Route): Promise<Answer> {
+  const own = await request.newContext();
+  try {
+    const res = await own.fetch(route.request(), { headers: route.request().headers() });
+    return { status: res.status(), headers: res.headers(), body: await res.body() };
+  } finally {
+    await own.dispose();
+  }
+}
 
 const draftKeys = (page: Page) => page.evaluate(() => Object.keys(window.sessionStorage).filter((k) => k.startsWith('byway.draft.')));
 
@@ -83,7 +96,7 @@ async function cancelRun(page: Page): Promise<void> {
 test.describe('the Run screen applies only the newest snapshot (F15)', () => {
   test('a late, older poll never reopens an answered question, and a late failure leaves no banner on a finished run', async ({ page }) => {
     const runId = await startMemo(page);
-    const hold: { want: boolean; caught: { route: Route; response: APIResponse } | null } = { want: false, caught: null };
+    const hold: { want: boolean; caught: { route: Route; response: Answer } | null } = { want: false, caught: null };
     const fail = { next: false };
     // After the one failed refresh, later ones wait here until the test has seen the banner (step (b)).
     const stall = { on: false, waiting: [] as (() => void)[] };
@@ -124,7 +137,7 @@ test.describe('the Run screen applies only the newest snapshot (F15)', () => {
       const caught = hold.caught;
       hold.caught = null;
       try {
-        if (how === 'fulfill' && caught) await caught.route.fulfill({ response: caught.response });
+        if (how === 'fulfill' && caught) await caught.route.fulfill(caught.response);
         else await caught?.route.abort();
       } catch {
         // The page had already given up on it.
@@ -150,7 +163,7 @@ test.describe('the Run screen applies only the newest snapshot (F15)', () => {
     await page.route(`**/api/runs/${runId}/checkpoints/**`, async (route) => {
       const response = await fetchOwn(route);
       fail.next = true;
-      await route.fulfill({ response });
+      await route.fulfill(response);
     });
     await answerTurn(page, second.turn, second.kind);
     await expect(page.getByText(NOT_ANSWERING)).toBeVisible();
@@ -321,9 +334,11 @@ test.describe('your unsent answer belongs to its question (F06), continued', () 
         await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'e2e: the answer was refused once' }) });
         return;
       }
-      const response = await fetchOwn(route);
+      // Refreshes fail from before the answer reaches byway, so none can see its question settled while the answer is
+      // still on its way back: that window is the time fetchOwn takes, longer with a request context of its own.
       failRefreshes = true;
-      await route.fulfill({ response });
+      const response = await fetchOwn(route);
+      await route.fulfill(response);
     });
     await page.route(
       (url) => url.pathname === `/api/runs/${runId}` && url.searchParams.has('after'),
