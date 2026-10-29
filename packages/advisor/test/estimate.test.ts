@@ -115,10 +115,65 @@ describe('estimate: the structure of a recipe times the profile prices', () => {
     // At least three links of five seconds each, at Kling 2.5 Turbo's price.
     expect(withVideo.lowUsd - without.lowUsd).toBeGreaterThanOrEqual(3 * 5 * perSecond - 1e-9);
     expect(withVideo.highUsd).toBeGreaterThan(without.highUsd);
-    expect(withVideo.modelCalls).toEqual(without.modelCalls);
+    // A clip a link, at least three links, and the one rendered in its scene after the chain.
+    expect(withVideo.clips!.low).toBeGreaterThanOrEqual(4);
+    expect(without.clips).toEqual({ low: 0, high: 0 });
     // The openai profile has no video model at all.
     const openai = keyed({ OPENAI_API_KEY: 'sk-test-not-a-real-key-000000000' }).estimate(c5, 'openai');
     expect(openai.highUsd).toBeGreaterThan(0);
+  });
+
+  /**
+   * B-050: a relay link that cannot make its clip finishes skipped with no call (relay.ts), and the check of its view
+   * is not asked, so its shot-repair loop ends after one round with no cap question (interpreter.ts, F10). With no video
+   * model, or no image model to make the frame the chain starts from, C5's chain costs nothing but what runs after it.
+   */
+  it('counts no relay call, shot check or repair for a link that cannot make its clip (B-050)', () => {
+    const withVideo = advisor.estimate(c5, 'balanced');
+    const noVideo = keyed({ ...ANTHROPIC, ...GEMINI }).estimate(c5, 'balanced');
+    // The same recipe with neither the chain nor render-in-scene, the relay step after it, which is skipped too.
+    const nothing = () => ({ op: 'seq', steps: [] }) as Node;
+    const noRelay = edit(edit(c5, 'shot-chain', nothing), 'render-in-scene', nothing);
+    expect(noVideo.modelCalls).toEqual(keyed({ ...ANTHROPIC, ...GEMINI }).estimate(noRelay, 'balanced').modelCalls);
+    expect(noVideo.modelCalls.high).toBeLessThan(withVideo.modelCalls.high);
+    expect(noVideo.modelCalls.low).toBeLessThan(withVideo.modelCalls.low);
+    // With video but no image model the chain has no frame to start from: the same.
+    const noImages = keyed({ ...ANTHROPIC, ...FAL }).estimate(c5, 'balanced');
+    expect(noImages.modelCalls).toEqual(keyed({ ...ANTHROPIC, ...FAL }).estimate(noRelay, 'balanced').modelCalls);
+    expect([noVideo.clips, noImages.clips]).toEqual([{ low: 0, high: 0 }, { low: 0, high: 0 }]);
+  });
+
+  /**
+   * B-106: each prompt that shows the problem is sized with it, attachments included, as the gateway sizes the call, so
+   * a long brief raises the figure (and the default budget, a quarter above it) where a short one leaves it as planned.
+   */
+  it("sizes each prompt that shows the problem with the person's brief and attachments (B-106)", () => {
+    const balanced = PROFILES.find((p) => p.id === 'balanced')!;
+    const at = new Date('2026-10-07T12:00:00Z');
+    const ctx = { profile: balanced, images: true, video: true, at };
+    const planned = estimateRecipe(c4, ctx);
+    expect(estimateRecipe(c4, { ...ctx, problem: { text: 'A memo about the offsite' } })).toEqual(planned);
+    const attachment = { name: 'notes.md', text: 'The offsite moves to May. '.repeat(8000) };
+    const long = estimateRecipe(c4, { ...ctx, problem: { text: 'A memo about the offsite', attachments: [attachment] } });
+    // About 52,000 tokens more in the draft's prompt and the framings' (C4's two that show the problem).
+    expect(long.highUsd).toBeGreaterThan(planned.highUsd + 0.3);
+    expect(long.lowUsd).toBeGreaterThan(planned.lowUsd);
+    expect(long.modelCalls).toEqual(planned.modelCalls);
+    // Only the prompts that show the problem grow: a recipe whose prompts never show it is priced as planned.
+    const hidden = edit(c4, 'draft', (n) => (n.op === 'step' ? { ...n, consumes: n.consumes.filter((p) => p !== 'intent') } : n));
+    const framings = edit(hidden, 'framings', (n) => (n.op === 'step' ? { ...n, consumes: n.consumes.filter((p) => p !== 'intent') } : n));
+    const g = estimateRecipe(framings, { ...ctx, problem: { text: 'x', attachments: [attachment] } });
+    expect(g.highUsd).toBeLessThan(long.highUsd);
+  });
+
+  it('passes the brief through the advisor: a recommendation for a long brief is dearer than for a short one (B-106)', async () => {
+    const { advisor: demo } = demoAdvisor();
+    const short = { text: 'A memo about the offsite' };
+    const long = { ...short, attachments: [{ name: 'notes.md', text: 'The offsite moves to May. '.repeat(8000) }] };
+    const anthropic = keyed(ANTHROPIC);
+    expect(anthropic.estimate(c4, 'balanced', long).highUsd).toBeGreaterThan(anthropic.estimate(c4, 'balanced', short).highUsd);
+    // Demo mode reads $0 whatever the brief.
+    expect(demo.estimate(c4, 'balanced', long).highUsd).toBe(0);
   });
 
   it("prices a different-family critic at the other family's model when its key is set up (C3), else at the profile's own", () => {

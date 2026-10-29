@@ -4,6 +4,7 @@ import {
   formatCostRange,
   formatMinutes,
   formatUsd,
+  formatWorkRange,
   parseBudgetInput,
   partShown,
   suggestBudget,
@@ -52,6 +53,18 @@ describe('formatCallRange', () => {
   it('pluralises', () => {
     expect(formatCallRange({ low: 1, high: 1 })).toBe('1 AI call');
     expect(formatCallRange({ low: 30, high: 60 })).toBe('30–60 AI calls');
+  });
+});
+
+// B-109: the dollars include images and clips, so the words say them beside the AI calls, on every cost line.
+describe('formatWorkRange', () => {
+  it('says the images and video clips an estimate counts, and only those it counts', () => {
+    const none = { low: 0, high: 0 };
+    expect(formatWorkRange({ low: 2, high: 2 })).toBe('2 AI calls');
+    expect(formatWorkRange({ low: 2, high: 2 }, none, none)).toBe('2 AI calls');
+    expect(formatWorkRange({ low: 2, high: 2 }, { low: 1, high: 3 })).toBe('2 AI calls and 1–3 images');
+    expect(formatWorkRange({ low: 1, high: 1 }, { low: 1, high: 1 }, { low: 1, high: 1 })).toBe('1 AI call, 1 image and 1 video clip');
+    expect(formatWorkRange({ low: 31, high: 81 }, none, { low: 7, high: 17 })).toBe('31–81 AI calls and 7–17 video clips');
   });
 });
 

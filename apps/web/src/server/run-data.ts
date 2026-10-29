@@ -8,7 +8,8 @@
  * titles are counted here from the whole artifact, so a step row never states a count of the excerpt as the
  * artifact's (F13, ADR-0086). The whole text itself is never polled: a view that needs it loads it once.
  */
-import type { RunRecord } from '@byway/contracts';
+import type { RunRecord, RunView } from '@byway/contracts';
+import type { QuestionCosts } from '../view/questions.ts';
 import type { Services } from '../services/index.ts';
 import { parseUnifiedDiff } from '../view/diff.ts';
 import { ArtifactData, read } from '../view/events.ts';
@@ -51,7 +52,10 @@ export async function artifactInfo(services: Services, ids: Iterable<string>): P
   return out;
 }
 
-export async function getRunData(services: Services, runId: string, afterSeq = 0): Promise<RunData> {
+/** Prices the run's open questions (api.ts questionCosts); undefined when the run's recipe is not known. */
+export type QuestionPricer = (run: RunRecord, checkpoints: RunView['checkpoints']) => Promise<QuestionCosts | undefined>;
+
+export async function getRunData(services: Services, runId: string, afterSeq = 0, price?: QuestionPricer): Promise<RunData> {
   const view = await services.runner.view(runId, afterSeq);
   const ids: string[] = [];
   for (const e of view.events) {
@@ -66,7 +70,8 @@ export async function getRunData(services: Services, runId: string, afterSeq = 0
   }
   if (view.run.outputArtifactId) ids.push(view.run.outputArtifactId);
   const ended = isEnded(view.run.status) ? await endedSpend(services, view.run) : undefined;
-  return { view, artifacts: await artifactInfo(services, ids), ...(ended ? { ended } : {}) };
+  const questions = price ? await price(view.run, view.checkpoints) : undefined;
+  return { view, artifacts: await artifactInfo(services, ids), ...(ended ? { ended } : {}), ...(questions ? { questions } : {}) };
 }
 
 /**

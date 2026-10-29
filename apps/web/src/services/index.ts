@@ -4,12 +4,11 @@
  * reads provider keys from the environment, and nothing that holds it may reach a client bundle.
  */
 import 'server-only';
-import type { QuestionEstimate } from '@byway/advisor';
 import type { ModelWait, Preferences } from '@byway/contracts';
 import type { Recipe } from '@byway/recipe';
 import { connection } from 'next/server';
 import { runProfileId, servicesConfig } from './config.ts';
-import { createServiceHost, type ServiceHost } from './create.ts';
+import { createServiceHost, type PricedQuestion, type QuestionSizes, type ServiceHost } from './create.ts';
 import { loadEngine } from './engine.ts';
 import { SERVICES_KEY, stopping } from './shutdown.ts';
 import type { Services } from './types.ts';
@@ -65,7 +64,7 @@ export interface Context {
   /** ServiceHost.heldKeyIn: beside the services, not in them, so the Services seam stays the four contracts and the mode. */
   heldKeyIn(value: unknown): string | undefined;
   /** ServiceHost.questionEstimates, beside the services for the same reason. */
-  questionEstimates(recipe: Recipe, profileId: string): Record<string, QuestionEstimate>;
+  questionEstimates(recipe: Recipe, profileId: string, known?: QuestionSizes): Record<string, PricedQuestion>;
   /** ServiceHost.pricesCheckedOn: the day byway's prices were last checked, beside the services for the same reason. */
   pricesCheckedOn: string;
   /** ServiceHost.modelWaits, beside the services for the same reason. */

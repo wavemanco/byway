@@ -36,10 +36,27 @@ export function formatMinutes(range: { low: number; high: number }): string {
   return l === h ? `${h} h` : `${l}–${h} h`;
 }
 
-export function formatCallRange(range: { low: number; high: number }): string {
-  const { low, high } = range;
-  const noun = high === 1 ? 'AI call' : 'AI calls';
+type Range = { low: number; high: number };
+
+const countRange = ({ low, high }: Range, one: string, many: string): string => {
+  const noun = high === 1 ? one : many;
   return low === high ? `${high} ${noun}` : `${low}–${high} ${noun}`;
+};
+
+export function formatCallRange(range: Range): string {
+  return countRange(range, 'AI call', 'AI calls');
+}
+
+/**
+ * What an estimate's dollars pay for, in one wording on every screen that shows a cost (B-109): "2 AI calls", or
+ * "2 AI calls and 1–3 images", "31–81 AI calls, 0–6 images and 7–17 video clips". Images and clips are said only when
+ * the estimate counts some.
+ */
+export function formatWorkRange(calls: Range, images?: Range, clips?: Range): string {
+  const parts = [formatCallRange(calls)];
+  if (images && images.high > 0) parts.push(countRange(images, 'image', 'images'));
+  if (clips && clips.high > 0) parts.push(countRange(clips, 'video clip', 'video clips'));
+  return parts.length === 1 ? parts[0]! : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
 }
 
 const count = new Intl.NumberFormat('en-US');

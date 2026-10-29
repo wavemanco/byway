@@ -89,15 +89,16 @@ export function createAdvisor(opts: AdvisorOptions): Advisor {
   /**
    * Estimates price the profile the run will actually use. In demo mode (Gateway.demo) every call goes to the mock,
    * so that is the demo profile, whatever profile is asked for: a demo estimate reads $0, and its images and clips are
-   * the mock's. A profile the gateway does not know is still refused, as the gateway refuses it in demo mode too.
+   * the mock's. A profile the gateway does not know is still refused, as the gateway refuses it in demo mode too. With
+   * the person's problem, the prompts that show it are sized with it (B-106).
    */
-  const estimate = (r: Recipe, profileId: string): CostEstimate => {
+  const estimate = (r: Recipe, profileId: string, problem?: ProblemBrief): CostEstimate => {
     const statuses = opts.gateway.profileStatus();
     if (!statuses.some((s) => s.profile.id === profileId)) throw new AdvisorError('unknown-profile', `There is no model profile "${profileId}".`);
     const priced = opts.gateway.demo ? DEMO_PROFILE_ID : profileId;
     const status = statuses.find((s) => s.profile.id === priced);
     if (!status) throw new AdvisorError('unknown-profile', `Demo mode is on, but the gateway has no "${priced}" profile to estimate with.`);
-    return estimateRecipe(r, { profile: status.profile, images: status.images, video: status.video, otherFamily: status.otherFamily, at: now(), ...(opts.prices ? { prices: opts.prices } : {}) });
+    return estimateRecipe(r, { profile: status.profile, images: status.images, video: status.video, otherFamily: status.otherFamily, at: now(), ...(opts.prices ? { prices: opts.prices } : {}), ...(problem ? { problem } : {}) });
   };
 
   /**
@@ -124,7 +125,7 @@ export function createAdvisor(opts: AdvisorOptions): Advisor {
       diff: diffFromNearest(composed, nearest.recipe, nearest.presentation.name, nearest.presentation),
       label: label(composed),
       presentation,
-      estimate: estimate(composed, profileId),
+      estimate: estimate(composed, profileId, problem),
     };
   }
 
@@ -158,7 +159,7 @@ export function createAdvisor(opts: AdvisorOptions): Advisor {
         label: label(chosen),
         routing: 'untested',
         alternatives: routed.alternatives.map((a) => ({ recipeId: a.question.routesTo, name: presentationOf(a.question.routesTo)?.name ?? a.question.routesTo, why: whyAlternative(a) })),
-        estimate: estimate(chosen, o.profileId),
+        estimate: estimate(chosen, o.profileId, problem),
         composeSuggested: routed.fallback,
         routes: routesFor(chosen, routes),
       };
