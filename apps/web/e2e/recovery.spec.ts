@@ -157,3 +157,20 @@ test('F14: Build my own while the recommendation is refused shows your recipe, a
   await expect(page.locator('#proposal-title')).toHaveText('Memo Polish');
   expect(rerenders).toEqual([]);
 });
+
+test('F14 (a): what is left in the workspace follows a change made in another tab, with no command and no reload', async ({ page, context }) => {
+  await describeProblem(page, 'Tighten my quarterly status memo for the leadership team before Friday');
+  await expect(page.locator('#proposal-title')).toHaveText('Memo Polish', { timeout: 60_000 });
+  const help = page.locator('.start-bar-help');
+  const left = async () => Number(/\$([\d,]+\.\d\d) left in your workspace/.exec((await help.textContent()) ?? '')?.[1]?.replace(/,/g, '') ?? NaN);
+  await expect.poll(left).not.toBeNaN();
+  const before = await left();
+
+  // Another tab raises the workspace budget, as Settings would.
+  const other = await context.newPage();
+  await other.goto('/settings');
+  await setCap(other, originalCap + 5);
+  await other.close();
+  await page.bringToFront();
+  await expect.poll(left, { timeout: 15_000 }).toBeCloseTo(before + 5, 2);
+});

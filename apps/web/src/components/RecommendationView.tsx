@@ -6,13 +6,14 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ComposeResultView, ComposeView, RecommendResult } from '../server/api.ts';
 import { formatCallRange, formatCostRange, formatMinutes, formatUsd, parseBudgetInput, suggestBudget } from '../view/format.ts';
+import type { WorkspaceSpend } from '../view/history.ts';
 import { composedRefusalGroups, composeNotice, diffLine } from '../view/composed.ts';
 import { ROUTING_NOTE, answerNote, decidingQuestion, fitText, showAnswerNote } from '../view/labels.ts';
 import { awaitingFirst, composedAfterStart, composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState, type Selection } from '../view/recommendation.ts';
 import type { PricesChecked } from '../view/prices.ts';
 import { recipeTitle } from '../view/vocabulary.ts';
 import { ActionButton } from './ActionButton.tsx';
-import { ApiError, post } from './api.ts';
+import { ApiError, get, post } from './api.ts';
 import { EvidenceLabel } from './EvidenceLabel.tsx';
 import { PricesStaleNotice } from './PricesChecked.tsx';
 import { Route, RouteDetails, RouteLegend } from './Route.tsx';
@@ -23,6 +24,10 @@ import { createStartIdentity } from './startIdentity.ts';
 import { Switch } from './Switch.tsx';
 import { useTechnicalNames } from './TechNames.tsx';
 import { useAction } from './useAction.ts';
+import { usePolling, useRefresher } from './useRefresher.ts';
+
+/** How often the Recommendation screen re-reads what is left in the workspace while the tab is visible (F14 (a)). */
+const REMAINING_MS = 5000;
 
 export interface RecipeOption {
   presentation: RecipePresentation;
@@ -52,7 +57,7 @@ interface Props {
  * Recommendation (spec §5, screen 2). The screen owns its state (F14, ADR-0082): the recommendation, why it failed,
  * what is selected, the composed recipe and what is left in the workspace are seeded once from the server render and
  * then change only through the commands here (Try again, a flipped answer, Build my own), each applying its whole result
- * in one step (view/recommendation.ts). The screen never re-runs its server render, which reads only what is stored:
+ * in one step (view/recommendation.ts); what is left in the workspace also follows a change made elsewhere (F14 (a)). The screen never re-runs its server render, which reads only what is stored:
  * while no recommendation is stored, the screen asks for the first one itself once it is shown, through the same command
  * as Try again, so no render calls the model. The page keys this component by intake and library recipe; the other
  * props (the problem, its attachments, the questions, the recipes on offer, demo mode) cannot change while it is shown.
@@ -71,6 +76,16 @@ export function RecommendationView(props: Props) {
     }),
   );
   const { rec, composed, selection } = state;
+  // F14 (a): what is left in the workspace follows a change made elsewhere (another tab's Settings or run) without a
+  // command. It is read on its own from the spend book, which buys nothing, so this screen's render is still never re-run.
+  // After a command applies its own figure, `remaining.now()` supersedes a read issued before it.
+  const remaining = useRefresher(
+    intakeId,
+    (signal) => get<{ spend: WorkspaceSpend }>('/api/spend', signal),
+    (r) => setState((s) => ({ ...s, remainingUsd: r.spend.remainingUsd })),
+    () => undefined,
+  );
+  usePolling(remaining, REMAINING_MS);
   const recipes = useMemo(() => new Set(Object.keys(options)), [options]);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -129,6 +144,7 @@ export function RecommendationView(props: Props) {
     try {
       const result = await post<RecommendResult>(`/api/intakes/${intakeId}/recommend`, { ensure: true });
       setState((s) => recovered(s, result));
+      void remaining.now();
       const title = recipeTitle(result.recommendation.presentation, technical);
       setNotice(first ? `byway recommends ${title}.` : `Now recommending ${title}.`);
       if (!first) setFocusProposal((n) => n + 1);
@@ -158,6 +174,7 @@ export function RecommendationView(props: Props) {
       const next = result.recommendation;
       const changed = next.recipeId !== rec.recipeId;
       setState((s) => rerouted(s, result));
+      void remaining.now();
       setNotice(changed ? `Now recommending ${recipeTitle(next.presentation, technical)}.` : `Still ${recipeTitle(next.presentation, technical)}.`);
     } catch (err) {
       setState((s) => ({ ...s, rec }));
@@ -171,6 +188,7 @@ export function RecommendationView(props: Props) {
     try {
       const result = await post<ComposeResultView>(`/api/intakes/${intakeId}/compose`, {});
       setState((s) => composedReady(s, result));
+      void remaining.now();
       setFocusProposal((n) => n + 1);
       setNotice(composeNotice(result.composed));
     } catch (err) {
@@ -226,7 +244,11 @@ export function RecommendationView(props: Props) {
             examples={examples}
             onExamples={onExamples}
             onExampleRefused={onExampleRefused}
-            onStartRefused={(refusal) => setState((s) => composedAfterStart(s, refusal))}
+            onStartRefused={(refusal) => {
+              setState((s) => composedAfterStart(s, refusal));
+              // A Start refused at the budget check shows what is left now, not what the screen last read.
+              void remaining.now();
+            }}
             onStarted={(runId) => {
               // The problem, its attachments and these examples went into the run: nothing is left to keep.
               clearStartDraft();
