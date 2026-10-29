@@ -146,13 +146,14 @@ const FAL_MEDIA = 'https://v3.fal.media/files';
 
 /**
  * A fake fal.ai client: storage uploads return a URL per upload; queue jobs answer by endpoint (a video for an
- * image-to-video model, an image list for frame extraction). `failures` are thrown by submits to that endpoint, and
- * `pollFailures` by its status polls, in order. `calls` lists the submitted jobs (the billable step), and `polls` the
- * request id of every status read, polled or read once (`status`: a resumed job whose wait has already run out).
+ * image-to-video model, an image list for frame extraction). `failures` are thrown by submits to that endpoint,
+ * `pollFailures` by its status polls and `resultFailures` by its result reads, in order. `calls` lists the submitted
+ * jobs (the billable step), and `polls` the request id of every status read, polled or read once (`status`: a resumed
+ * job whose wait has already run out).
  */
 export function fakeFal(
   failures: Record<string, Error[]> = {},
-  opts: { clipUrl?: string; frameUrl?: string; middleUrl?: string; pollFailures?: Record<string, Error[]>; cancel?: (endpoint: string, requestId: string) => FalCancel } = {},
+  opts: { clipUrl?: string; frameUrl?: string; middleUrl?: string; pollFailures?: Record<string, Error[]>; resultFailures?: Record<string, Error[]>; cancel?: (endpoint: string, requestId: string) => FalCancel } = {},
 ) {
   /** Each job cancelled (ADR-0111), by endpoint and request id. */
   const cancels: { endpoint: string; requestId: string }[] = [];
@@ -196,6 +197,8 @@ export function fakeFal(
         return { status: 'COMPLETED' };
       },
       async result(endpoint, options) {
+        const failure = opts.resultFailures?.[endpoint]?.shift();
+        if (failure) throw failure;
         const data = endpoint.includes('extract-frame')
           ? { images: [{ url: middles.has(options.requestId) ? middleUrl : frameUrl, content_type: 'image/png', width: 1280, height: 720 }] }
           : { video: { url: clipUrl, content_type: 'video/mp4', file_size: 9 } };

@@ -384,7 +384,7 @@ export class PaidCall {
 
   /**
    * Whether this call still holds its row in the spend book: no other attempt has resumed it since (SpendBook.holds),
-   * in another process or in this one. Asked before each queue job after the call's first, so an attempt that lost its
+   * in another process or in this one. Asked before each try of each queue job after the call's first, so an attempt that lost its
    * row to a takeover submits none of its frame jobs beside the attempt that took it over (MONEY-1, the check of
    * fix/fx-landnow).
    */

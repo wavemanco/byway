@@ -20,7 +20,7 @@ import { encodePng } from '../src/mock/png.ts';
 import { PRICES, type PriceRow } from '../src/prices.ts';
 import { falAdapter, type FalClientLike } from '../src/providers/fal.ts';
 import type { ProviderAdapter, ProviderCompletion } from '../src/providers/types.ts';
-import { fakeFal, fakeFetch, MemoryArtifacts } from './fakes.ts';
+import { fakeFal, fakeFetch, falQueueError, fetchFailed, MemoryArtifacts } from './fakes.ts';
 
 const KEYS = {
   ANTHROPIC_API_KEY: 'sk-ant-api03-test-not-a-real-key-000000',
@@ -466,6 +466,236 @@ describe('a fal clip accepted by the provider is resumed, never submitted again 
     const spend = await g.spend('ws');
     expect(spend).toMatchObject({ inFlightUsd: 0, uncertainUsd: 0 });
     expect(spend.spentUsd).toBeGreaterThan(0);
+  });
+
+  // R-MONEY-1, the re-check of fix/fx-landnow: since MONEY-2 an attempt Temporal cancelled while it polled its accepted
+  // clip refused its frame jobs once the clip was made within its live lease, settled the row as made without frames and
+  // failed billed, so its memo kept nothing and the next attempt, finding the row settled, bought the clip again. The
+  // owner chose "Third round: frame jobs go on (Recommended)": its frame jobs go out while it still holds the row.
+  const frameJobsOf = (fal: ReturnType<typeof fakeFal>) => fal.calls.filter((c) => c.endpoint === 'fal-ai/ffmpeg-api/extract-frame').map((c) => c.input.frame_type);
+  /** fakeFal's client, whose clip status poll first runs `onClipPoll` (Temporal cancels the attempt there). */
+  const cancelledAtClipPoll = (fal: ReturnType<typeof fakeFal>, onClipPoll: () => void): FalClientLike => ({
+    ...fal.client,
+    queue: {
+      ...fal.client.queue,
+      subscribeToStatus(endpoint, options) {
+        if (endpoint === MODEL) onClipPoll();
+        return fal.client.queue.subscribeToStatus(endpoint, options);
+      },
+    },
+  });
+
+  it('an attempt cancelled while its accepted clip is polled, the clip made within its live lease, makes its frame jobs: the next attempt gets that clip, not a new one', async () => {
+    const fal = fakeFal();
+    const media = fakeFetch();
+    const key = 'run-1/run-1/relay/-/1/video/abc/1';
+    const a = attempt(key);
+    const workerA = gateway({ clients: { fal: cancelledAtClipPoll(fal, () => a.cancel.abort(new Error('TIMED_OUT'))) }, fetch: media.fetch });
+    const workerB = gateway({ clients: { fal: fal.client }, fetch: media.fetch });
+    const made = await workerA.video(await clip(a.operation));
+    expect(a.cancel.signal.aborted).toBe(true);
+    expect(made).toMatchObject({ provider: 'fal', mediaType: 'video/mp4', lastFrameArtifactId: expect.any(String), middleFrameArtifactId: expect.any(String) });
+    // One clip submitted, one last frame, one middle frame, one ledger line: the made clip's.
+    expect(fal.calls.filter((c) => c.endpoint === MODEL)).toHaveLength(1);
+    expect(frameJobsOf(fal)).toEqual(['last', 'middle']);
+    expect((await book.ledgeredCalls()).map((c) => [c.entryId, c.costUsd])).toEqual([[made.ledgerEntryId, made.costUsd]]);
+    // The next attempt with the same key, while the first keeps its result (its memo save): it waits, buying nothing.
+    await expect(workerB.video(await clip(attempt(key).operation))).rejects.toMatchObject({ code: 'in-flight', billed: false });
+    // Once that invocation ends, it is told an earlier attempt settled the call, so its memo layer reads that result.
+    a.until.abort();
+    await until(async () => (await workerB.video(await clip(attempt(key).operation)).catch((e: { settledEarlier?: boolean }) => e.settledEarlier)) === true);
+    expect(fal.calls.filter((c) => c.endpoint === MODEL)).toHaveLength(1);
+    expect(frameJobsOf(fal)).toEqual(['last', 'middle']);
+    expect(await book.ledgeredCalls()).toHaveLength(1);
+    expect(await workerB.spend('ws')).toMatchObject({ spentUsd: made.costUsd, inFlightUsd: 0, uncertainUsd: 0 });
+  });
+
+  it('after the cancel, the made clip’s frame job is read to its end: a status poll of it that fails is polled again, and the clip is kept', async () => {
+    const fal = fakeFal({}, { pollFailures: { 'fal-ai/ffmpeg-api/extract-frame': [fetchFailed('ECONNRESET')] } });
+    const a = attempt('run-1/run-1/relay/-/1/video/abc/1');
+    const g = gateway({ clients: { fal: cancelledAtClipPoll(fal, () => a.cancel.abort(new Error('TIMED_OUT'))) }, fetch: fakeFetch().fetch });
+    const made = await g.video(await clip(a.operation));
+    expect(made).toMatchObject({ mediaType: 'video/mp4', lastFrameArtifactId: expect.any(String), middleFrameArtifactId: expect.any(String) });
+    expect(fal.calls.filter((c) => c.endpoint === MODEL)).toHaveLength(1);
+    expect(frameJobsOf(fal)).toEqual(['last', 'middle']);
+    expect((await book.ledgeredCalls()).map((c) => c.costUsd)).toEqual([made.costUsd]);
+  });
+
+  // The gap f2bf60f left: the clip's own reads stayed under the cancel, so a result read or a download of the made clip
+  // that failed once after the cancel was not retried, the clip settled as made without frames, and the next attempt
+  // bought it again. A read is not a send: once fal has reported the clip done, its reads go on to the stop alone.
+  for (const failing of ['result read', 'download'] as const) {
+    it(`after the cancel, the made clip’s ${failing} that fails once is read again: its frames are made, and the next attempt gets that clip, not a new one`, async () => {
+      const fal = fakeFal({}, failing === 'result read' ? { resultFailures: { [MODEL]: [fetchFailed('ECONNRESET')] } } : {});
+      const media = fakeFetch(failing === 'download' ? { [fal.clipUrl]: [503] } : {});
+      const key = 'run-1/run-1/relay/-/1/video/abc/1';
+      const a = attempt(key);
+      const workerA = gateway({ clients: { fal: cancelledAtClipPoll(fal, () => a.cancel.abort(new Error('TIMED_OUT'))) }, fetch: media.fetch });
+      const workerB = gateway({ clients: { fal: fal.client }, fetch: media.fetch });
+      const made = await workerA.video(await clip(a.operation));
+      expect(a.cancel.signal.aborted).toBe(true);
+      expect(made).toMatchObject({ provider: 'fal', mediaType: 'video/mp4', lastFrameArtifactId: expect.any(String), middleFrameArtifactId: expect.any(String) });
+      if (failing === 'download') expect(media.requested.filter((u) => u === fal.clipUrl)).toHaveLength(2);
+      expect(fal.calls.filter((c) => c.endpoint === MODEL)).toHaveLength(1);
+      expect(frameJobsOf(fal)).toEqual(['last', 'middle']);
+      expect((await book.ledgeredCalls()).map((c) => [c.entryId, c.costUsd])).toEqual([[made.ledgerEntryId, made.costUsd]]);
+      a.until.abort();
+      await until(async () => (await workerB.video(await clip(attempt(key).operation)).catch((e: { settledEarlier?: boolean }) => e.settledEarlier)) === true);
+      expect(fal.calls.filter((c) => c.endpoint === MODEL)).toHaveLength(1);
+      expect(frameJobsOf(fal)).toEqual(['last', 'middle']);
+      expect(await book.ledgeredCalls()).toHaveLength(1);
+      expect(await workerB.spend('ws')).toMatchObject({ spentUsd: made.costUsd, inFlightUsd: 0, uncertainUsd: 0 });
+    });
+  }
+
+  it('after the cancel, a status poll of the clip that fails before fal reports it done is not polled again: nothing settles, and the next attempt resumes the clip', async () => {
+    const fal = fakeFal({}, { pollFailures: { [MODEL]: [fetchFailed('ECONNRESET')] } });
+    const key = 'run-1/run-1/relay/-/1/video/abc/1';
+    const a = attempt(key);
+    const workerA = gateway({ clients: { fal: cancelledAtClipPoll(fal, () => a.cancel.abort(new Error('TIMED_OUT'))) }, fetch: fakeFetch().fetch });
+    const err = await workerA.video(await clip(a.operation)).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(err).toMatchObject({ retryable: false });
+    expect(fal.polls).toEqual(['req-1']);
+    expect(frameJobsOf(fal)).toEqual([]);
+    expect(await book.ledgeredCalls()).toEqual([]);
+    const resumed = await gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch }).video(await clip(attempt(key).operation));
+    expect(resumed).toMatchObject({ provider: 'fal', mediaType: 'video/mp4', lastFrameArtifactId: expect.any(String) });
+    expect(fal.calls.filter((c) => c.endpoint === MODEL)).toHaveLength(1);
+    expect((await book.ledgeredCalls()).map((c) => c.costUsd)).toEqual([resumed.costUsd]);
+  });
+
+  it('a cancelled attempt that lost its row to a takeover submits no frame job either: its clip settles as made, on the one row', async () => {
+    const fal = fakeFal();
+    const media = fakeFetch();
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let first = true;
+    const key = 'run-1/run-1/relay/-/1/video/abc/1';
+    const a = attempt(key);
+    const client: FalClientLike = {
+      ...fal.client,
+      queue: {
+        ...fal.client.queue,
+        async subscribeToStatus(endpoint, options) {
+          if (first) {
+            first = false;
+            fal.polls.push(options.requestId);
+            a.cancel.abort(new Error('TIMED_OUT'));
+            await held;
+          }
+          return fal.client.queue.subscribeToStatus(endpoint, options);
+        },
+      },
+    };
+    const workerA = gateway({ clients: { fal: client }, fetch: media.fetch });
+    const workerB = gateway({ clients: { fal: client }, fetch: media.fetch });
+    const lost = workerA.video(await clip(a.operation)).then(
+      (out) => out,
+      (e: unknown) => e,
+    );
+    await until(() => fal.polls.length === 1);
+    await sleep(40);
+    clock.t += LEASE + 1;
+    const out = await workerB.video(await clip(attempt(key).operation));
+    expect(frameJobsOf(fal)).toEqual(['last', 'middle']);
+    release();
+    const err = await lost;
+    expect(err).toBeInstanceOf(GatewayError);
+    expect(err).toMatchObject({ retryable: false, billed: true, message: expect.stringContaining('another attempt of this step took the call over') });
+    expect(fal.calls.map((c) => c.endpoint)).toEqual([MODEL, 'fal-ai/ffmpeg-api/extract-frame', 'fal-ai/ffmpeg-api/extract-frame']);
+    await workerB.close();
+    await workerA.close();
+    expect((await book.ledgeredCalls()).map((c) => c.costUsd)).toEqual([out.costUsd]);
+  });
+
+  // R3-MONEY-1, the re-check of R-MONEY-1's round: the row was asked about once per frame job, before its first try, so
+  // a resend after fal's certainly-not-billed 503 went out without asking again. An attempt whose lease lapsed during the
+  // wait (cancelled, so not renewed; or its process slept) resent its last-frame job after the attempt that resumed its
+  // row had submitted its own: fal billed a second extract-frame job that the spend book counted in no row. The row is
+  // now asked about before every try of such a job, so an attempt that lost its row sends no frame job again.
+  it.each([
+    ['cancelled', true],
+    ['whose process slept', false],
+  ] as const)('an attempt %s whose last-frame job fal refused with a 503, its lease lapsing during the wait, does not send it again once another attempt holds the row', async (_how, cancelled) => {
+    const fal = fakeFal({ 'fal-ai/ffmpeg-api/extract-frame': [falQueueError(503, { detail: 'Service temporarily unavailable' })] });
+    const media = fakeFetch();
+    const key = 'run-1/run-1/relay/-/1/video/abc/1';
+    const a = attempt(key);
+    const slept = sleepsThrough();
+    const workerB = gateway({ clients: { fal: fal.client }, fetch: media.fetch });
+    let resumed: Awaited<ReturnType<ModelGateway['video']>> | undefined;
+    const workerA = gateway({
+      clients: { fal: cancelled ? cancelledAtClipPoll(fal, () => a.cancel.abort(new Error('TIMED_OUT'))) : fal.client },
+      fetch: media.fetch,
+      retry: {
+        random: () => 0.5,
+        // The wait before A sends its last-frame job again: its lease lapses, and the step's next attempt resumes its
+        // row and finishes the clip, frame jobs and all.
+        async sleep() {
+          if (resumed) return;
+          if (cancelled) await sleep(40);
+          else slept.asleep = true;
+          clock.t += LEASE + 1;
+          resumed = await workerB.video(await clip(attempt(key).operation));
+          slept.asleep = false;
+        },
+      },
+    });
+    const err = await workerA.video(await clip(a.operation)).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(resumed).toMatchObject({ provider: 'fal', mediaType: 'video/mp4', lastFrameArtifactId: expect.any(String) });
+    // fal's calls: the clip, A's last frame (refused), B's last and middle frames; A sends nothing again.
+    expect(fal.calls.map((c) => c.endpoint)).toEqual([MODEL, 'fal-ai/ffmpeg-api/extract-frame', 'fal-ai/ffmpeg-api/extract-frame', 'fal-ai/ffmpeg-api/extract-frame']);
+    expect(frameJobsOf(fal)).toEqual(['last', 'last', 'middle']);
+    expect(err).toBeInstanceOf(GatewayError);
+    expect(err).toMatchObject({ retryable: false, message: expect.stringContaining('another attempt of this step took the call over') });
+    // Every frame job fal billed (B's two; A's was refused) is in the spend book, on the one row that is ledgered.
+    await workerB.close();
+    await workerA.close();
+    expect((await book.ledgeredCalls()).map((c) => c.costUsd)).toEqual([resumed?.costUsd]);
+    expect(await workerB.spend('ws')).toMatchObject({ spentUsd: resumed?.costUsd, inFlightUsd: 0, uncertainUsd: 0 });
+  });
+
+  // The other side of R3-MONEY-1's check: an attempt that still holds its row sends its refused frame job again, cancelled
+  // or not, so an ordinary clip keeps both its frames.
+  it.each([
+    ['cancelled', true],
+    ['not cancelled', false],
+  ] as const)('an attempt %s that still holds its row sends its last-frame job again after fal refused it with a 503, and keeps both frames', async (_how, cancelled) => {
+    const fal = fakeFal({ 'fal-ai/ffmpeg-api/extract-frame': [falQueueError(503, { detail: 'Service temporarily unavailable' })] });
+    const media = fakeFetch();
+    const a = attempt('run-1/run-1/relay/-/1/video/abc/1');
+    const worker = gateway({
+      clients: { fal: cancelled ? cancelledAtClipPoll(fal, () => a.cancel.abort(new Error('TIMED_OUT'))) : fal.client },
+      fetch: media.fetch,
+      retry: { random: () => 0.5, sleep: async () => {} },
+    });
+    const out = await worker.video(await clip(a.operation));
+    expect(out).toMatchObject({ provider: 'fal', mediaType: 'video/mp4', lastFrameArtifactId: expect.any(String), middleFrameMediaType: 'image/png' });
+    // The clip, the refused last frame, its resend, then the middle frame.
+    expect(frameJobsOf(fal)).toEqual(['last', 'last', 'middle']);
+    await worker.close();
+    expect((await book.ledgeredCalls()).map((c) => c.costUsd)).toEqual([out.costUsd]);
+  });
+
+  it('a cancelled attempt whose book cannot say whether it holds its row submits no frame job: the clip settles as made', async () => {
+    const fal = fakeFal();
+    book.holds = async () => {
+      throw new Error('database is locked');
+    };
+    const a = attempt();
+    const g = gateway({ clients: { fal: cancelledAtClipPoll(fal, () => a.cancel.abort(new Error('TIMED_OUT'))) }, fetch: fakeFetch().fetch });
+    const err = await g.video(await clip(a.operation)).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(err).toMatchObject({ retryable: false, billed: true, message: expect.stringContaining('could not read its spending records') });
+    expect(fal.calls.map((c) => c.endpoint)).toEqual([MODEL]);
   });
 
   // MONEY-2, the check of fix/fx-landnow (F03 (g)): an attempt Temporal cancelled sends nothing again, so it neither

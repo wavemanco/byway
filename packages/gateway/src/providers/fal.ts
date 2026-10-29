@@ -611,7 +611,8 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
         if (status === STOPPED || status === WAITED) return ended(status, 'running');
       }
       done = true;
-      const result = await untilEnded(req.attempt(read), stop, deadline?.reading ? until : undefined);
+      // fal reported the job done: its result is there to read, so the read is retried even after a cancel.
+      const result = await untilEnded(req.attempt(read, { done: true }), stop, deadline?.reading ? until : undefined);
       if (result === STOPPED || result === WAITED) return ended(result, 'done');
       return { data: result.data, requestId };
     } catch (e) {
@@ -838,7 +839,7 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
       const generated = polled;
       try {
         const video = fileUrl(generated.data, 'video');
-        const clip = await req.attempt(() => download(fetchImpl, video.url, 'clip'));
+        const clip = await req.attempt(() => download(fetchImpl, video.url, 'clip'), { done: true });
         media.clip = clip.via;
         // Typed from its bytes, whatever a header or fal's answer claims: anything else is not kept as a clip.
         const clipType = sniffVideoType(clip.bytes);

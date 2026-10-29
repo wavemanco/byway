@@ -656,6 +656,17 @@ export class ModelGateway implements Gateway {
     // cancel of its job, stays on the stop alone (ADR-0111 item 1).
     const cancel = req.operation?.cancel;
     const stopping = haltOn(stop, cancel);
+    // But a frame job (last frame, middle frame) for a clip already made goes on after a cancel, while, and only while,
+    // this attempt still holds the call's row (R-MONEY-1, the re-check of fix/fx-landnow; the owner's "Third round: frame
+    // jobs go on (Recommended)"): refused, its clip settled as made without frames, and the next attempt, finding the
+    // row settled, bought the clip again. Once such a job is out, its retries and every read after it (its status, its
+    // result, the frames' downloads) end on the stop alone, so the made clip is completed once and kept. The clip itself
+    // is never sent again after a cancel: its submission's retries stay under `stopping`, a submission before the clip
+    // job was accepted is refused, and a status poll of the clip before the provider reports it done stays under
+    // `stopping` too (the reads of a done clip go on: `attempt`'s `done`, below).
+    const finishing = haltOn(stop, undefined);
+    let framing = false;
+    let clipAccepted = false;
     try {
       const mapped = <T>(fn: () => Promise<T>) => async () => {
         try {
@@ -673,16 +684,20 @@ export class ModelGateway implements Gateway {
           ...(req.shot !== undefined ? { shot: req.shot } : {}),
           ...(startFrame ? { startFrame } : {}),
           context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, profileId: req.profileId },
-          attempt: (fn) => withRetries(mapped(fn), this.retry, FREE_READ, stopping),
+          // A read of a job the provider reported done (the made clip's result and download) is retried on the stop
+          // alone too, so a cancel never loses a clip that is paid for to one failed read: a read sends nothing again.
+          attempt: (fn, o) => withRetries(mapped(fn), this.retry, FREE_READ, framing || o?.done ? finishing : stopping),
           submit: async (fn, what) => {
             // Nothing more is submitted once the run is ending: this job was not sent, so nothing was billed for it.
             if (stop?.aborted) throw cutOffError(ref.provider, 'none', `${what} was not submitted`);
-            // Nor once Temporal has cancelled this attempt (F03 (g)): a clip made already is settled as made, without
-            // its frame jobs, which the attempt that takes the call over makes.
-            if (cancel?.aborted) throw notSubmitted(ref.provider, what, 'Temporal cancelled this attempt of the step, and a later attempt takes the call over');
+            const later = op.wasSent;
+            // Nor, once Temporal has cancelled this attempt (F03 (g)), the clip, or anything before its job was accepted:
+            // the attempt that takes the call over makes it. A frame job for a clip already made goes on (see above),
+            // under the row check below.
+            const made = clipAccepted || op.resumed?.generation !== undefined;
+            if (cancel?.aborted && !(later && made)) throw notSubmitted(ref.provider, what, 'Temporal cancelled this attempt of the step, and a later attempt takes the call over');
             // The submission is the call's first billable request: the spend book marks the call sent before it.
             const fresh = op.resumed === undefined;
-            const later = op.wasSent;
             await op.markSent();
             // Marking it sent found another attempt's jobs the provider had already accepted (PaidCall.markSent: this
             // call's lease ran out while it got the job ready, and it was admitted again onto that attempt's row). The
@@ -694,15 +709,29 @@ export class ModelGateway implements Gateway {
             if (fresh && op.resumed) throw takenOver(ref.provider, what, op.resumed, op.resumedAt, redact);
             // A submission after the call's first (a last-frame or middle-frame job) goes out only while this call still
             // holds its row in the spend book. An attempt that took the row over (this one's lease ran out while its
-            // process slept) polls the same clip and submits its own frame jobs, so this one submits nothing more, and its
-            // clip settles as made (MONEY-1, the check of fix/fx-landnow; F03 (e)). A book that cannot say submits nothing.
-            if (later) {
+            // process slept, or after a cancel, which renews nothing) polls the same clip and submits its own frame jobs,
+            // so this one submits nothing more, and its clip settles as made (MONEY-1, the check of fix/fx-landnow; F03
+            // (e)). A book that cannot say submits nothing. The row is asked about before every try of such a job, its
+            // resends after a certainly-not-billed refusal (503, 429) included: the lease can lapse during the wait before
+            // a resend, and a resend then would be a second job billed beside the other attempt's, counted in no row
+            // (R3-MONEY-1). The refusal is not retried: it is byway's, and nothing was sent.
+            const holdsRow = async () => {
               const holds = await op.holdsRow().catch(() => undefined);
               if (holds === undefined) throw notSubmitted(ref.provider, what, 'byway could not read its spending records to see that this attempt of the step still holds the call');
               if (!holds) throw notSubmitted(ref.provider, what, 'another attempt of this step took the call over, and it makes this job');
+            };
+            if (later) {
+              await holdsRow();
+              // This attempt holds the row: the made clip's frames are its to finish, cancel or not.
+              framing = true;
             }
+            const send = mapped(fn);
+            const tryOnce = async (n: number) => {
+              if (later && n > 0) await holdsRow();
+              return send();
+            };
             try {
-              return await withRetries(mapped(fn), this.retry, BILLABLE_JOB, stopping);
+              return await withRetries(tryOnce, this.retry, BILLABLE_JOB, framing ? finishing : stopping);
             } catch (e) {
               if ((e as ClassifiedError).billing !== 'maybe') throw e;
               // Not sent again (ADR-0091): a second submission is a second job, billed again.
@@ -715,7 +744,10 @@ export class ModelGateway implements Gateway {
               throw err;
             }
           },
-          accepted: (role, requestId) => op.accepted(role, requestId),
+          accepted: async (role, requestId) => {
+            await op.accepted(role, requestId);
+            if (role === 'generation') clipAccepted = true;
+          },
           // An earlier attempt's jobs the provider accepted (stage 3): polled by their ids, never submitted again, and
           // waited for from when they were accepted, so the clip keeps its clock.
           ...(op.resumed ? { resume: op.resumed, ...acceptedTimes(op.resumedAt) } : {}),
