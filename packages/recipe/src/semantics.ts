@@ -1048,10 +1048,11 @@ interface CritiqueTaker {
  *   their names), and a one-shot gate its body's.
  * - A judge in a relay link may be skipped, with nothing to see, and the run goes on with the critique from before it,
  *   unless it reports to the loop around it, whose round then ends there (ADR-0090). A person's answer in a lens or a
- *   gate body may be empty, which is dropped (ADR-0098).
+ *   gate body may be empty (`EMPTY_ANSWER`): an audit drops a lens that ends with one and hands on the critique it was
+ *   handed (ADR-0098); a gate hands the empty answer on, so no step's critique is the latest after it (R-GATE-MARK).
  * - An optional the person declines whose body would have put its critique in place leaves the critique empty
- *   (R-DECLINED): no step's critique is the latest after it. In a lens or a gate body the one before it is kept beside
- *   none, since an audit drops a lens that ends with an empty critique and hands on the one it was handed.
+ *   (R-DECLINED): no step's critique is the latest after it. In a lens or a gate body it is read as a person's empty
+ *   answer is.
  *
  * A may-analysis over a walk that holds every run: "may be the latest" covers every run. The walk also leaves every
  * loop from the end of its body, as every other rule reads it, which can only take a claim of `critiqueSources` away.
@@ -1070,17 +1071,22 @@ function critiqueFlow(recipe: Recipe): { at: Map<string, Step>; takers: Map<stri
       }
       if (!replacesCritique(s)) return st;
       at.set(path, s);
-      // Not on every run: a judge skipped where the run goes on past it, or a person's empty answer that a lens or a
-      // gate drops.
-      if (skippable.get(path) === false || (s.actor === 'human' && contained)) return union(st, [path]);
-      return [path];
+      // Not on every run: a judge skipped where the run goes on past it.
+      if (skippable.get(path) === false) return union(st, [path]);
+      // A person's answer in a lens or a gate body may be empty.
+      return s.actor === 'human' && contained ? [EMPTY_ANSWER, path].sort() : [path];
     },
     join: unionAll,
     // Walk paths hold no '|'.
     key: (st) => st.join('|'),
-    after: (node, entry, inner) => (node.op === 'audit' || node.op === 'gate' ? inner : entry),
+    after: (node, entry, inner, parts) => {
+      // An audit drops a lens that ends with an empty answer; a gate hands it on as none.
+      if (node.op === 'audit') return unionAll(parts.map((p) => (p.includes(EMPTY_ANSWER) ? union(without(p, EMPTY_ANSWER), entry) : p)));
+      if (node.op === 'gate') return inner.includes(EMPTY_ANSWER) ? union(without(inner, EMPTY_ANSWER), ['']) : inner;
+      return entry;
+    },
     exit: (_s, path, before, after) => (skippable.get(path) ? union(before, after) : after),
-    declined: (node, st, contained) => (!replacesCritique(node.body) ? st : contained ? union(st, ['']) : ['']),
+    declined: (node, st, contained) => (!replacesCritique(node.body) ? st : contained ? [EMPTY_ANSWER] : ['']),
   });
   return { at, takers };
 }
@@ -1130,9 +1136,9 @@ const OPTIONS: PortType = 'option_set<artifact>';
 const appliesOptions = (s: Step, contained: boolean, medium: Medium | undefined): boolean => !contained && machineWrites(s) && takesIn(s, OPTIONS, medium) && !hasNoExecutor(s);
 
 /**
- * Marks in what `answersReachingWork` follows through a lens or a gate body, never an answer's place (a walk path):
- * `HANDED` before a value the lens was handed and has not replaced, and `EMPTY_ANSWER` for a person's empty answer,
- * which carries nothing and is dropped with its lens or by its gate.
+ * Marks in what `answersReachingWork` and `critiqueFlow` follow through a lens or a gate body, never an answer's place
+ * (a walk path): `HANDED` before a value the lens was handed and has not replaced, and `EMPTY_ANSWER` for a person's
+ * empty answer, which carries nothing: an audit drops it with its lens, and a gate hands it on (R-GATE-MARK).
  */
 const HANDED = '^';
 const EMPTY_ANSWER = '#empty';
@@ -1261,12 +1267,12 @@ function decidesWork(recipe: Recipe): Set<string> {
  *   step always notes something new (a critic's, a check's, a CUT's, a sweep's, an overlap flag's, a direction's, or
  *   the direction of a seed whose prompt asks for it first) always replaces what the audit was handed, and one whose
  *   only note is that of a seed whose prompt asks for the block alone may not. A one-shot gate hands on its body's
- *   critique, or the critique it was handed
- *   where the body ends with a person's empty answer. Both hand on the brief and the taste they started with.
+ *   critique, a person's empty answer included, which carries nothing (R-GATE-MARK). Both hand on the brief and the
+ *   taste they started with.
  * - A judge in a relay link may be skipped (`skippableJudges`): on those runs the port keeps what it had.
  * - An optional the person declines whose body would have put its critique in place leaves the critique empty
  *   (R-DECLINED), which carries nothing: the writer after it makes no change. In a lens or a gate body it is read as a
- *   person's empty answer is there, so an audit drops that lens.
+ *   person's empty answer is there, so an audit drops that lens, and a gate hands it on.
  */
 function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<string> {
   const askedAt = new Set(asked.map((p) => p.path));
@@ -1344,10 +1350,9 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
       switch (node.op) {
         case 'audit':
           return { ...entry, critique: lensesHandOn(entry.critique, parts.map((p) => p.critique)), notes: lensesHandOn(entry.notes, parts.map((p) => p.notes)) };
-        case 'gate': {
-          const made = parts[0]!.critique;
-          return { ...entry, critique: made.includes(EMPTY_ANSWER) ? union(without(made, EMPTY_ANSWER), entry.critique) : made };
-        }
+        // Its body's critique, an empty answer's included (R-GATE-MARK): that carries nothing.
+        case 'gate':
+          return { ...entry, critique: without(parts[0]!.critique, EMPTY_ANSWER) };
         case 'replicate':
         case 'each':
           return { ...entry, options: parts[0]!.work };

@@ -698,7 +698,7 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     expect(unapplied(seq(render('r'), personCut('cut'), replicate('x', 2, seq(fix('f0'), render('r2'), keep))))).toEqual(['cut']);
   });
 
-  it('an empty answer in a lens or a final check’s body is dropped there: the operator hands on what came before it, not an earlier answer in its body', () => {
+  it('an empty answer in a lens is dropped there: the audit hands on what came before it, not an earlier answer in its body; a final check hands the empty answer on', () => {
     const yourCheck = (id: string): Step => step({ id, role: 'check', actor: 'human', consumes: ['view'], produces: ['critique'] });
     const pass = { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' } as const;
     // Your CUT, then another answer of yours in its lens, beside a lens of yours: listed, the later answer takes the
@@ -711,7 +711,9 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     // reaches the fix after it when the answers in it are left empty.
     expect(unapplied(seq(render('r'), personCut('before'), audit('au', [{ name: 'yours', body: yourCritique('o') }]), fix('f')))).toEqual([]);
     expect(unapplied(seq(render('r'), personCut('before'), audit('au', [{ name: 'maybe', body: optional('o', 'needed', critic('c')) }]), fix('f')))).toEqual([]);
-    expect(unapplied(seq(render('r'), personCut('before'), oneShotGate('g', seq(critic('g1'), yourCheck('gc')), pass), fix('f')))).toEqual([]);
+    // A final check's body that ends with your answer hands it on as the critique, empty or not, with its mark (since
+    // R-GATE-MARK, cfa059a): the critique from before the gate never reaches the fix after it (B-064 (a)).
+    expect(unapplied(seq(render('r'), personCut('before'), oneShotGate('g', seq(critic('g1'), yourCheck('gc')), pass), fix('f')))).toEqual(['before']);
     expect(unapplied(seq(render('r'), personCut('before'), audit('au', [{ name: 'k', body: seq(critic('lc'), yourCheck('lk')) }]), fix('f')))).toEqual([]);
     // Not where a lens always notes something new: the audit then hands on the lenses' critiques alone.
     expect(unapplied(seq(render('r'), personCut('before'), audit('au', [{ name: 'k', body: check('k') }, { name: 'maybe', body: optional('o', 'needed', critic('c')) }]), fix('f')))).toEqual(['before']);
