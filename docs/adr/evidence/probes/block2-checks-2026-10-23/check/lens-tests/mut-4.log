@@ -1,0 +1,22 @@
+D1	KILLED	Test Files  1 failed (1) | Tests  3 failed | 4 passed (7)	2s
+    packages/runner/test/declined-critique.test.ts > C7 with its scope cut made optional > declined: the scope cut’s fix makes no change and says why, instead of applying the defect check’s findings again
+    packages/runner/test/declined-critique.test.ts > C5 with your cut made optional > declined: the cut’s fix makes no change and says why, instead of applying the shot check’s findings
+    packages/runner/test/declined-critique.test.ts > @byway/recipe reads the same rule > your list before an optional review reaches the fix on no path, and the run shows it: declined, the fix passes; run
+D2	KILLED	Test Files  1 failed | 1 passed (2) | Tests  3 failed | 9 passed (12)	1s
+    packages/runner/test/gate-mark.test.ts > a one-shot gate after an empty CUT hands on its critic’s critique without the empty mark > a fix right after the gate applies the gate critic’s critique
+    packages/runner/test/gate-mark.test.ts > a one-shot gate after an empty CUT hands on its critic’s critique without the empty mark > so does one after a gate that failed and that the person chose to us
+    packages/runner/test/gate-mark.test.ts > a one-shot gate after an empty CUT hands on its critic’s critique without the empty mark > and one after a gate that follows a person who listed nothing to rem
+C7	KILLED	Test Files  1 failed (1) | Tests  3 failed | 4 passed (7)	2s
+    packages/runner/test/revise-in-place.test.ts > the brief revised in place is asked about by where it came from (the interpreter) > a composed VISION-lite reaction after a brief that is not the intervi
+    packages/runner/test/revise-in-place.test.ts > the brief revised in place is asked about by where it came from (the interpreter) > the person’s answers are a brief, not the interview’s list: a second 
+    packages/runner/test/revise-in-place.test.ts > the brief revised in place is asked about by where it came from (the interpreter) > a brief the interview wrote and another step wrote over is asked abou
+L1	KILLED	Test Files  2 failed (2) | Tests  3 failed | 5 passed (8)	9s
+    packages/runner/test/dev-engine.test.ts > the dev engine > repeats its lost-run pass every five minutes while it runs, says what the pass ended, and stops it when it stops
+    packages/runner/test/reconcile-while-running.test.ts > the lost-run pass while the engine runs > skips a queued run, whose start may be under way: the run goes on once its workflow starts
+    packages/runner/test/reconcile-while-running.test.ts > the lost-run pass while the engine runs > the pass at start still fails a queued run with no workflow: nothing is starting then
+L2	KILLED	Test Files  1 failed | 1 passed (2) | Tests  1 failed | 7 passed (8)	9s
+    packages/runner/test/reconcile-while-running.test.ts > the lost-run pass while the engine runs > a run that ended while the pass looked at it keeps its end, and is not counted as one the pass closed
+T3	KILLED	Test Files  1 failed | 1 passed (2) | Tests  3 failed | 76 passed (79)	2s
+    packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > reserves a completion at the tier its estimated prompt falls in (maxComplet
+    packages/gateway/test/pricing.test.ts > the gateway reserves and settles a very large prompt at its long-context tier (LC-TIERS) > reserves an OpenAI call whose estimated prompt is 272,000 tokens at t
+    packages/gateway/test/pricing.test.ts > the gateway reserves and settles a very large prompt at its long-context tier (LC-TIERS) > refuses a maximal brief on Google whose short-rate estimate would fit

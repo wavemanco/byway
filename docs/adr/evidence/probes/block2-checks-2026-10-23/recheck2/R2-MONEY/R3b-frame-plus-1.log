@@ -1,0 +1,111 @@
+
+ RUN  v5.0.3 C:/Users/arvik/AppData/Local/Temp/claude/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422/scratchpad/b2rc2/m
+
+ ❯ packages/gateway/test/clip-wait.test.ts (53 tests | 4 failed) 1318ms
+   ❯ the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way (5)
+     × a frame job that does not finish, its clip finished 25 minutes in: 5 left, so 7 minutes, is cancelled then; the clip is ledgered and kept 58ms
+     × a frame job that does not finish, its clip finished in a minute: 29 left, so 31 minutes, is cancelled then; the clip is ledgered and kept 23ms
+     × a clip done only after its wait ran out (fal’s cancel said so) leaves its frame the 2 minutes alone 14ms
+     × the frame job’s result read is bounded too: a frame job done in a minute whose result never comes is given up at the bound, and the clip kept 33ms
+
+ Test Files  1 failed | 28 passed (29)
+      Tests  4 failed | 1002 passed (1006)
+   Start at  10:31:10
+   Duration  7.23s (tests 47%, import 37%, transform 16%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > a frame job that does not finish, its clip finished 25 minutes in: 5 left, so 7 minutes, is cancelled then; the clip is ledgered and kept
+ FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > a frame job that does not finish, its clip finished in a minute: 29 left, so 31 minutes, is cancelled then; the clip is ledgered and kept
+AssertionError: expected [ { …(3) } ] to deeply equal [ { …(3) } ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "at": 1792672320000,
++     "at": 1792672320001,
+      "endpoint": "fal-ai/ffmpeg-api/extract-frame",
+      "requestId": "req-2",
+    },
+  ]
+
+ ❯ packages/gateway/test/clip-wait.test.ts:746:25
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > a clip done only after its wait ran out (fal’s cancel said so) leaves its frame the 2 minutes alone
+AssertionError: expected [ [ …(2) ], [ …(2) ] ] to deeply equal [ [ …(2) ], [ …(2) ] ]
+
+- Expected
++ Received
+
+@@ -3,8 +3,8 @@
+      "fal-ai/kling-video/v2.5-turbo/pro/image-to-video",
+      1792672200000,
+    ],
+    [
+      "fal-ai/ffmpeg-api/extract-frame",
+-     1792672320000,
++     1792672320001,
+    ],
+  ]
+
+ ❯ packages/gateway/test/clip-wait.test.ts:763:56
+    761|     await vi.advanceTimersByTimeAsync(1);
+    762|     expect((await settled(err)).message).toMatch(/last-frame job req-2…
+    763|     expect(fal.cancels.map((c) => [c.endpoint, c.at])).toEqual([
+       |                                                        ^
+    764|       [BALANCED_VIDEO, T0 + 30 * MINUTE],
+    765|       [FAL_EXTRACT_FRAME, T0 + 30 * MINUTE + FRAME_GRACE_MS],
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > the frame job’s result read is bounded too: a frame job done in a minute whose result never comes is given up at the bound, and the clip kept
+AssertionError: expected [ { …(19) } ] to deeply equal [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
++     "at": "2026-10-22T12:32:00.001Z",
++     "costUsd": 0.352,
++     "hash": "sha256:ec42cfb15a0fb8ca43ed91a00cb8aab50b5a4cf1b38de06c068ce7a35d74c48e",
++     "id": "018b8af3-2419-486e-991b-6398e7c06f8d",
+      "kind": "video",
+-     "latencyMs": 1920000,
++     "latencyMs": 1920001,
++     "operationId": "6ca24711-08d1-452c-8dcc-446e6379a378",
++     "prevHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "provider": "fal",
++     "purpose": "relay:media",
++     "requestSha256": "sha256:785c321bc5cccbf0ba28c1a8eb795f464b70e86afbbdff6c6eb71a341120c881",
++     "requestedModel": "fal-ai/kling-video/v2.5-turbo/pro/image-to-video",
++     "responseSha256": "sha256:9881f1ecc1eb88cd49ac98f8b512de292a8024c58d398d6706d2c8f197bb78e5",
++     "runId": "run-1",
++     "seq": 1,
++     "servedModel": "fal-ai/kling-video/v2.5-turbo/pro/image-to-video",
++     "stepId": "clip",
++     "usage": {
++       "inputTokens": 0,
++       "outputTokens": 0,
++       "units": 5,
++     },
++     "workspaceId": "ws",
+    },
+  ]
+
+ ❯ packages/gateway/test/clip-wait.test.ts:807:22
+    805|     // comes before the files that follow, whose lock waits are timers…
+    806|     expect(fal.cancels).toEqual([]);
+    807|     expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal…
+       |                      ^
+    808|   });
+    809|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+

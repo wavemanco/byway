@@ -1,0 +1,308 @@
+
+ RUN  v5.0.3 C:/Users/arvik/AppData/Local/Temp/claude/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422/scratchpad/b2check-clones/refute-TESTS-2-1
+
+(node:28692) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:10508) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:61564) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:20308) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:68012) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:64952) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:16836) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:18760) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:25156) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:30536) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:13028) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:12088) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:57332) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:25200) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+time=2026-10-23T00:39:19.245 level=WARN msg="Cluster Id in Cluster Metadata config is not a valid uuid. Generating a new Cluster Id" component=metadata-initializer
+time=2026-10-23T00:39:19.299 level=ERROR msg="Queue reader unable to retrieve tasks" shard-id=1 address=127.0.0.1:60038 component=timer-queue-processor queue-reader-id=0 error="shard status unknown"
+Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+
+Temporal Server:      localhost:64548
+Temporal Persistence: in-memory
+Temporal Metrics:     http://localhost:60036/metrics
+(node:60760) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:44560) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:32436) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:67708) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:23328) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:65892) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:16424) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:41936) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:53476) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+time=2026-10-23T00:39:56.777 level=WARN msg="Cluster Id in Cluster Metadata config is not a valid uuid. Generating a new Cluster Id" component=metadata-initializer
+time=2026-10-23T00:39:56.852 level=ERROR msg="Queue reader unable to retrieve tasks" shard-id=1 address=127.0.0.1:61323 component=visibility-queue-processor queue-reader-id=0 error="shard status unknown"
+time=2026-10-23T00:39:56.852 level=ERROR msg="Queue reader unable to retrieve tasks" shard-id=1 address=127.0.0.1:61323 component=transfer-queue-processor queue-reader-id=0 error="shard status unknown"
+Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+
+Temporal Server:      localhost:61319
+Temporal Persistence: in-memory
+Temporal Metrics:     http://localhost:61321/metrics
+(node:7096) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+time=2026-10-23T00:40:00.615 level=WARN msg="Cluster Id in Cluster Metadata config is not a valid uuid. Generating a new Cluster Id" component=metadata-initializer
+Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+
+Temporal Server:      localhost:62069
+Temporal Persistence: in-memory
+Temporal Metrics:     http://localhost:51382/metrics
+(node:3848) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+time=2026-10-23T00:40:06.585 level=WARN msg="Cluster Id in Cluster Metadata config is not a valid uuid. Generating a new Cluster Id" component=metadata-initializer
+Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+
+Temporal Server:      localhost:54017
+Temporal Persistence: in-memory
+Temporal Metrics:     http://localhost:55382/metrics
+(node:38044) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:9392) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:19000) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:31024) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:18820) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ packages/runner/test/declines.test.ts (8 tests | 2 failed) 36837ms
+   ❯ an image the model declined, when its step runs again (ADR-0102) (5)
+     × a retry billed with no image: both attempts are in the step’s cost and its note, and the run’s event names the retry’s entry 5205ms
+     × a worker lost during the retry: the next attempt makes the retry alone, and the declined image is not bought again 6772ms
+(node:32656) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m2026-10-23T07:40:24.097217Z[0m [33m WARN[0m [2mtemporalio_sdk_core::worker::workflow[0m[2m:[0m Task not found when completing [3merror[0m[2m=[0mcode: 'Some requested entity was not found', message: "Workflow task not found." [3mrun_id[0m[2m=[0m"01a167b4-1c73-7f03-8f9d-ad66244478dc"
+(node:34692) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:26628) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m2026-10-23T07:40:25.709661Z[0m [33m WARN[0m [2mtemporalio_sdk_core::worker::activities[0m[2m:[0m Activity not found on completion. This may happen if the activity has already been cancelled but completed anyway. [3mtask_token[0m[2m=[0mTaskToken(CiQwMWExNjdiMy0zMTQ0LTc5MTAtYjUwZi05NGFkNWI2OWZmZjQSLmJ5d2F5LXJ1bi1kYTJhY2QyMy04NzAwLTRiNmMtOGFkNi0zMGM4NjE1YjkyMTgaJDAxYTE2N2I0LTMwNTctN2YwNC1iZjYwLTAyZjhmMjcxNDE4MSAMKAEyATJCCW1vZGVsU3RlcEoICAEQooFAGAE=) [3mdetails[0m[2m=[0mStatus { code: NotFound, message: "workflow execution already completed", details: b"\x08\x05\x12$workflow execution already completed\x1aB\n@type.googleapis.com/temporal.api.errordetails.v1.NotFoundFailure", metadata: MetadataMap { headers: {"content-type": "application/grpc"} }, source: None }
+(node:56192) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m2026-10-23T07:40:25.929948Z[0m [33m WARN[0m [2mtemporalio_sdk_core::worker::activities[0m[2m:[0m Activity not found on completion. This may happen if the activity has already been cancelled but completed anyway. [3mtask_token[0m[2m=[0mTaskToken(CiQwMWExNjdiMy1jM2UwLTdjNjUtYTFiOC02MzVlY2MyNTNlYjYSLmJ5d2F5LXJ1bi0wNzhmZmZmZS04MmI1LTRlZTUtYmU5MS00MTJhYWViOGRhOGYaJDAxYTE2N2I0LTMxYTEtNzNhYi1hNjNhLTg4YzljNjk2YjUwOSATKAEyATRCDHNldFJ1blN0YXR1c0oICAEQvIFAGAE=) [3mdetails[0m[2m=[0mStatus { code: NotFound, message: "workflow execution already completed", details: b"\x08\x05\x12$workflow execution already completed\x1aB\n@type.googleapis.com/temporal.api.errordetails.v1.NotFoundFailure", metadata: MetadataMap { headers: {"content-type": "application/grpc"} }, source: None }
+Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+
+Temporal Server:      localhost:64579
+Temporal Persistence: C:\Users\arvik\AppData\Local\Temp\byway-engine-Hi4Z4S\temporal.sqlite
+Temporal Metrics:     http://localhost:64581/metrics
+(node:35264) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+time=2026-10-23T00:40:28.353 level=WARN msg="Cluster Id in Cluster Metadata config is not a valid uuid. Generating a new Cluster Id" component=metadata-initializer
+Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+
+Temporal Server:      localhost:52437
+Temporal Persistence: in-memory
+Temporal Metrics:     http://localhost:64905/metrics
+(node:31572) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+time=2026-10-23T00:40:29.441 level=WARN msg="Cluster Id in Cluster Metadata config is not a valid uuid. Generating a new Cluster Id" component=metadata-initializer
+time=2026-10-23T00:40:29.497 level=ERROR msg="Queue reader unable to retrieve tasks" shard-id=1 address=127.0.0.1:57027 component=transfer-queue-processor queue-reader-id=0 error="shard status unknown"
+time=2026-10-23T00:40:29.497 level=ERROR msg="Queue reader unable to retrieve tasks" shard-id=1 address=127.0.0.1:57027 component=visibility-queue-processor queue-reader-id=0 error="shard status unknown"
+time=2026-10-23T00:40:29.497 level=ERROR msg="Queue reader unable to retrieve tasks" shard-id=1 address=127.0.0.1:57027 component=outbound-queue-processor queue-reader-id=0 error="shard status unknown"
+Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+
+Temporal Server:      localhost:55199
+Temporal Persistence: in-memory
+Temporal Metrics:     http://localhost:57025/metrics
+[2m2026-10-23T07:40:31.150572Z[0m [33m WARN[0m [2mtemporalio_sdk_core::worker::workflow[0m[2m:[0m Task not found when completing [3merror[0m[2m=[0mcode: 'Some requested entity was not found', message: "Workflow task not found." [3mrun_id[0m[2m=[0m"01a167b4-4881-7669-a045-79f10abde103"
+2026-10-23T07:40:42.697Z [ERROR] Worker failed {
+  sdkComponent: 'worker',
+  taskQueue: 'runner-test-byway-runner-Y7sqYe',
+  error: GracefulShutdownPeriodExpiredError: Timed out while waiting for worker to shutdown gracefully
+      at Object.next (C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\@temporalio+worker@1.24.0_@_bf1641040c96deebfe4a12d55be9a405\node_modules\@temporalio\worker\lib\worker.js:650:57)
+      at C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\tap.js:20:81
+      at OperatorSubscriber._this._next (C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\OperatorSubscriber.js:33:21)
+      at OperatorSubscriber.Subscriber.next (C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\Subscriber.js:51:18)
+      at C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\mergeInternals.js:28:28
+      at OperatorSubscriber._this._next (C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\OperatorSubscriber.js:33:21)
+      at OperatorSubscriber.Subscriber.next (C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\Subscriber.js:51:18)
+      at C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\map.js:10:24
+      at OperatorSubscriber._this._next (C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\OperatorSubscriber.js:33:21)
+      at OperatorSubscriber.Subscriber.next (C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\Subscriber.js:51:18)
+}
+Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+
+Temporal Server:      localhost:64579
+Temporal Persistence: C:\Users\arvik\AppData\Local\Temp\byway-engine-Hi4Z4S\temporal.sqlite
+Temporal Metrics:     http://localhost:59625/metrics
+(node:44284) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+time=2026-10-23T00:40:52.285 level=ERROR msg="Unable to call matching.PollWorkflowTaskQueue." service=frontend wf-task-queue-name=byway-runs timeout=1m9.9962371s error="context canceled"
+(node:68628) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:65976) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+
+Temporal Server:      localhost:64579
+Temporal Persistence: C:\Users\arvik\AppData\Local\Temp\byway-engine-Hi4Z4S\temporal.sqlite
+Temporal HTTP:        localhost:62053
+Temporal Metrics:     http://localhost:62055/metrics
+(node:15592) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:47496) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:6460) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:52476) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:32320) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:67016) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:64188) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:63520) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:60696) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:12152) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:60128) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:19496) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:50812) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45360) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+time=2026-10-23T00:41:12.253 level=WARN msg="Cluster Id in Cluster Metadata config is not a valid uuid. Generating a new Cluster Id" component=metadata-initializer
+(node:32972) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:56248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:43164) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+time=2026-10-23T00:41:12.793 level=WARN msg="Cluster Id in Cluster Metadata config is not a valid uuid. Generating a new Cluster Id" component=metadata-initializer
+Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+
+Temporal Server:      localhost:52661
+Temporal Persistence: in-memory
+Temporal Metrics:     http://localhost:56308/metrics
+Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+
+Temporal Server:      localhost:62401
+Temporal Persistence: in-memory
+Temporal Metrics:     http://localhost:62405/metrics
+(node:50760) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:23168) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:26668) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m2026-10-23T07:41:26.159330Z[0m [33m WARN[0m [2mtemporalio_sdk_core::worker::activities[0m[2m:[0m Activity not found on completion. This may happen if the activity has already been cancelled but completed anyway. [3mtask_token[0m[2m=[0mTaskToken(CiQwMWExNjdiNC1lYWFlLTdkYTQtODJhNS0zMWU1NDc1MDI0NjUSLmJ5d2F5LXJ1bi0xMzNjNWUzNy01N2RjLTRiNDktOGUzMy01NTJhYzExMzQzNzAaJDAxYTE2N2I1LTFmOGUtNzFhMC04YzMyLWFhMzMzYmFlMzFiOCAZKAEyATZCCnJlbmRlclZpZXdKCAgBEOOJQBgB) [3mdetails[0m[2m=[0mStatus { code: NotFound, message: "workflow execution already completed", details: b"\x08\x05\x12$workflow execution already completed\x1aB\n@type.googleapis.com/temporal.api.errordetails.v1.NotFoundFailure", metadata: MetadataMap { headers: {"content-type": "application/grpc"} }, source: None }
+[2m2026-10-23T07:41:26.161126Z[0m [33m WARN[0m [2mtemporalio_sdk_core::worker::activities[0m[2m:[0m Activity not found on completion. This may happen if the activity has already been cancelled but completed anyway. [3mtask_token[0m[2m=[0mTaskToken(CiQwMWExNjdiNC1lYWFlLTdkYTQtODJhNS0zMWU1NDc1MDI0NjUSLmJ5d2F5LXJ1bi0xMzNjNWUzNy01N2RjLTRiNDktOGUzMy01NTJhYzExMzQzNzAaJDAxYTE2N2I1LTFmOGUtNzFhMC04YzMyLWFhMzMzYmFlMzFiOCAaKAEyATdCCnJlbmRlclZpZXdKCAgBEOSJQBgB) [3mdetails[0m[2m=[0mStatus { code: NotFound, message: "workflow execution already completed", details: b"\x08\x05\x12$workflow execution already completed\x1aB\n@type.googleapis.com/temporal.api.errordetails.v1.NotFoundFailure", metadata: MetadataMap { headers: {"content-type": "application/grpc"} }, source: None }
+[2m2026-10-23T07:41:26.161132Z[0m [33m WARN[0m [2mtemporalio_sdk_core::worker::activities[0m[2m:[0m Activity not found on completion. This may happen if the activity has already been cancelled but completed anyway. [3mtask_token[0m[2m=[0mTaskToken(CiQwMWExNjdiNC1lYWFlLTdkYTQtODJhNS0zMWU1NDc1MDI0NjUSLmJ5d2F5LXJ1bi0xMzNjNWUzNy01N2RjLTRiNDktOGUzMy01NTJhYzExMzQzNzAaJDAxYTE2N2I1LTFmOGUtNzFhMC04YzMyLWFhMzMzYmFlMzFiOCAYKAEyATVCCnJlbmRlclZpZXdKCAgBEOKJQBgB) [3mdetails[0m[2m=[0mStatus { code: NotFound, message: "workflow execution already completed", details: b"\x08\x05\x12$workflow execution already completed\x1aB\n@type.googleapis.com/temporal.api.errordetails.v1.NotFoundFailure", metadata: MetadataMap { headers: {"content-type": "application/grpc"} }, source: None }
+time=2026-10-23T00:41:43.637 level=WARN msg="Cluster Id in Cluster Metadata config is not a valid uuid. Generating a new Cluster Id" component=metadata-initializer
+Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+
+Temporal Server:      localhost:58270
+Temporal Persistence: in-memory
+Temporal Metrics:     http://localhost:58272/metrics
+2026-10-23T07:41:49.973Z [ERROR] Worker failed {
+  sdkComponent: 'worker',
+  taskQueue: 'runner-test-byway-runner-26lGkp',
+  error: GracefulShutdownPeriodExpiredError: Timed out while waiting for worker to shutdown gracefully
+      at Object.next (C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\@temporalio+worker@1.24.0_@_bf1641040c96deebfe4a12d55be9a405\node_modules\@temporalio\worker\lib\worker.js:650:57)
+      at C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\tap.js:20:81
+      at OperatorSubscriber._this._next (C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\OperatorSubscriber.js:33:21)
+      at OperatorSubscriber.Subscriber.next (C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\Subscriber.js:51:18)
+      at C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\mergeInternals.js:28:28
+      at OperatorSubscriber._this._next (C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\OperatorSubscriber.js:33:21)
+      at OperatorSubscriber.Subscriber.next (C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\Subscriber.js:51:18)
+      at C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\map.js:10:24
+      at OperatorSubscriber._this._next (C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\OperatorSubscriber.js:33:21)
+      at OperatorSubscriber.Subscriber.next (C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\b2check-clones\refute-TESTS-2-1\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\Subscriber.js:51:18)
+}
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/runner/test/declines.test.ts > an image the model declined, when its step runs again (ADR-0102) > a retry billed with no image: both attempts are in the step’s cost and its note, and the run’s event names the retry’s entry
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ packages/runner/test/declines.test.ts:225:3
+    223|   });
+    224|
+    225|   it('a retry billed with no image: both attempts are in the step’s co…
+       |   ^
+    226|     const model = imageModel((prompt, n) => (prompt !== SHOT_1 ? 'answ…
+    227|     const acts = createActivities({ gateway: imaging(model.adapter, { …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  packages/runner/test/declines.test.ts > an image the model declined, when its step runs again (ADR-0102) > a worker lost during the retry: the next attempt makes the retry alone, and the declined image is not bought again
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ packages/runner/test/declines.test.ts:268:3
+    266|   });
+    267|
+    268|   it('a worker lost during the retry: the next attempt makes the retry…
+       |   ^
+    269|     const book = memorySpendBook();
+    270|     const cap = { run: 1 };
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 230 passed (231)
+      Tests  2 failed | 5641 passed (5643)
+   Start at  00:39:00
+   Duration  285.46s (tests 83%, import 14%, transform 2%)
+

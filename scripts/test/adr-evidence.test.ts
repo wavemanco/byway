@@ -186,9 +186,9 @@ describe('decision evidence kept in the repository', () => {
   });
 
   it('every relative link in the evidence files and in the Later notes resolves', () => {
-    // The conversation records and the reports of the D2, B1 and Block 1 checks (Block 1's later checks among them) quote
-    // text as it was written, links and all, so their links point from where their authors stood; the other files are
-    // written to be read here.
+    // The conversation records and the reports of the D2, B1, Block 1 and Block 2 checks (their later checks and Block 2's
+    // fix-round builders among them) quote text as it was written, links and all, so their links point from where their
+    // authors stood; the other files are written to be read here.
     const QUOTED = new Set([
       `${EVIDENCE}/conversation.md`,
       `${EVIDENCE}/conversation-continued.md`,
@@ -196,6 +196,9 @@ describe('decision evidence kept in the repository', () => {
       `${EVIDENCE}/reports/b1-checks-2026-10-21.md`,
       `${EVIDENCE}/reports/block1-check-2026-10-22.md`,
       `${EVIDENCE}/reports/block1-rechecks-2026-10-22.md`,
+      `${EVIDENCE}/reports/block2-check-2026-10-23.md`,
+      `${EVIDENCE}/reports/block2-rechecks-2026-10-23.md`,
+      `${EVIDENCE}/reports/block2-fix-rounds-2026-10-23.md`,
     ]);
     const evidence = filesUnder(EVIDENCE, /\.md$/).filter((file) => !QUOTED.has(file));
     expect(evidence.length).toBeGreaterThanOrEqual(4);

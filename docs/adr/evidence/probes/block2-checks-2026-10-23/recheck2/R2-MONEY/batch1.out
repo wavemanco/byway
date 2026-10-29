@@ -1,0 +1,44 @@
+===  R1b-body-any-defined SURVIVED
+          Tests  1006 passed (1006)
+===  R1e-falFailure-everywhere KILLED
+         × the status said done, then a stop came while its result was read, its result answered with a 500 with fal’s body: counted as may have been billed, at its estimate, with its job; nothing ledgered 11ms
+         × the status said done, then a stop came while its result was read, its result answered with a 422 (a ValidationError): counted as may have been billed, at its estimate, with its job; nothing ledgered 4ms
+         × a stop came while it was polled, and fal answered its cancel “already completed”, its result answered with a 500 with fal’s body: counted as may have been billed, at its estimate, with its job; nothing ledgered 4ms
+         × a stop came while it was polled, and fal answered its cancel “already completed”, its result answered with a 422 (a ValidationError): counted as may have been billed, at its estimate, with its job; nothing ledgered 7ms
+          Tests  4 failed | 1002 passed (1006)
+    ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+     FAIL  packages/gateway/test/clip-wait.test.ts > a stopped clip fal reported done, whose result fal answers with a failure: may have been billed, never ledgered as made > the status said done, then a stop came while its result was read, its result answered with a 500 with fal’s body: counted as may 
+     FAIL  packages/gateway/test/clip-wait.test.ts > a stopped clip fal reported done, whose result fal answers with a failure: may have been billed, never ledgered as made > a stop came while it was polled, and fal answered its cancel “already completed”, its result answered with a 500 with fal’s body:
+     FAIL  packages/gateway/test/clip-wait.test.ts > a stopped clip fal reported done, whose result fal answers with a failure: may have been billed, never ledgered as made > the status said done, then a stop came while its result was read, its result answered with a 422 (a ValidationError): counted as 
+     FAIL  packages/gateway/test/clip-wait.test.ts > a stopped clip fal reported done, whose result fal answers with a failure: may have been billed, never ledgered as made > a stop came while it was polled, and fal answered its cancel “already completed”, its result answered with a 422 (a ValidationErr
+===  R2a-bound-plus-1 KILLED
+         × a cancel that did not go through, then a status that never answers: fal is asked once more for at most 30 seconds, and the call ends as may have been billed 30014ms
+         × a job resumed after its wait has passed whose status never answers is cancelled 30 seconds on, not later: an unread status shows nothing done 30003ms
+          Tests  2 failed | 1004 passed (1006)
+    ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+     FAIL  packages/gateway/test/clip-wait.test.ts > a fal clip waits its video model’s wait from fal’s acceptance, then is cancelled and never submitted again > a cancel that did not go through, then a status that never answers: fal is asked once more for at most 30 seconds, and the call ends as may ha
+     FAIL  packages/gateway/test/clip-wait.test.ts > a resumed clip keeps its clock: its wait counts from when fal accepted it, as the spend book recorded > a job resumed after its wait has passed whose status never answers is cancelled 30 seconds on, not later: an unread status shows nothing done
+===  R2d-unreadable-as-done KILLED
+         × a job resumed after its wait has passed, fal whose status cannot be read, is cancelled then, with no wait more, and counted by the cancel’s answer 72ms
+          Tests  1 failed | 1005 passed (1006)
+    ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+     FAIL  packages/gateway/test/clip-wait.test.ts > a resumed clip keeps its clock: its wait counts from when fal accepted it, as the spend book recorded > a job resumed after its wait has passed, fal whose status cannot be read, is cancelled then, with no wait more, and counted by the cancel’s answer
+===  R3a-look-plus-1 KILLED
+         × a stop while a clip fal finished is read: its result is read once more, for at most 30 seconds, then it is settled as made 57ms
+          Tests  1 failed | 1005 passed (1006)
+    ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+     FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type "user"): nothing was billed, and the step says so > a stop while a clip fal finished is read: its result is read once more, for at most 30 seconds, then it is settled as made
+===  R3b-frame-plus-1 KILLED
+         × a frame job that does not finish, its clip finished 25 minutes in: 5 left, so 7 minutes, is cancelled then; the clip is ledgered and kept 58ms
+         × a frame job that does not finish, its clip finished in a minute: 29 left, so 31 minutes, is cancelled then; the clip is ledgered and kept 23ms
+         × a clip done only after its wait ran out (fal’s cancel said so) leaves its frame the 2 minutes alone 14ms
+         × the frame job’s result read is bounded too: a frame job done in a minute whose result never comes is given up at the bound, and the clip kept 33ms
+          Tests  4 failed | 1002 passed (1006)
+    ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+     FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > a frame job that does not finish, its clip finished 25 minutes in: 5 left, so 7 minutes, is cancelled then; the clip is ledgered and kept
+     FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > a frame job that does not finish, its clip finished in a minute: 29 left, so 31 minutes, is cancelled then; the clip is ledgered and kept
+     FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > a clip done only after its wait ran out (fal’s cancel said so) leaves its frame the 2 minutes alone
+     FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > the frame job’s result read is bounded too: a frame job done in a minute whose result never comes is given up at the bound, and the clip kept
+restored
+
+[exited with code 0]

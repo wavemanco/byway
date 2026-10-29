@@ -1,0 +1,12 @@
+const fs = require('fs');
+const p = process.argv[2];
+let s = fs.readFileSync(p, 'utf8');
+const imp = "import { makeRedactor } from '../src/redact.ts';";
+s = s.replace(imp, () => imp + "\nimport { appendFileSync as PROBE_W } from 'node:fs';\nimport { uncertainReason as PROBE_UR } from '../../../apps/web/src/view/spending.ts';\nconst PROBE = (tag: string, rows: any[]) => PROBE_W(process.env.PROBE_OUT as string, tag + ' ' + JSON.stringify(rows.map((u) => [u.reason, u.usd, u.waited ?? null, PROBE_UR(u)])) + String.fromCharCode(10));");
+const a = "    expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ provider, reason: 'resent' })]);\n  });";
+if (!s.includes(a)) throw new Error('a');
+s = s.replace(a, () => a.replace('\n  });', "\n    PROBE('PROBE1 ' + provider, (await g.spendRecords('ws')).uncertain);\n  });"));
+const b = "    expect(listed.at(-1)).toMatchObject({ reason: 'waited', waited: { minutes, how: 'silence' } });\n    return e;";
+if (!s.includes(b)) throw new Error('b');
+s = s.replace(b, () => "    expect(listed.at(-1)).toMatchObject({ reason: 'waited', waited: { minutes, how: 'silence' } });\n    PROBE('PROBE2 ' + provider + ' ' + minutes, listed);\n    return e;");
+fs.writeFileSync(p, s);

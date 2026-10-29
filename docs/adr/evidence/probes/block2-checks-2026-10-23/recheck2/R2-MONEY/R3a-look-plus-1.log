@@ -1,0 +1,60 @@
+
+ RUN  v5.0.3 C:/Users/arvik/AppData/Local/Temp/claude/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422/scratchpad/b2rc2/m
+
+ ❯ packages/gateway/test/clip-wait.test.ts (53 tests | 1 failed) 719ms
+   ❯ a clip job fal dropped at its start deadline (504, timeout type "user"): nothing was billed, and the step says so (7)
+     × a stop while a clip fal finished is read: its result is read once more, for at most 30 seconds, then it is settled as made 57ms
+
+ Test Files  1 failed | 28 passed (29)
+      Tests  1 failed | 1005 passed (1006)
+   Start at  10:30:58
+   Duration  10.31s (tests 44%, import 42%, transform 13%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type "user"): nothing was billed, and the step says so > a stop while a clip fal finished is read: its result is read once more, for at most 30 seconds, then it is settled as made
+AssertionError: expected [ { …(19) } ] to deeply equal [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
++     "at": "2026-10-22T12:01:30.001Z",
++     "costUsd": 0.352,
++     "hash": "sha256:e0fba9420fd52f9132422eaad405278268e63605c3626878c3450d99d77c0161",
++     "id": "53d99cbe-0326-4402-9681-6f167a78e418",
+      "kind": "video",
+-     "latencyMs": 90000,
++     "latencyMs": 90001,
++     "operationId": "e26383bb-fa0f-48d7-b889-e4330feed4b3",
++     "prevHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "provider": "fal",
++     "purpose": "relay:media",
++     "requestSha256": "sha256:785c321bc5cccbf0ba28c1a8eb795f464b70e86afbbdff6c6eb71a341120c881",
++     "requestedModel": "fal-ai/kling-video/v2.5-turbo/pro/image-to-video",
++     "responseSha256": "sha256:19a0f21aba94e52207c87467e5266411158a39f885d726442ae0c21007293181",
++     "runId": "run-1",
++     "seq": 1,
++     "servedModel": "fal-ai/kling-video/v2.5-turbo/pro/image-to-video",
++     "stepId": "clip",
++     "usage": {
++       "inputTokens": 0,
++       "outputTokens": 0,
++       "units": 5,
++     },
++     "workspaceId": "ws",
+    },
+  ]
+
+ ❯ packages/gateway/test/clip-wait.test.ts:657:22
+    655|     // millisecond. That reading comes before the files that follow, w…
+    656|     // far settled() then moves the clock; waiting by real turns alone…
+    657|     expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal…
+       |                      ^
+    658|   });
+    659| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

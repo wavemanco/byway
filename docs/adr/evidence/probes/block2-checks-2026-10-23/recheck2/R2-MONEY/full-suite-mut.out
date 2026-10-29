@@ -1,0 +1,21 @@
+===  R3c-full-RESULT_LOOK_MS-120s KILLED
+         × a page that opens dialogs (alertloop) does not crash the process that renders it (SEC-5) 50062ms
+          Tests  1 failed | 5704 passed (5705)
+    ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+     FAIL  packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > a page that opens dialogs (alertloop) does not crash the process that renders it (SEC-5)
+===  R3e-FRAME_GRACE_MS-3min KILLED
+         × a frame job that does not finish, its clip finished 25 minutes in: 5 left, so 7 minutes, is cancelled then; the clip is ledgered and kept 67ms
+         × a frame job that does not finish, its clip finished in a minute: 29 left, so 31 minutes, is cancelled then; the clip is ledgered and kept 37ms
+         × a clip done only after its wait ran out (fal’s cancel said so) leaves its frame the 2 minutes alone 62ms
+         × the frame job’s result read is bounded too: a frame job done in a minute whose result never comes is given up at the bound, and the clip kept 30ms
+         × the frame’s download is bounded too: one held past it is given up, and the clip kept 32ms
+          Tests  5 failed | 1001 passed (1006)
+    ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+     FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > a frame job that does not finish, its clip finished 25 minutes in: 5 left, so 7 minutes, is cancelled then; the clip is ledgered and kept
+     FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > a frame job that does not finish, its clip finished in a minute: 29 left, so 31 minutes, is cancelled then; the clip is ledgered and kept
+     FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > a clip done only after its wait ran out (fal’s cancel said so) leaves its frame the 2 minutes alone
+     FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > the frame job’s result read is bounded too: a frame job done in a minute whose result never comes is given up at the bound, and the clip kept
+     FAIL  packages/gateway/test/clip-wait.test.ts > the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way > the frame’s download is bounded too: one held past it is given up, and the clip kept
+restored
+
+[exited with code 0]

@@ -159,3 +159,9 @@ In the owner's words, the answer to the design (2026-10-21 23:05): "Approve, and
 - The claims oracle at full size (item 10): the logs of both runs, in [evidence/logs/claims-oracle-2026-10-22/](evidence/logs/claims-oracle-2026-10-22/). The first, on 0ef65e6, has the command, HEAD, tree and a clean status in its header lines; the second, on 1c9c5e3, keeps only vitest's summary. The folder's README says what each is.
 - Claude's build map for block 2, which Decided by, Context and item 8 name: [evidence/designs/2026-10-22-block2-build-map.md](evidence/designs/2026-10-22-block2-build-map.md), as it stood at its last change (21:18 local). It was not sent to the owner.
 - The builders' reports of 2026-10-22, whose choices for the records are the ones marked as Claude's in the build.
+
+## Later notes
+
+Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
+
+- **2026-10-28, the check's and re-checks' results in the repository.** The finding ids this record cites from block 2's check (WORKFLOW-1, STORE-1) and from the re-check of its first fix round (R-RECORDS-2) were in the session's scratchpad only. They are now in [evidence/reports/block2-check-2026-10-23.md](evidence/reports/block2-check-2026-10-23.md) and [evidence/reports/block2-rechecks-2026-10-23.md](evidence/reports/block2-rechecks-2026-10-23.md), each finding with its refuters' votes, and the fix rounds' builders' reports in [evidence/reports/block2-fix-rounds-2026-10-23.md](evidence/reports/block2-fix-rounds-2026-10-23.md). The probes the findings rest on are in [evidence/probes/block2-checks-2026-10-23/](evidence/probes/block2-checks-2026-10-23/) (backlog row B-086).
