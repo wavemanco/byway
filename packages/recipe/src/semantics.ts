@@ -538,13 +538,25 @@ export interface Ordered {
   inRelay: boolean;
   /** In separate sessions, one per candidate: inside each, or inside a replicate of more than one. */
   fanOut: boolean;
+  /** The branch of each route around it: a run that reaches the route takes one branch. */
+  branches: readonly RouteBranch[];
 }
+
+/** A branch of a route: the route and the branch's place in it. */
+export interface RouteBranch {
+  route: Route;
+  at: number;
+}
+
+/** Whether two places sit in different branches of one route: a pass through the route runs only one of them. */
+const apart = (a: { branches: readonly RouteBranch[] }, b: { branches: readonly RouteBranch[] }): boolean => a.branches.some((x) => b.branches.some((y) => y.route === x.route && y.at !== x.at));
 
 /** A final check that can send the run back to a stage: where it sits, and the stage the run starts again from. */
 export interface Rerun {
   /** Its place in the walk: the steps before it have a lower index. */
   index: number;
   repeats: readonly Node[];
+  branches: readonly RouteBranch[];
   /** The place of the stage the run starts again from; that stage and every later one run again. */
   from: number;
 }
@@ -583,7 +595,7 @@ export function runOrder(recipe: Recipe): RunOrder {
         visit(n.body, at);
         return;
       case 'route':
-        n.branches.forEach((b) => visit(b.body, at));
+        n.branches.forEach((b, i) => visit(b.body, { ...at, branches: [...at.branches, { route: n, at: i }] }));
         return;
       case 'audit':
         n.lenses.forEach((l) => visit(l.body, { ...at, contained: true }));
@@ -592,7 +604,7 @@ export function runOrder(recipe: Recipe): RunOrder {
         // A fail with retries left starts the run again at the first stage of the retry's name, never a later one
         // (interpreter runStages: a later one fails the run).
         const from = n.retry && n.retry.times > 0 ? recipe.stages.findIndex((s) => s.stage === n.retry!.stage) : -1;
-        if (from >= 0 && from <= at.stage) reruns.push({ index: steps.length, repeats: at.repeats, from });
+        if (from >= 0 && from <= at.stage) reruns.push({ index: steps.length, repeats: at.repeats, branches: at.branches, from });
         visit(n.body, { ...at, contained: true });
         return;
       }
@@ -601,26 +613,26 @@ export function runOrder(recipe: Recipe): RunOrder {
         return;
     }
   };
-  recipe.stages.forEach((s, i) => visit(s.body, { stage: i, repeats: [], contained: false, inRelay: false, fanOut: false }));
+  recipe.stages.forEach((s, i) => visit(s.body, { stage: i, repeats: [], contained: false, inRelay: false, fanOut: false, branches: [] }));
   return { steps, reruns };
 }
 
 /**
  * Whether `a` can run before `b` on some run, with what `a` made still in the ports `b` starts from: earlier in the
- * walk, or both in the body of one loop or relay, whose next round or link runs `a` after `b` (a step there comes
- * before itself). A final check's re-run does not count: it starts its stage again from that stage's entry ports, so
- * nothing made after them carries over. Conservative: a step in another branch of a route counts as before, which can
- * only take a claim away.
+ * walk and not in another branch of a route (a pass through the route takes one), or both in the body of one loop or
+ * relay, whose next round or link runs `a` after `b` (a step there comes before itself; around a route, the next round
+ * can take the other branch). A final check's re-run does not count: it starts its stage again from that stage's entry
+ * ports, so nothing made after them carries over.
  */
-export const canPrecede = (a: Ordered, b: Ordered): boolean => a.index < b.index || a.repeats.some((r) => b.repeats.includes(r));
+export const canPrecede = (a: Ordered, b: Ordered): boolean => (a.index < b.index && !apart(a, b)) || a.repeats.some((r) => b.repeats.includes(r));
 
 /**
- * Whether `b` can run after `a` on some run, whatever became of what `a` made: canPrecede, or a final check after `a`
- * sends the run back to `a`'s stage or an earlier one, so every step from that stage on runs again, `a` itself among
- * them.
+ * Whether `b` can run after `a` on some run, whatever became of what `a` made: canPrecede, or a final check that can run
+ * after `a` sends the run back to `a`'s stage or an earlier one, so every step from that stage on runs again, `a` itself
+ * among them (the route asks again, so any branch).
  */
 export const canRunAfter = (order: RunOrder, a: Ordered, b: Ordered): boolean =>
-  canPrecede(a, b) || order.reruns.some((g) => (a.index < g.index || a.repeats.some((r) => g.repeats.includes(r))) && a.stage >= g.from && b.stage >= g.from);
+  canPrecede(a, b) || order.reruns.some((g) => ((a.index < g.index && !apart(a, g)) || a.repeats.some((r) => g.repeats.includes(r))) && a.stage >= g.from && b.stage >= g.from);
 
 /**
  * Whether `b` comes after each run of `a` before `a` runs again, as far as the loops and relays around `a` go: every one

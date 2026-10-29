@@ -14,6 +14,8 @@ import {
   audit,
   BLOCK_OF_ROLE,
   blockAgrees,
+  canPrecede,
+  canRunAfter,
   changesWork,
   checkpoints,
   covers,
@@ -418,6 +420,40 @@ describe('run order: what can run after a step', () => {
     expect(after(seq(loop('l', critic('a'), gate('human')), fix('b')))).toBe(false);
     expect(after(seq(relay('chain', 2, critic('a')), fix('b')))).toBe(false);
     expect(after(loop('l', seq(fix('b'), critic('a')), gate('human')))).toBe(false);
+  });
+
+  it('a step in another branch of a route never runs before or after it, unless a loop or relay around the route runs both (B-057)', () => {
+    const order = (body: Node) => {
+      const o = runOrder(recipeOf(body, 'media'));
+      const at = (id: string) => o.steps.find((x) => x.step.id === id)!;
+      return { o, at };
+    };
+    const two = route('who', 'who writes it', [
+      { name: 'yours', body: script('vo') },
+      { name: 'theirs', body: authorDraft('own', 'fix') },
+    ]);
+    const { o, at } = order(seq(two, onScreen('words')));
+    expect(canPrecede(at('vo'), at('own'))).toBe(false);
+    expect(canPrecede(at('own'), at('vo'))).toBe(false);
+    expect(canRunAfter(o, at('vo'), at('own'))).toBe(false);
+    // Both are before the step after the route.
+    expect(canPrecede(at('vo'), at('words'))).toBe(true);
+    expect(canPrecede(at('own'), at('words'))).toBe(true);
+    // So the script is locked: the author's draft in the other branch cannot change it.
+    expect(locked(recipeOf(seq(two, onScreen('words')), 'media'))).toEqual(['vo']);
+    // A loop around the route can take the other branch on its next round.
+    const looped = order(loop('l', seq(two, onScreen('words')), gate('human')));
+    expect(canPrecede(looped.at('own'), looped.at('vo'))).toBe(true);
+    expect(locked(recipeOf(loop('l', seq(two, onScreen('words')), gate('human')), 'media'))).toEqual([]);
+    // A final check in the other branch cannot send the run back from this one.
+    const check = oneShotGate('final', critic('fc'), { metric: 'critic-rank', threshold: 3, hidden: true, holder: 'harness' }, { stage: 'D2', times: 1 });
+    const ends = route('end', 'how it ends', [{ name: 'plain', body: script('vo') }, { name: 'checked', body: seq(render('fr'), check) }]);
+    const gated = order(seq(ends, onScreen('words')));
+    expect(canRunAfter(gated.o, gated.at('vo'), gated.at('vo'))).toBe(false);
+    expect(locked(recipeOf(seq(ends, onScreen('words')), 'media'))).toEqual(['vo']);
+    // After the route, the check can send the run back to the script.
+    const after = order(seq(script('vo'), render('fr'), check));
+    expect(canRunAfter(after.o, after.at('vo'), after.at('vo'))).toBe(true);
   });
 
   it('fans out in separate sessions only inside each or a replicate of more than one, and knows a relay link', () => {
