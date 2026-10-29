@@ -10,7 +10,7 @@ import { answerUnusedAfter, personCritique, placements, unappliedCritiques, unus
 import type { RunView } from '@byway/contracts';
 import { checkEvents } from './helpers/events.ts';
 import { AUTHOR_DRAFT, createHarness, type Answer, type Harness } from './helpers/harness.ts';
-import { routedTrim } from './helpers/recipes.ts';
+import { routedTrim, twoTrims } from './helpers/recipes.ts';
 
 let h: Harness;
 beforeAll(async () => {
@@ -30,6 +30,19 @@ const branch =
     if (cp.kind === 'directive') return { checkpointId: cp.id, text: list };
     return undefined;
   };
+
+// The check of F01 (a): a pick that keeps every option (k at least the options) runs with no event of its own, so a
+// cut-down recipe that left it out moved no candidate's work into the work, and named an applied answer unused.
+describe('an answer the candidates applied, then a pick that took them all without an event', () => {
+  it('is not named unused', async () => {
+    expect(answerUnusedAfter(twoTrims, 'trim', new Set(['apply-cut']))).toBe(false);
+    const run = await h.start(twoTrims);
+    const view = await h.drive(run.id, (cp) => (cp.kind === 'directive' ? { checkpointId: cp.id, text: '- Remove the second call to action.' } : undefined));
+    expect(view.run.status).toBe('done');
+    expect(view.events.some((e) => e.stepId === 'pick')).toBe(false);
+    expect(unused(twoTrims, view)).toEqual([]);
+  }, 60_000);
+});
 
 describe('an answer applied only on a route branch the run did not take', () => {
   it('is admitted: some path hands it on (ADR-0098 decision 7), and without that path it would be refused', () => {

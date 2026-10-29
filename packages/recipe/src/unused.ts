@@ -54,14 +54,16 @@ export interface UnusedAnswer {
 /** A place a step or pick that did not run after the answer is left out at: it does nothing to what the walk follows. */
 const NOTHING: Seq = { op: 'seq', steps: [] };
 
-/** The recipe with only the steps and picks `keep` names, each other one left out at its place (paths unchanged). */
+/** The recipe with only the steps `keep` names, and every pick, each other step left out at its place (paths unchanged). */
 function cutDown(recipe: Recipe, keep: (id: string) => boolean): Recipe {
   const cut = (n: Node): Node | undefined => {
     switch (n.op) {
       case 'step':
         return keep(n.id) ? n : undefined;
+      // Always kept: a pick that keeps every option runs with no event of its own, and a pick only narrows the options,
+      // so keeping one never lets the walk find more reach than the run had (the check of F01 (a)).
       case 'pick':
-        return keep(n.id) || (n.judge !== undefined && keep(n.judge.id)) ? n : undefined;
+        return n;
       case 'seq': {
         const steps = n.steps.map(cut);
         return steps.some((s) => s !== undefined) ? { ...n, steps: steps.map((s) => s ?? NOTHING) } : undefined;

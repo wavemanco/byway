@@ -87,6 +87,19 @@ export const routedTrim = recipe(
   ),
 );
 
+/** A person's list applied by two AI candidates, then a pick of 2 from 2 that takes both with no event of its own. */
+export const twoTrims = recipe(
+  'two-trims',
+  'prose',
+  seq(
+    build('draft'),
+    render('render'),
+    step({ id: 'trim', role: 'cut', block: 'CUT', actor: 'human', consumes: ['view'], produces: ['critique'] }),
+    replicate('two', 2, applyCut),
+    pick('pick', 'H', 2, 'human'),
+  ),
+);
+
 /** A seeded draft (SEED: the runner's random string, never written into the work). */
 export const seeded = recipe('seeded', 'prose', step({ id: 'spark', role: 'seed', block: 'SEED', actor: 'model', tier: 'mid', prompt: 'product.test.spark', consumes: ['intent'], produces: ['artifact'], writes: true, knobs: { source: 'shell-string' } }));
 
