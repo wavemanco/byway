@@ -30,6 +30,7 @@ import {
   DECLINED_NOTE,
   FINAL_CHOICE_OPTIONS,
   FINAL_CHOICE_PROMPT,
+  GATE_FAILED_NO_RETRY_PROMPT,
   GATE_FAILED_PROMPT,
   GATE_RETRY_NOTE,
   humanCapPrompt,
@@ -263,7 +264,8 @@ export class Interpreter {
     const question = (async () => {
       const amount = raiseAmount(b.shortfallUsd);
       const n = ++this.budgetCount;
-      const res = await this.ask(call, { kind: 'confirm', prompt: budgetPrompt(amount, b.scope) });
+      // Asked from the step under way, which a pending pause waits for: waiting at the pause boundary would wedge both.
+      const res = await this.ask(call, { kind: 'confirm', prompt: budgetPrompt(amount, b.scope) }, {}, { underWay: true });
       if (!res.approved) return false;
       await quick.raiseBudget({ runId: this.input.runId, workspaceId: this.input.workspaceId, scope: b.scope, amountUsd: amount, dedupeKey: `${this.input.runId}/budget/${n}` });
       return true;
@@ -284,10 +286,11 @@ export class Interpreter {
 
   /**
    * Open a checkpoint and wait for its answer. The answer arrives through the RESOLVE_UPDATE Update, which validates it
-   * against this checkpoint and records it before this resumes.
+   * against this checkpoint and records it before this resumes. A new question waits at the pause boundary; one asked
+   * from a step already under way (`underWay`) does not, since a pending pause waits for that step to finish.
    */
-  async ask(call: StepCall, spec: Omit<CheckpointSpec, 'id'>, extra: Pick<OpenCheckpointInput, 'step' | 'initial'> = {}): Promise<CheckpointResolution & Pick<OpenCheckpointResult, 'initialText' | 'deckId'>> {
-    await this.control.boundary();
+  async ask(call: StepCall, spec: Omit<CheckpointSpec, 'id'>, extra: Pick<OpenCheckpointInput, 'step' | 'initial'> = {}, how: { underWay?: boolean } = {}): Promise<CheckpointResolution & Pick<OpenCheckpointResult, 'initialText' | 'deckId'>> {
+    if (!how.underWay) await this.control.boundary();
     const id = `${this.input.runId}/cp${++this.checkpointCount}-${call.stepId}`;
     const entry: PendingCheckpoint = { cp: { id, kind: spec.kind, ...(spec.options ? { options: spec.options } : {}), ...(spec.k !== undefined ? { k: spec.k } : {}) }, call, recording: false };
     this.control.pending.set(id, entry);
@@ -810,7 +813,7 @@ export class Interpreter {
       ]);
       throw new RetryStage(g.retry.stage);
     }
-    const res = await this.ask(call, { kind: 'confirm', prompt: GATE_FAILED_PROMPT, ...(ports.artifact ? { artifactIds: [ports.artifact] } : {}) });
+    const res = await this.ask(call, { kind: 'confirm', prompt: g.retry && g.retry.times > 0 ? GATE_FAILED_PROMPT : GATE_FAILED_NO_RETRY_PROMPT, ...(ports.artifact ? { artifactIds: [ports.artifact] } : {}) });
     if (res.approved) return kept;
     throw new RunFailure('The run stopped: the result did not pass the final check, and you chose not to use it.');
   }

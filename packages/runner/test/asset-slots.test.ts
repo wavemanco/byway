@@ -733,6 +733,12 @@ describe('the AI’s advice, never a veto (D3, ADR-0101)', () => {
     expect(adviceNote('لا حاجة إلى صورة،')).toBe('The AI suggests: لا حاجة إلى صورة. You can cut the image at Trim.');
     // A Greek question mark looks like a semicolon but ends the sentence: it stays, and no stop is added.
     expect(adviceNote('Χρειάζεται εικόνα\u037E')).toBe('The AI suggests: Χρειάζεται εικόνα\u037E You can cut the image at Trim.');
+    // Greek is usually typed with the ordinary semicolon as its question mark: after a Greek letter it is one, and stays.
+    expect(adviceNote('Χρειάζεται εικόνα;')).toBe('The AI suggests: Χρειάζεται εικόνα; You can cut the image at Trim.');
+    expect(adviceNote('Είπε «ναι»;')).toBe('The AI suggests: Είπε «ναι»; You can cut the image at Trim.');
+    // The Tibetan shad and its double end a sentence too: no stop is added after them.
+    expect(adviceNote('མགོ་རིས་མི་དགོས།')).toBe('The AI suggests: མགོ་རིས་མི་དགོས། You can cut the image at Trim.');
+    expect(adviceNote('མགོ་རིས་མི་དགོས༎')).toBe('The AI suggests: མགོ་རིས་མི་དགོས༎ You can cut the image at Trim.');
     expect(adviceNote('Its own line says it: “less is more.”')).toBe('The AI suggests: Its own line says it: “less is more.” You can cut the image at Trim.');
     expect(adviceNote('Keep it quiet (a photo would do)')).toBe('The AI suggests: Keep it quiet (a photo would do). You can cut the image at Trim.');
     // The ellipsis is a stop, so a line the cut ended with one (parse.ts plainLine) gets no second stop.

@@ -143,6 +143,32 @@ export function controlScenarios(use: () => Harness): void {
       await h.runner.resume(run.id);
       expect((await h.drive(run.id)).run.status).toBe('done');
     }, 60_000);
+
+    it('a step under way that meets its budget after a Pause still asks to raise it, then the run pauses', async () => {
+      h.setLatency(1500);
+      h.refuseOnce((c) => c.stepId === 'draft');
+      try {
+        const run = await h.start(tiny);
+        await h.waitFor('the draft call in flight', async () => h.calls.some((c) => c.runId === run.id && c.stepId === 'draft'));
+        await h.runner.pause(run.id);
+        // The refused step is still under way, so its budget question opens under the pending pause (before, it waited for the pause, which waited for it).
+        const cp = await openCheckpoint(run.id);
+        expect(cp).toMatchObject({ kind: 'confirm', stepId: 'draft', prompt: 'Raise the budget by $1?' });
+        await statusIs(run.id, 'waiting');
+        await h.runner.resolve({ checkpointId: cp.id, approved: true });
+        await statusIs(run.id, 'paused');
+        const at = await h.store.events(run.id);
+        const paused = at.find((e) => e.type === 'run-paused')!;
+        expect(at.find((e) => e.type === 'step-finished' && e.stepId === 'draft')!.seq).toBeLessThan(paused.seq);
+        await pause(300);
+        expect((await h.store.events(run.id)).filter((e) => e.seq > paused.seq)).toEqual([]);
+        h.setLatency(0);
+        await h.runner.resume(run.id);
+        expect((await h.drive(run.id)).run.status).toBe('done');
+      } finally {
+        h.setLatency(0);
+      }
+    }, 60_000);
   });
 
   describe('cancel', () => {

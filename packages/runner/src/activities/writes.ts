@@ -35,10 +35,17 @@ export interface WriteRun {
   seeds: readonly string[];
 }
 
-/** The PR3 check alone: problems that keep a text from being written as the run's artifact. */
+/** The PR3 check alone: problems that keep a model's text from being written as the run's artifact. */
 export function writeProblems(run: Pick<WriteRun, 'seeds'>, text: string): string[] {
-  return run.seeds.some((s) => s && text.includes(s)) ? ['The answer contains the random string it was given. Interpret it for direction, but never write it into the work.'] : [];
+  return holdsSeed(run.seeds, text) ? ['The answer contains the random string it was given. Interpret it for direction, but never write it into the work.'] : [];
 }
+
+/** The PR3 check on a person's text, in words for them: they are asked again with it (ENG-6), never failed. */
+export function personWriteProblems(seeds: readonly string[], text: string): string[] {
+  return holdsSeed(seeds, text) ? ['Your text holds a random string this run gave the AI, which never goes into the work: take it out.'] : [];
+}
+
+const holdsSeed = (seeds: readonly string[], text: string): boolean => seeds.some((s) => s && text.includes(s));
 
 /** The note a step finishes with when it changed the locked voice-over and the runner wrote it back. */
 export const VOICEOVER_KEPT_NOTE = "The voice-over is locked, so it was kept exactly as it was; this step's change to it was undone.";

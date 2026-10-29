@@ -62,11 +62,14 @@ export const NO_IMAGE_CHOSEN_NOTE = 'The AI chose not to illustrate this piece, 
 export const NO_SLOTS_NOTE = 'This step makes no images, so none was made; the work passes through unchanged.';
 
 /**
- * A stop: a sentence end in any script (Unicode's Sentence_Terminal), the ellipsis or the Greek question mark, before any
- * closing quotes and brackets. Those include the marks Unicode files as opening quotes (Pi), because German and Danish
- * close a quote with them: „mehr.“ ‚mehr.‘ »mere.«
+ * A stop: a sentence end in any script (Unicode's Sentence_Terminal), the ellipsis, the Greek question mark or the
+ * Tibetan shad and its double (U+0F0D, U+0F0E, which Unicode does not file as Sentence_Terminal), before any closing
+ * quotes and brackets. Those include the marks Unicode files as opening quotes (Pi), because German and Danish close a
+ * quote with them: „mehr.“ ‚mehr.‘ »mere.«
  */
-const ENDS_SENTENCE = /[\p{Sentence_Terminal}…\u037E]["'\p{Pe}\p{Pf}\p{Pi}]*$/u;
+const ENDS_SENTENCE = /[\p{Sentence_Terminal}…\u037E\u0F0D\u0F0E]["'\p{Pe}\p{Pf}\p{Pi}]*$/u;
+/** Greek is usually typed with the ordinary semicolon as its question mark (normalisation turns U+037E into it): after a Greek letter it is one. */
+const GREEK_QUESTION = /\p{Script=Greek}["'\p{Pe}\p{Pf}\p{Pi}]*;$/u;
 /** A trailing comma, colon or semicolon in the common scripts' forms (Latin, fullwidth, ideographic, Arabic) gives way to the stop. */
 const GIVES_WAY = /\s*[,:;\uFF0C\uFF1A\uFF1B\u3001\uFF64\uFE50\uFE51\uFE54\uFE55\u060C\u061B]+$/u;
 
@@ -74,9 +77,11 @@ const GIVES_WAY = /\s*[,:;\uFF0C\uFF1A\uFF1B\u3001\uFF64\uFE50\uFE51\uFE54\uFE55
  * The AI's line of advice, shown with the image it came with as its suggestion, never a veto (ADR-0101, D3). Only a
  * prompt that asks for advice gets one shown, and only C3's header image does, which its Trim step follows (a test
  * holds every such step to that). The advice is plain, bounded text (parse.ts plainLine); a stop is added if it has none
- * (. ! ? and their forms in other scripts, the ellipsis; one before closing quotes and brackets counts).
+ * (. ! ? and their forms in other scripts, a semicolon after a Greek letter, the ellipsis; one before closing quotes and
+ * brackets counts).
  */
 export const adviceNote = (advice: string): string => {
+  if (GREEK_QUESTION.test(advice)) return `The AI suggests: ${advice} You can cut the image at Trim.`;
   const line = advice.replace(GIVES_WAY, '');
   return `The AI suggests: ${ENDS_SENTENCE.test(line) ? line : `${line}.`} You can cut the image at Trim.`;
 };
