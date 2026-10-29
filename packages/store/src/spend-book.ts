@@ -143,6 +143,10 @@ export class SqliteSpendBook implements SpendBook {
     return this.#durable(() => Number(this.#queries().markSent.run({ id: opId, owner, now: this.#ms(), at: this.#stamp() }).changes) > 0);
   }
 
+  async holds(opId: string, owner: string): Promise<boolean> {
+    return this.#queries().holds.get({ id: opId, owner }) !== undefined;
+  }
+
   async accept(opId: string, role: ProviderJobRole, providerJobId: string): Promise<void> {
     if (!ROLES.has(role)) throw new StoreError('invalid', `a provider job role is generation, extract or middle, got ${String(role)}`);
     const job = textOf('providerJobId', providerJobId);
@@ -581,6 +585,7 @@ function prepare(db: DatabaseSync) {
     letGo: p('UPDATE paid_operations SET lease_until = MIN(lease_until, :now) WHERE id = :id AND owner = :owner'),
     endHolds: p(`UPDATE paid_operations SET lease_until = MIN(lease_until, :now) WHERE owner = :owner AND state = 'settled' AND op_key IS NOT NULL`),
     markSent: p(`UPDATE paid_operations SET state = 'sent', sent_at = :at, updated_at = :at WHERE id = :id AND owner = :owner AND state = 'open' AND ${LIVE}`),
+    holds: p('SELECT 1 AS held FROM paid_operations WHERE id = :id AND owner = :owner'),
     accept: p(`UPDATE paid_operations SET state = CASE WHEN state IN ('open', 'sent') THEN 'accepted' ELSE state END,
       provider_jobs = json_set(COALESCE(provider_jobs, '{}'), :path, :job), provider_jobs_at = json_set(COALESCE(provider_jobs_at, '{}'), :path, :at),
       updated_at = :at WHERE id = :id AND json_extract(COALESCE(provider_jobs, '{}'), :path) IS NULL`),

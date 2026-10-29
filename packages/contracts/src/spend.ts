@@ -418,6 +418,13 @@ export interface SpendBook {
   /** Compare-and-set from open to sent, for the live row this owner holds. False when it was swept meanwhile. */
   markSent(opId: string, owner: string): Promise<boolean>;
   /**
+   * Whether this owner holds the call's row: it admitted it, or resumed it (AdmitOutcome `resume`), and no other owner
+   * has resumed it since, in whatever state it is now; false for a row the book does not have. Changes nothing. A call
+   * already sent asks it before each further queue job (a fal clip's frame jobs), so an attempt that lost its row to a
+   * takeover submits none beside the attempt that holds it (MONEY-1, the check of fix/fx-landnow).
+   */
+  holds(opId: string, owner: string): Promise<boolean>;
+  /**
    * Records a queue job the provider accepted (sent or open becomes accepted), and when, by the book's clock: a call
    * resumed later is handed that time (AdmitOutcome `resume.acceptedAt`), so a fal clip's wait keeps counting from it.
    * A role keeps the first job it was accepted with: another job id for it is refused (it throws), and the same id

@@ -310,22 +310,36 @@ describe('a fal clip accepted by the provider is resumed, never submitted again 
     await book.accept('other', 'generation', await job());
     clock.t += 1001;
   };
+  /**
+   * This worker's process sleeps (a laptop's lid shut) while `asleep` is set: its holder renews nothing, so its lease
+   * runs out with no cancel from Temporal. (A cancelled attempt sends nothing again at all, F03 (g); these tests are of
+   * an attempt that does not know it lost its lease.)
+   */
+  const sleepsThrough = () => {
+    const renew = book.renew.bind(book);
+    const state = { asleep: false };
+    book.renew = async (...args) => {
+      if (!state.asleep) await renew(...args);
+    };
+    return state;
+  };
 
   it('a call that finds, as it comes to submit, another attempt’s clip already accepted polls that job instead of submitting a second', async () => {
     const fal = fakeFal();
     const media = fakeFetch();
     const key = 'run-1/run-1/relay/-/1/video/abc/1';
     const a = attempt(key);
+    const slept = sleepsThrough();
     const client: FalClientLike = {
       ...fal.client,
       storage: {
-        // While the start frame uploads: Temporal times this attempt out, so its lease is not renewed and runs out;
+        // While the start frame uploads: the process sleeps, so this attempt's lease is not renewed and runs out;
         // another attempt takes the key, has its clip job accepted, and is gone too.
         async upload(file) {
-          a.cancel.abort(new Error('TIMED_OUT'));
-          await sleep(40);
+          slept.asleep = true;
           clock.t += LEASE + 1;
           await otherAttempt(key, async () => (await fal.client.queue.submit(MODEL, { input: {} })).request_id);
+          slept.asleep = false;
           return fal.client.storage.upload(file);
         },
       },
@@ -348,6 +362,7 @@ describe('a fal clip accepted by the provider is resumed, never submitted again 
     const fal = fakeFal();
     const key = 'run-1/run-1/relay/-/1/video/abc/1';
     const a = attempt(key);
+    const slept = sleepsThrough();
     const submitted: string[] = [];
     const g = gateway({
       adapters: {
@@ -355,10 +370,10 @@ describe('a fal clip accepted by the provider is resumed, never submitted again 
           ...falAdapter({ client: fal.client }),
           async video(req) {
             // As it gets the clip ready, its lease runs out and another attempt's clip is accepted on the key's row.
-            a.cancel.abort(new Error('TIMED_OUT'));
-            await sleep(40);
+            slept.asleep = true;
             clock.t += LEASE + 1;
             await otherAttempt(key, async () => 'job-other');
+            slept.asleep = false;
             await req.submit(async () => submitted.push('clip'), 'the clip');
             throw new Error('unreachable: the submission above was refused');
           },
@@ -376,5 +391,116 @@ describe('a fal clip accepted by the provider is resumed, never submitted again 
     expect(records.inFlight).toEqual([]);
     expect(records.uncertain).toEqual([expect.objectContaining({ provider: 'fal', providerJobs: { generation: 'job-other' } })]);
     expect(await book.ledgeredCalls()).toEqual([]);
+  });
+
+  // MONEY-1, the check of fix/fx-landnow (F03 (e)): an attempt whose lease ran out while it polled its clip, with no
+  // cancel (its process slept), went on once the clip was made and submitted its own last-frame and middle-frame jobs
+  // beside those of the attempt that had resumed its row: four extract-frame jobs billed for one clip, two counted.
+  it.each([
+    ['on two workers', false],
+    ['on one worker', true],
+  ] as const)('after a takeover %s, the attempt that lost its row submits no frame job: one clip, two extract-frame jobs, the owner attempt’s', async (_where, oneWorker) => {
+    const fal = fakeFal();
+    const media = fakeFetch();
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let first = true;
+    // The first attempt's first status poll waits until the test lets it go: its clip is made meanwhile.
+    const client: FalClientLike = {
+      ...fal.client,
+      queue: {
+        ...fal.client.queue,
+        async subscribeToStatus(endpoint, options) {
+          if (first) {
+            first = false;
+            fal.polls.push(options.requestId);
+            await held;
+          }
+          return fal.client.queue.subscribeToStatus(endpoint, options);
+        },
+      },
+    };
+    const slept = sleepsThrough();
+    const workerA = gateway({ clients: { fal: client }, fetch: media.fetch });
+    const workerB = oneWorker ? workerA : gateway({ clients: { fal: client }, fetch: media.fetch });
+    const key = 'run-1/run-1/relay/-/1/video/abc/1';
+    const lost = workerA.video(await clip(attempt(key).operation)).then(
+      (out) => out,
+      (e: unknown) => e,
+    );
+    await until(() => fal.polls.length === 1);
+    // The first attempt's process sleeps through its lease; the step's next attempt resumes its row and finishes the clip.
+    slept.asleep = true;
+    clock.t += LEASE + 1;
+    const out = await workerB.video(await clip(attempt(key).operation));
+    slept.asleep = false;
+    expect(out).toMatchObject({ provider: 'fal', mediaType: 'video/mp4' });
+    const frameJobs = () => fal.calls.filter((c) => c.endpoint === 'fal-ai/ffmpeg-api/extract-frame').map((c) => c.input.frame_type);
+    expect(frameJobs()).toEqual(['last', 'middle']);
+    // The first attempt wakes, its clip made: it submits nothing more, and its clip settles as made, on the one row.
+    release();
+    const err = await lost;
+    expect(err).toBeInstanceOf(GatewayError);
+    expect(err).toMatchObject({ retryable: false, billed: true, message: expect.stringContaining('another attempt of this step took the call over') });
+    expect(fal.calls.map((c) => c.endpoint)).toEqual([MODEL, 'fal-ai/ffmpeg-api/extract-frame', 'fal-ai/ffmpeg-api/extract-frame']);
+    expect(frameJobs()).toEqual(['last', 'middle']);
+    const spend = await workerB.spend('ws');
+    expect(spend).toMatchObject({ inFlightUsd: 0, uncertainUsd: 0, spentUsd: out.costUsd });
+    await workerB.close();
+    await workerA.close();
+    expect((await book.ledgeredCalls()).map((c) => c.costUsd)).toEqual([out.costUsd]);
+  });
+
+  it('a book that cannot say whether the call still holds its row has no frame job submitted: the clip settles as made', async () => {
+    const fal = fakeFal();
+    book.holds = async () => {
+      throw new Error('database is locked');
+    };
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const err = await g.video(await clip(attempt().operation)).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(err).toMatchObject({ retryable: false, billed: true, message: expect.stringContaining('could not read its spending records') });
+    expect(fal.calls.map((c) => c.endpoint)).toEqual([MODEL]);
+    const spend = await g.spend('ws');
+    expect(spend).toMatchObject({ inFlightUsd: 0, uncertainUsd: 0 });
+    expect(spend.spentUsd).toBeGreaterThan(0);
+  });
+
+  // MONEY-2, the check of fix/fx-landnow (F03 (g)): an attempt Temporal cancelled sends nothing again, so it neither
+  // submits its clip nor takes the other attempt's row over to poll it and submit frame jobs: the attempt that takes
+  // the call over does that.
+  it('a cancelled attempt in the same place submits nothing and leaves the other attempt’s clip to the attempt that takes the call over', async () => {
+    const fal = fakeFal();
+    const key = 'run-1/run-1/relay/-/1/video/abc/1';
+    const a = attempt(key);
+    const client: FalClientLike = {
+      ...fal.client,
+      storage: {
+        async upload(file) {
+          a.cancel.abort(new Error('TIMED_OUT'));
+          await sleep(40);
+          clock.t += LEASE + 1;
+          await otherAttempt(key, async () => (await fal.client.queue.submit(MODEL, { input: {} })).request_id);
+          return fal.client.storage.upload(file);
+        },
+      },
+    };
+    const g = gateway({ clients: { fal: client }, fetch: fakeFetch().fetch });
+    const err = await g.video(await clip(a.operation)).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(err).toMatchObject({ code: 'byway-failure', retryable: false, billed: false });
+    // Only the other attempt's clip: nothing submitted by this one, and its clip not polled here.
+    expect(fal.calls.map((c) => c.endpoint)).toEqual([MODEL]);
+    expect(fal.polls).toEqual([]);
+    // That clip's row is left to the next attempt, which resumes it (it is the other attempt's, under its own owner).
+    expect(await book.ledgeredCalls()).toEqual([]);
+    const resumed = await gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch }).video(await clip(attempt(key).operation));
+    expect(resumed).toMatchObject({ provider: 'fal', mediaType: 'video/mp4' });
+    expect(fal.calls.map((c) => c.endpoint)).toEqual([MODEL, 'fal-ai/ffmpeg-api/extract-frame', 'fal-ai/ffmpeg-api/extract-frame']);
+    expect((await book.ledgeredCalls()).map((c) => [c.opId, c.costUsd])).toEqual([['other', resumed.costUsd]]);
   });
 });
