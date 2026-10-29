@@ -280,6 +280,27 @@ describe('the service host', () => {
     expect(current.host.questionEstimates(c4, 'retired')).toEqual({});
   });
 
+  // B-106, B-108: sized by what is known while the question is open; B-107: the critic loop's and the gate's questions.
+  it("sizes a question's figure by the run's problem and the work beside it, and names the questions a loop or gate figure is for", async () => {
+    current = testHost({ demo: false, env: { ...FAKE_KEYS } });
+    const { advisor } = current.host.services(false);
+    const [c4, c6] = [advisor.recipe('c4'), advisor.recipe('c6')];
+    if (!c4 || !c6) throw new Error('c4 or c6 missing');
+    const planned = current.host.questionEstimates(c6, 'balanced')['author-loop']!.estimate;
+    // A 6,000-word draft of your own, beside "Is this ready?": one round reads and rewrites it.
+    const draft = 'Mara counted the boats each morning, though no one had asked her to. '.repeat(450);
+    const sized = current.host.questionEstimates(c6, 'balanced', { work: [draft, 'a short note'] })['author-loop']!.estimate;
+    expect(sized.highUsd).toBeGreaterThan(2 * planned.highUsd);
+    // The framings prompt shows the problem: a long brief makes its figure dearer.
+    const brief = { text: 'A memo', attachments: [{ name: 'notes.md', text: 'The offsite moves to May. '.repeat(8000) }] };
+    const host = current.host;
+    const framings = (known?: Parameters<typeof host.questionEstimates>[2]) => host.questionEstimates(c4, 'balanced', known)['framings-if-wanted']!.estimate.highUsd;
+    expect(framings({ problem: brief })).toBeGreaterThan(framings());
+    const { BEST_SO_FAR_PROMPT, NOT_CONVERGING_PROMPT } = ENGINE.runner;
+    expect(current.host.questionEstimates(c4, 'balanced')['critic-loop']).toMatchObject({ asks: 'cap', answers: { [BEST_SO_FAR_PROMPT]: 'No', [NOT_CONVERGING_PROMPT]: 'Yes' } });
+    expect(current.host.questionEstimates(advisor.recipe('c5')!, 'balanced')['launch-gate']).toMatchObject({ asks: 'gate', answers: { [ENGINE.runner.GATE_FAILED_PROMPT]: 'Yes' } });
+  });
+
   it("prices every run's questions at nothing when byway's own calls all go to the mock (pnpm demo, or no keys)", async () => {
     for (const opts of [{ demo: true, env: { ...FAKE_KEYS } }, { demo: false, env: {} }]) {
       current = testHost(opts);

@@ -18,8 +18,9 @@ export default async function RunPage({ params }: PageProps<'/runs/[id]'>) {
   const deps = await getDeps();
   const run = await deps.services.store.getRun(id);
   if (!run) notFound();
-  const initial = await getRunData(deps.services, id);
-  const { presentation, label, steps, recipe } = await recipeForRun(deps, run);
+  // With what each open question would cost, priced on the work beside it (api.ts questionCosts), as every poll has it.
+  const initial = await getRunData(deps.services, id, 0, (r, cps) => questionCosts(deps, r, cps));
+  const { presentation, label, steps } = await recipeForRun(deps, run);
   // Keyed by the run: the screen owns per-run state (its refresher and the person's drafts, ADR-0082).
-  return <RunScreen key={id} initial={initial} presentation={presentation ?? null} label={label ?? null} steps={steps ?? null} questions={questionCosts(deps, run, recipe)} />;
+  return <RunScreen key={id} initial={initial} presentation={presentation ?? null} label={label ?? null} steps={steps ?? null} />;
 }

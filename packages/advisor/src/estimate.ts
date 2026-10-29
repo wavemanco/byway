@@ -1,6 +1,8 @@
-import type { CostEstimate, Medium, ModelProfile, Tier } from '@byway/contracts';
-import { FAL_VIDEO_EXTRAS, PRICES, falVideoSeconds, priceFor, tokenCost, type PriceRow } from '@byway/gateway';
-import { asksSwaps, audioAsset, loopRounds, type Gate, type Node, type Recipe, type Stage, type Step } from '@byway/recipe';
+import type { CostEstimate, Medium, ModelProfile, ProblemBrief, Tier } from '@byway/contracts';
+import { FAL_VIDEO_EXTRAS, PRICES, falVideoSeconds, priceFor, textTokens, tokenCost, type PriceRow } from '@byway/gateway';
+import { problemSlot } from '@byway/prompts/pure';
+import { MEDIUM_FORMAT } from '@byway/protocol';
+import { asksSwaps, audioAsset, exitPoints, loopRounds, promptShows, type Gate, type Node, type Recipe, type Stage, type Step } from '@byway/recipe';
 import { AdvisorError } from './errors.ts';
 
 /**
@@ -29,12 +31,27 @@ export interface PricingContext {
   prices?: readonly PriceRow[];
   /** The date whose prices apply. */
   at: Date;
+  /**
+   * The person's problem, attachments included, when it is known: each prompt that shows it (promptShows, the `intent`
+   * port) is then sized with it, as the gateway sizes the call (textTokens), so a long brief raises the figures, the
+   * default budget and the long-context tier a call reaches. Without it every prompt is planned at `PROMPT_TOKENS`.
+   */
+  problem?: ProblemBrief;
+  /**
+   * The size in tokens of the work already made, when it is known (the work beside a run's question): the work as text,
+   * and a text view of it, are then sized with it instead of the planning sizes. A view of screenshots or frames keeps
+   * its planning size.
+   */
+  workTokens?: number;
 }
 
 /**
  * Typical tokens per call, by role or helper (input, output), for an artifact of `ARTIFACT_TOKENS` and a view of
- * `VIEW_TOKENS`. They are planning numbers, written down so they can be checked against the ledger:
- * - every prompt carries about 1,500 tokens of instructions, the problem and the brief (`PROMPT_TOKENS`);
+ * `VIEW_TOKENS`, or of the sizes known (PricingContext `problem` and `workTokens`). They are planning numbers, written
+ * down so they can be checked against the ledger:
+ * - every prompt carries about 1,500 tokens of instructions, the problem and the brief (`PROMPT_TOKENS`); about 1,000
+ *   of them are the template's own words (`INSTRUCTION_TOKENS`), so a prompt that shows a problem longer than the
+ *   other 500 grows by the difference;
  * - writers (build, seed) produce one artifact; revisers (fix, asset.integrate) read one and a critique and produce one
  *   (VOICE makes no model call: ADR-0081);
  * - readers of the work (critic, check, cut, tells, vision, dedupe, overlap) read its view and answer briefly; the TELLS
@@ -44,6 +61,7 @@ export interface PricingContext {
  * - relay links answer a short clip prompt; ASSET first asks for image briefs.
  */
 export const PROMPT_TOKENS = 1500;
+export const INSTRUCTION_TOKENS = 1000;
 const CRITIQUE_TOKENS = 800;
 const TELLS_CATALOG_TOKENS = 2500;
 
@@ -58,29 +76,34 @@ interface Tokens {
   output: number;
 }
 
-type TokenRule = (medium: Medium, readers: number) => Tokens;
-const art = (m: Medium) => ARTIFACT_TOKENS[m];
-const view = (m: Medium) => VIEW_TOKENS[m];
+/** What a call's tokens are planned from: its prompt (instructions and problem), the work as text, and a view of it. */
+export interface CallSizes {
+  prompt: number;
+  art: number;
+  view: number;
+}
+
+type TokenRule = (z: CallSizes, readers: number) => Tokens;
 
 /** Per-role token assumptions; `readers` is how many views the call reads (candidates, or references plus ours). */
 export const TOKEN_ASSUMPTIONS: Readonly<Record<string, TokenRule>> = {
-  build: (m) => ({ input: PROMPT_TOKENS, output: art(m) }),
-  seed: (m) => ({ input: PROMPT_TOKENS, output: art(m) }),
-  fix: (m) => ({ input: PROMPT_TOKENS + art(m) + CRITIQUE_TOKENS, output: art(m) }),
-  'asset.integrate': (m) => ({ input: PROMPT_TOKENS + art(m), output: art(m) }),
-  'asset.briefs': (m) => ({ input: PROMPT_TOKENS + art(m), output: 600 }),
-  critic: (m, readers) => ({ input: PROMPT_TOKENS + view(m) * readers, output: CRITIQUE_TOKENS }),
-  judge: (m, readers) => ({ input: PROMPT_TOKENS + view(m) * readers, output: 400 }),
-  select: (m, readers) => ({ input: PROMPT_TOKENS + view(m) * readers, output: 400 }),
-  rerank: (m, readers) => ({ input: PROMPT_TOKENS + view(m) * readers, output: 400 }),
-  check: (m) => ({ input: PROMPT_TOKENS + view(m), output: 500 }),
-  cut: (m) => ({ input: PROMPT_TOKENS + view(m), output: 500 }),
-  'tells-sweep': (m) => ({ input: PROMPT_TOKENS + TELLS_CATALOG_TOKENS + view(m), output: 1000 }),
-  'tells-compare': (m) => ({ input: PROMPT_TOKENS + 2 * view(m), output: 200 }),
-  vision: (m) => ({ input: PROMPT_TOKENS + view(m), output: 1000 }),
-  dedupe: (m, readers) => ({ input: PROMPT_TOKENS + art(m) * readers, output: 400 }),
-  overlap: (m, readers) => ({ input: PROMPT_TOKENS + art(m) * (readers + 3), output: 600 }),
-  relay: (m) => ({ input: PROMPT_TOKENS + art(m), output: 300 }),
+  build: (z) => ({ input: z.prompt, output: z.art }),
+  seed: (z) => ({ input: z.prompt, output: z.art }),
+  fix: (z) => ({ input: z.prompt + z.art + CRITIQUE_TOKENS, output: z.art }),
+  'asset.integrate': (z) => ({ input: z.prompt + z.art, output: z.art }),
+  'asset.briefs': (z) => ({ input: z.prompt + z.art, output: 600 }),
+  critic: (z, readers) => ({ input: z.prompt + z.view * readers, output: CRITIQUE_TOKENS }),
+  judge: (z, readers) => ({ input: z.prompt + z.view * readers, output: 400 }),
+  select: (z, readers) => ({ input: z.prompt + z.view * readers, output: 400 }),
+  rerank: (z, readers) => ({ input: z.prompt + z.view * readers, output: 400 }),
+  check: (z) => ({ input: z.prompt + z.view, output: 500 }),
+  cut: (z) => ({ input: z.prompt + z.view, output: 500 }),
+  'tells-sweep': (z) => ({ input: z.prompt + TELLS_CATALOG_TOKENS + z.view, output: 1000 }),
+  'tells-compare': (z) => ({ input: z.prompt + 2 * z.view, output: 200 }),
+  vision: (z) => ({ input: z.prompt + z.view, output: 1000 }),
+  dedupe: (z, readers) => ({ input: z.prompt + z.art * readers, output: 400 }),
+  overlap: (z, readers) => ({ input: z.prompt + z.art * (readers + 3), output: 600 }),
+  relay: (z) => ({ input: z.prompt + z.art, output: 300 }),
 };
 
 /** Token counts vary with the problem: the low end assumes 25% fewer, the high end 50% more. */
@@ -121,6 +144,7 @@ interface Tally {
   calls: number;
   usd: number;
   images: number;
+  clips: number;
   minutes: number;
 }
 interface Span {
@@ -132,9 +156,9 @@ interface Count {
   high: number;
 }
 
-const ZERO: Tally = { calls: 0, usd: 0, images: 0, minutes: 0 };
+const ZERO: Tally = { calls: 0, usd: 0, images: 0, clips: 0, minutes: 0 };
 const NONE: Span = { low: ZERO, high: ZERO };
-const KEYS = ['calls', 'usd', 'images', 'minutes'] as const;
+const KEYS = ['calls', 'usd', 'images', 'clips', 'minutes'] as const;
 
 const zip = (a: Tally, b: Tally, f: (x: number, y: number) => number): Tally =>
   Object.fromEntries(KEYS.map((k) => [k, f(a[k], b[k])])) as unknown as Tally;
@@ -168,21 +192,53 @@ interface Priced {
   video?: { row: PriceRow; model: string; extraUsd: number };
 }
 
+interface Question {
+  asks: QuestionEstimate['asks'];
+  span: Span;
+}
+
 interface Walk {
   priced: Priced;
+  /** The tokens of the person's problem as a prompt that shows it carries it (PricingContext `problem`). */
+  problemTokens?: number;
+  /** The size of the work already made (PricingContext `workTokens`). */
+  workTokens?: number;
   /** Stage spans without gate retries, for a one-shot gate's "re-run stage Dk". */
   stageBase?: Map<Stage['stage'], Span>;
-  /** When set, what each optional's and each person's loop's question commits to, by the node's id (estimateQuestions). */
-  questions?: Map<string, { asks: QuestionEstimate['asks']; span: Span }>;
+  /** When set, what each question that commits money commits to, by the node's id (estimateQuestions). */
+  questions?: Map<string, Question>;
+  /** With `questions`: each gate's "Use it anyway?", to which the walk adds what follows the gate as it reaches it. */
+  gates?: Question[];
+  /**
+   * Inside a relay chain: whether the view its judges see shows no clip. A link makes its clip only when the profile
+   * can make video and the chain has a frame to start from, which only an image model makes (relay.ts: otherwise the
+   * link finishes skipped). A view rendered in a link with no clip has nothing to judge: its check or critic is not
+   * asked, and a loop it reports to ends after its first round, with no cap question (F10, interpreter.ts).
+   */
+  link?: { blind: boolean };
 }
 
 const count = (low: number, high: number): Count => ({ low: Math.max(0, low), high: Math.max(0, high) });
 
-function completion(w: Walk, role: string, tier: Tier, readers: Count, model?: PriceRow): Span {
+/** The sizes a call of this step is planned from: the problem where its prompt shows it, the work where it is known. */
+function sizes(w: Walk, step: Step | undefined): CallSizes {
+  const m = w.priced.medium;
+  const shown = step !== undefined && w.problemTokens !== undefined && promptShows(step, 'intent', m);
+  const work = w.workTokens;
+  return {
+    prompt: shown ? Math.max(PROMPT_TOKENS, INSTRUCTION_TOKENS + w.problemTokens!) : PROMPT_TOKENS,
+    art: work ?? ARTIFACT_TOKENS[m],
+    view: work !== undefined && MEDIUM_FORMAT[m].view === 'text' ? work : VIEW_TOKENS[m],
+  };
+}
+
+/** One call of `role` asked by `step`, whose prompt says whether it shows the problem (none for a helper's own call). */
+function completion(w: Walk, role: string, tier: Tier, readers: Count, step: Step | undefined, model?: PriceRow): Span {
   const rule = TOKEN_ASSUMPTIONS[role] ?? TOKEN_ASSUMPTIONS.build!;
   const price = model ?? w.priced.tier(tier);
+  const z = sizes(w, step);
   const usd = (readersN: number, band: number) => {
-    const t = rule(w.priced.medium, Math.max(1, readersN));
+    const t = rule(z, Math.max(1, readersN));
     return tokenCost(price, { inputTokens: Math.ceil(t.input * band), outputTokens: Math.ceil(t.output * band) });
   };
   return {
@@ -203,8 +259,11 @@ function clip(w: Walk): Span {
   const v = w.priced.video;
   if (!v) return NONE;
   const usd = (sec: number) => (v.row.perSecondUsd ?? 0) * falVideoSeconds(v.model, sec) + v.extraUsd;
-  return { low: { ...ZERO, usd: usd(CLIP_SECONDS.low) }, high: { ...ZERO, usd: usd(CLIP_SECONDS.high) } };
+  return { low: { ...ZERO, clips: 1, usd: usd(CLIP_SECONDS.low) }, high: { ...ZERO, clips: 1, usd: usd(CLIP_SECONDS.high) } };
 }
+
+/** Whether a relay link makes its clip: a usable video model, and a frame to start from, which only an image model makes. */
+const makesClips = (w: Walk): boolean => w.priced.video !== undefined && w.priced.image !== undefined;
 
 const tierOf = (s: Step): Tier => s.tier ?? (JUDGING_ROLES.has(s.role) ? 'big' : 'mid');
 const knobNumber = (s: Step, name: string): number | undefined => {
@@ -221,27 +280,29 @@ function criticReaders(s: Step): Count {
 function stepSpan(w: Walk, s: Step, set: Count): Span {
   const medium = w.priced.medium;
   if (s.actor === 'model') {
+    // A judge of a link's view that shows no clip is not asked (interpreter.ts unobservable).
+    if (w.link?.blind && (s.role === 'check' || s.role === 'critic')) return NONE;
     switch (s.role) {
       case 'critic':
-        return completion(w, 'critic', tierOf(s), criticReaders(s), s.knobs?.family === 'other' ? w.priced.otherFamily : undefined);
+        return completion(w, 'critic', tierOf(s), criticReaders(s), s, s.knobs?.family === 'other' ? w.priced.otherFamily : undefined);
       case 'judge':
       case 'select':
       case 'dedupe':
       case 'overlap':
-        return completion(w, s.role, tierOf(s), set);
+        return completion(w, s.role, tierOf(s), set, s);
       case 'relay':
-        // relay:media, then Gateway.video for the clip when a video model is usable.
-        return add(completion(w, 'relay', tierOf(s), count(1, 1)), clip(w));
+        // relay:media, then Gateway.video for the clip; a link that cannot make its clip finishes skipped, with no call.
+        return makesClips(w) ? add(completion(w, 'relay', tierOf(s), count(1, 1), s), clip(w)) : NONE;
       case 'asset': {
         // A step that turns the locked script into audio has no v1 executor (ADR-0069): it finishes skipped.
         if (audioAsset(s)) return NONE;
         const slots = knobNumber(s, 'slots') ?? DEFAULT_SLOTS;
         const n = medium === 'media' ? count(STORYBOARD_SHOTS.low, STORYBOARD_SHOTS.high) : count(1, slots);
-        const integrate = medium === 'web-page' || medium === 'prose' ? completion(w, 'asset.integrate', 'mid', count(1, 1)) : NONE;
-        return add(completion(w, 'asset.briefs', tierOf(s), count(1, 1)), w.priced.image ? images(w, n) : NONE, integrate);
+        const integrate = medium === 'web-page' || medium === 'prose' ? completion(w, 'asset.integrate', 'mid', count(1, 1), undefined) : NONE;
+        return add(completion(w, 'asset.briefs', tierOf(s), count(1, 1), s), w.priced.image ? images(w, n) : NONE, integrate);
       }
       default:
-        return completion(w, s.role, tierOf(s), count(1, 1));
+        return completion(w, s.role, tierOf(s), count(1, 1), s);
     }
   }
   if (s.actor === 'human') {
@@ -262,7 +323,9 @@ function stepSpan(w: Walk, s: Step, set: Count): Span {
         return minutes('confirm');
     }
   }
-  // Tools (renders; the C5 matte, which v1 skips) and policies cost no model calls and no human time.
+  // Tools (renders; the C5 matte, which v1 skips) and policies cost no model calls and no human time. A render inside a
+  // relay link shows that link's shot, with its clip only when the link made one.
+  if (s.actor === 'tool' && s.role === 'render' && w.link) w.link.blind = !makesClips(w);
   return NONE;
 }
 
@@ -273,7 +336,7 @@ function stepSpan(w: Walk, s: Step, set: Count): Span {
 function atCap(w: Walk, gate: Gate): Span {
   const parts: Span[] = [];
   if (gate.metric !== 'human' && gate.onCap === 'human') parts.push(minutes('confirm'));
-  if (gate.metric === 'critic-score' || gate.metric === 'critic-rank') parts.push(completion(w, 'rerank', 'big', count(2, 3)));
+  if (gate.metric === 'critic-score' || gate.metric === 'critic-rank') parts.push(completion(w, 'rerank', 'big', count(2, 3), undefined));
   return onlyHigh(add(...parts));
 }
 
@@ -289,14 +352,18 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
     case 'seq': {
       let cur = set;
       const spans: Span[] = [];
+      const marks: Mark[] = [];
       n.steps.forEach((c, i) => {
+        const from = w.gates?.length ?? 0;
         const r = walkNode(w, c, cur);
         spans.push(r.span);
         cur = r.set;
         // A cliché sweep whose finds feed a swap step: you choose which to swap before it runs (convention C2), exactly
         // where the interpreter asks (asksSwaps reads the steps after it in this seq).
         if (asksSwaps(c, n.steps.slice(i + 1))) spans.push(minutes('select'));
+        marks.push({ from, to: w.gates?.length ?? 0, at: spans.length });
       });
+      follow(w, marks, spans);
       return { span: add(...spans), set: cur };
     }
     case 'replicate': {
@@ -308,11 +375,17 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
     case 'pick': {
       const after = count(Math.min(n.k, set.low), Math.min(n.k, set.high));
       if (n.mode === 'H') return { span: minutes('pick'), set: after };
-      if (n.mode === 'C') return { span: n.judge ? completion(w, n.judge.role, tierOf(n.judge), set) : completion(w, 'judge', 'big', set), set: after };
+      if (n.mode === 'C') return { span: n.judge ? completion(w, n.judge.role, tierOf(n.judge), set, n.judge) : completion(w, 'judge', 'big', set, undefined), set: after };
       return { span: NONE, set: after };
     }
     case 'loop': {
       const body = walkNode(w, n.body, set);
+      // In a relay link that made no clip, the judge it reports to is not asked: the loop ends after one round, unchecked.
+      if (w.link?.blind && exitPoints(n).length) return body;
+      // A critic or check loop asks "Use the best version so far?" at its cap (No buys more rounds), and a scored one
+      // may ask whether to keep going when the critique is not improving the work (Yes buys more): each further round.
+      const scored = n.gate.metric === 'critic-score' || n.gate.metric === 'critic-rank';
+      if (n.gate.metric !== 'human' && (n.gate.onCap === 'human' || (scored && n.gate.onNoConverge === 'recalibrate-human'))) w.questions?.set(n.id, { asks: 'cap', span: body.span });
       // The planned rounds. At the cap a person may allow as many again, once (ADR-0073, ADR-0093): their choice, made
       // when they are asked, so the estimate does not count it.
       const planned = loopRounds(n.gate).planned;
@@ -346,25 +419,51 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
       const stage = n.retry ? w.stageBase?.get(n.retry.stage) : undefined;
       // On a fail: re-run the named stage and the check, up to `times`; then a person decides.
       const retry = onlyHigh(add(times(add(stage ?? NONE, body.span), count(retries, retries)), minutes('confirm')));
+      // Then "Use it anyway?": Yes goes on with the run, so its figure is what follows the gate (follow adds it).
+      if (w.questions && w.gates) {
+        const q: Question = { asks: 'gate', span: NONE };
+        w.questions.set(n.id, q);
+        w.gates.push(q);
+      }
       return { span: add(body.span, retry), set: body.set };
     }
     case 'relay': {
       const links = count(Math.min(STORYBOARD_SHOTS.low, n.maxLinks), n.maxLinks);
-      return { span: times(walkNode(w, n.body, set).span, links), set };
+      return { span: times(walkNode({ ...w, link: { blind: false } }, n.body, set).span, links), set };
     }
   }
+}
+
+/** Where a child's walk began and ended in the gates' list, and how many of its parent's spans it and those before it gave. */
+interface Mark {
+  from: number;
+  to: number;
+  at: number;
+}
+
+/**
+ * What follows each gate a child reached: the spans after that child's. A gate inside a draft is followed by the rest of
+ * that draft, as an optional's figure is for that draft.
+ */
+function follow(w: Walk, marks: readonly Mark[], spans: readonly Span[]): void {
+  if (!w.gates) return;
+  for (const m of marks) for (const q of w.gates.slice(m.from, m.to)) q.span = add(q.span, ...spans.slice(m.at));
 }
 
 function walkStages(w: Walk, recipe: Recipe): { total: Span; byStage: Map<Stage['stage'], Span> } {
   const byStage = new Map<Stage['stage'], Span>();
   let set = count(1, 1);
   const spans: Span[] = [];
+  const marks: Mark[] = [];
   for (const s of recipe.stages) {
+    const from = w.gates?.length ?? 0;
     const r = walkNode(w, s.body, set);
     byStage.set(s.stage, r.span);
     spans.push(r.span);
     set = r.set;
+    marks.push({ from, to: w.gates?.length ?? 0, at: spans.length });
   }
+  follow(w, marks, spans);
   return { total: add(...spans), byStage };
 }
 
@@ -401,37 +500,52 @@ function estimateOf(span: Span): CostEstimate {
     highUsd: Math.max(floorCents(span.low.usd), ceilCents(span.high.usd)),
     modelCalls: { low: span.low.calls, high: Math.max(span.low.calls, span.high.calls) },
     images: { low: span.low.images, high: Math.max(span.low.images, span.high.images) },
+    clips: { low: span.low.clips, high: Math.max(span.low.clips, span.high.clips) },
     humanMinutes: { low: Math.floor(span.low.minutes), high: Math.max(Math.floor(span.low.minutes), Math.ceil(span.high.minutes)) },
+  };
+}
+
+/** A walk's prices and the sizes known to it. */
+function walkOf(recipe: Recipe, ctx: PricingContext): Walk {
+  return {
+    priced: resolvePrices(recipe, ctx),
+    ...(ctx.problem ? { problemTokens: textTokens(problemSlot(ctx.problem)) } : {}),
+    ...(ctx.workTokens !== undefined ? { workTokens: ctx.workTokens } : {}),
   };
 }
 
 /** Estimate one run of a recipe with a profile: dollars rounded outward to the cent, minutes to whole minutes. */
 export function estimateRecipe(recipe: Recipe, ctx: PricingContext): CostEstimate {
-  const priced = resolvePrices(recipe, ctx);
-  const base = walkStages({ priced }, recipe);
-  const { total } = walkStages({ priced, stageBase: base.byStage }, recipe);
+  const w = walkOf(recipe, ctx);
+  const base = walkStages(w, recipe);
+  const { total } = walkStages({ ...w, stageBase: base.byStage }, recipe);
   return estimateOf(total);
 }
 
 /**
  * What one answer to a run's question commits to (UX-4 remainder), for the Run screen to show beside the question:
  * - `optional`: "Run this step?"; Yes runs the optional's body once (inside a draft, for that draft);
- * - `round`: a person's loop, "Is this ready?" or its cap's question; No runs one more round of its body.
+ * - `round`: a person's loop, "Is this ready?" or its cap's question; No runs one more round of its body;
+ * - `cap`: a critic or check loop, "Use the best version so far?" at its cap (No allows more rounds) or "The outside
+ *   critique is not improving the work. Keep going anyway?" (Yes goes on): the figure is one further round of its body;
+ * - `gate`: a gate that failed, "It did not pass the final check, even after another try. Use it anyway?"; Yes goes on
+ *   with the run: what follows the gate in its stage and the stages after it.
  */
 export interface QuestionEstimate {
-  asks: 'optional' | 'round';
+  asks: 'optional' | 'round' | 'cap' | 'gate';
   estimate: CostEstimate;
 }
 
 /**
- * The estimate of each question an optional or a person's loop asks, by the node's id, which is the stepId its
- * checkpoints carry. Taken from the same walk as estimateRecipe's, so a question's figure is priced, banded and rounded
- * as the recipe's estimate is, and an optional's figure is what that estimate's high end counts each time it is asked.
+ * The estimate of each question that commits money, by the node's id, which is the stepId its checkpoints carry. Taken
+ * from the same walk as estimateRecipe's, so a question's figure is priced, banded and rounded as the recipe's estimate
+ * is, and an optional's figure is what that estimate's high end counts each time it is asked. With `workTokens` (the
+ * work beside the question) a figure is sized by that work rather than by the planning sizes.
  */
 export function estimateQuestions(recipe: Recipe, ctx: PricingContext): Record<string, QuestionEstimate> {
-  const priced = resolvePrices(recipe, ctx);
-  const base = walkStages({ priced }, recipe);
-  const questions = new Map<string, { asks: QuestionEstimate['asks']; span: Span }>();
-  walkStages({ priced, stageBase: base.byStage, questions }, recipe);
+  const w = walkOf(recipe, ctx);
+  const base = walkStages(w, recipe);
+  const questions = new Map<string, Question>();
+  walkStages({ ...w, stageBase: base.byStage, questions, gates: [] }, recipe);
   return Object.fromEntries([...questions].map(([id, q]) => [id, { asks: q.asks, estimate: estimateOf(q.span) }]));
 }

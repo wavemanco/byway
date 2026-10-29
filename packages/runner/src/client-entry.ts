@@ -17,6 +17,8 @@ export { RUN_WORKFLOW, workflowIdFor } from './types.ts';
 // seeds outlast it (apps/web/e2e/seed.ts).
 export { LOST_RUN_MESSAGE, reconcileLostRuns } from './lost-runs.ts';
 export { OLDER_VERSION_MESSAGE } from './versioning.ts';
+// The words of the questions whose figure the web prices by the asking node's id, beside a budget question on that id.
+export { BEST_SO_FAR_PROMPT, GATE_FAILED_PROMPT, NOT_CONVERGING_PROMPT } from './workflow/wording.ts';
 
 export interface ConnectedRunner {
   runner: Runner;

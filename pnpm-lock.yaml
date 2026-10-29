@@ -294,6 +294,9 @@ importers:
         specifier: ^4.6.5
         version: 4.6.5
     devDependencies:
+      '@byway/advisor':
+        specifier: workspace:*
+        version: link:../advisor
       '@tailwindcss/browser':
         specifier: 4.1.11
         version: 4.1.11

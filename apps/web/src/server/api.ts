@@ -7,10 +7,10 @@
  * Advisor.recipe (or the intake's composed recipe), and pause and resume are the Runner's.
  */
 import { randomUUID } from 'node:crypto';
-import type { QuestionEstimate } from '@byway/advisor';
-import type { AnswerWait, ChooserAnswer, ComposeResult, EvidenceLabel, IntakeRecord, ModelWait, Preferences, Recommendation, RecipePresentation, RendererSettings, RunRecord, SpendRecords } from '@byway/contracts';
+import type { AnswerWait, CheckpointRecord, ChooserAnswer, ComposeResult, EvidenceLabel, IntakeRecord, ModelWait, Preferences, Recommendation, RecipePresentation, RendererSettings, RunRecord, SpendRecords } from '@byway/contracts';
 import type { Recipe } from '@byway/recipe';
 import type { z } from 'zod';
+import type { PricedQuestion, QuestionSizes } from '../services/create.ts';
 import { isEngineUnavailable } from '../services/engine-runner.ts';
 import type { Services } from '../services/index.ts';
 import { budgetProblem, workspaceSpend, type WorkspaceSpend } from '../view/history.ts';
@@ -52,7 +52,7 @@ export interface Deps {
   /** Names a provider key byway holds found in a request body (ADR-0088); routes hand it to parseBody. */
   heldKeyIn: HeldKeyIn;
   /** What each answer to a run's questions would cost, for a run on that profile (ServiceHost.questionEstimates). */
-  questionEstimates(recipe: Recipe, profileId: string): Record<string, QuestionEstimate>;
+  questionEstimates(recipe: Recipe, profileId: string, known?: QuestionSizes): Record<string, PricedQuestion>;
   /** The day byway's prices were last checked (ServiceHost.pricesCheckedOn), which the Recommendation shows. */
   pricesCheckedOn: string;
   /** Every model the gateway's profiles use, with the answer waits it offers (ServiceHost.modelWaits). */
@@ -353,17 +353,41 @@ export async function recipeForRun(deps: Deps, run: RunRecord): Promise<RunRecip
   return {};
 }
 
+/** The text of each artifact that is text (a page's HTML included), as the gateway would size it in a prompt. */
+async function texts(services: Services, ids: readonly string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const id of new Set(ids)) {
+    if (!(await services.store.artifacts.has(id))) continue;
+    const { record, bytes } = await services.store.artifacts.get(id);
+    const type = record.mediaType.split(';')[0]?.trim() ?? '';
+    if (type.startsWith('text/') || type === 'application/json') out.push(new TextDecoder().decode(bytes));
+  }
+  return out;
+}
+
 /**
- * What the Run screen says beside each question an optional or a person's loop asks (UX-4 remainder; view/questions.ts):
- * the figure for one answer, by the asking node's id, priced as the run's own calls are (RunRecord.profileId, or the
- * demo profile when this byway's calls all go to the mock), not with the profile Settings name now. Null when the
- * run's recipe is not known.
+ * What the Run screen says beside each open question that commits money (UX-4 remainder, B-107; view/questions.ts): the
+ * figure for the answer that buys the work, by the checkpoint's id. Priced as the run's own calls are (RunRecord.profileId,
+ * or the demo profile when this byway's calls all go to the mock), not with the profile Settings name now, and sized by
+ * what the store holds while the question is open (B-106, B-108): the run's problem, attachments included, and the work
+ * beside the question. Empty when no such question is open; undefined when the run's recipe is not known.
  */
-export function questionCosts(deps: Deps, run: RunRecord, recipe: Recipe | undefined): QuestionCosts | null {
-  if (!recipe) return null;
-  return Object.fromEntries(
-    Object.entries(deps.questionEstimates(recipe, run.profileId)).map(([id, q]) => [id, { asks: q.asks, lowUsd: q.estimate.lowUsd, highUsd: q.estimate.highUsd, calls: q.estimate.modelCalls }]),
-  );
+export async function questionCosts(deps: Deps, run: RunRecord, checkpoints: readonly CheckpointRecord[]): Promise<QuestionCosts | undefined> {
+  const { recipe } = await recipeForRun(deps, run);
+  if (!recipe) return undefined;
+  const open = checkpoints.filter((cp) => cp.status === 'open' && cp.kind === 'confirm');
+  if (!open.length) return {};
+  const intake = run.intakeId ? await deps.services.store.getIntake(run.intakeId) : undefined;
+  const problem = intake?.problem ?? { text: run.problem };
+  const out: QuestionCosts = {};
+  for (const cp of open) {
+    const q: PricedQuestion | undefined = deps.questionEstimates(recipe, run.profileId, { problem, work: await texts(deps.services, cp.artifactIds ?? []) })[cp.stepId];
+    const answer = !q ? undefined : q.answers ? q.answers[cp.prompt] : q.asks === 'optional' ? 'Yes' : 'No';
+    if (!q || !answer) continue;
+    const { lowUsd, highUsd, modelCalls, images, clips } = q.estimate;
+    out[cp.id] = { asks: q.asks, answer, lowUsd, highUsd, calls: modelCalls, images, ...(clips ? { clips } : {}) };
+  }
+  return out;
 }
 
 export async function resolveInRun(deps: Deps, runId: string, checkpointId: string, input: z.infer<typeof ResolutionInput>): Promise<void> {

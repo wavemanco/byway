@@ -9,6 +9,7 @@
  * whole artifact (a diff's size, an option map's titles) are counted on the server from the whole bytes.
  */
 import type { RunView } from '@byway/contracts';
+import type { QuestionCosts } from './questions.ts';
 
 export interface ArtifactInfo {
   mediaType: string;
@@ -44,6 +45,11 @@ export interface RunData {
   artifacts: Record<string, ArtifactInfo>;
   /** Only for a run that has ended, and only when the spend book could be read. */
   ended?: EndedSpend;
+  /**
+   * What an answer to each open question that commits money would cost, by the checkpoint's id (view/questions.ts),
+   * priced while it is open on the work beside it (B-108). Absent when the run's recipe is not known.
+   */
+  questions?: QuestionCosts;
 }
 
 /** Folds a poll (events after the last seen seq) into what the screen already has. */
@@ -53,8 +59,9 @@ export function mergeRunData(prev: RunData, next: RunData): RunData {
   return {
     view: { run: next.view.run, checkpoints: next.view.checkpoints, events },
     artifacts: { ...prev.artifacts, ...next.artifacts },
-    // What the latest poll said: an older answer about calls under way is not carried forward.
+    // What the latest poll said: an older answer about calls under way, or an older question's figure, is not carried forward.
     ...(next.ended ? { ended: next.ended } : {}),
+    ...(next.questions ? { questions: next.questions } : {}),
   };
 }
 

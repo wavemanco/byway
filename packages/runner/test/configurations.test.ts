@@ -5,6 +5,7 @@
  */
 import { afterAll, beforeAll } from 'vitest';
 import { c1Scenarios } from './e2e/c1.ts';
+import { estimateBoundScenarios } from './e2e/estimate-bound.ts';
 import { c2c5Scenarios } from './e2e/c2-c5.ts';
 import { loopCapScenarios } from './e2e/loop-cap.ts';
 import { textMediaScenarios } from './e2e/text-media.ts';
@@ -22,3 +23,4 @@ c1Scenarios(() => h);
 c2c5Scenarios(() => h);
 textMediaScenarios(() => h);
 loopCapScenarios(() => h);
+estimateBoundScenarios(() => h);

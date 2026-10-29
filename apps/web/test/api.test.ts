@@ -32,7 +32,7 @@ import {
 import { AnswerWaitPatch, RecommendInput } from '../src/server/schemas.ts';
 import { getRunData } from '../src/server/run-data.ts';
 import { FIRST_QUESTION } from './fixtures/runner.ts';
-import { TINY_PNG_BASE64, testHost, type TestHost } from './fixtures/services.ts';
+import { ENGINE, TINY_PNG_BASE64, testHost, type TestHost } from './fixtures/services.ts';
 
 let current: TestHost | undefined;
 
@@ -120,25 +120,49 @@ describe('route handler logic', () => {
   });
 
   // UX-4 remainder: "Run this step?" and "Is this ready?" said what each answer does, never what it costs.
-  it("prices each question an optional or a person's loop asks, with the run's own profile, for the Run screen", async () => {
+  it('prices each open question that commits money, with the run\'s own profile, on its problem and the work beside it, for the Run screen', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
     const { runId } = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 });
     const run = await d.services.store.getRun(runId);
     if (!run) throw new Error('run missing');
     const { recipe } = await recipeForRun(d, run);
-    const costs = questionCosts(d, run, recipe);
-    // C4 asks three optional questions and has no loop a person ends; the demo profile prices them at nothing.
-    expect(Object.keys(costs ?? {}).sort()).toEqual(['claim-log', 'framings-if-wanted', 'recipient-critic']);
-    expect(costs?.['framings-if-wanted']).toEqual({ asks: 'optional', lowUsd: 0, highUsd: 0, calls: { low: 1, high: 1 } });
+    const draft = await d.services.store.artifacts.putText('# The offsite\n\nIt moves to May.\n', 'text/markdown');
+    const open = (stepId: string, prompt: string, artifactIds?: string[]): CheckpointRecord => ({
+      id: `${runId}/cp-${stepId}-${prompt.length}`,
+      runId,
+      stepId,
+      kind: 'confirm',
+      prompt,
+      status: 'open',
+      openedAt: '2026-10-28T10:00:00.000Z',
+      ...(artifactIds ? { artifactIds } : {}),
+    });
+    const framings = open('framings-if-wanted', 'Run this step?', [draft.id]);
+    const claims = open('claim-log', 'Run this step?');
+    const best = open('critic-loop', ENGINE.runner.BEST_SO_FAR_PROMPT, [draft.id]);
+    const keepGoing = open('critic-loop', ENGINE.runner.NOT_CONVERGING_PROMPT, [draft.id]);
+    // A budget question about the loop's own call (its re-rank) carries the loop's id, and commits nothing of its own.
+    const budget = open('critic-loop', 'Raise the budget by $1?');
+    const costs = await questionCosts(d, run, [framings, claims, best, keepGoing, budget]);
+    // The demo profile prices them at nothing.
+    expect(costs?.[framings.id]).toEqual({ asks: 'optional', answer: 'Yes', lowUsd: 0, highUsd: 0, calls: { low: 1, high: 1 }, images: { low: 0, high: 0 }, clips: { low: 0, high: 0 } });
     // The claim log is your own sign-off: no AI call.
-    expect(costs?.['claim-log']?.calls).toEqual({ low: 0, high: 0 });
-    // Asked for the run's own profile, not the one this request's Settings name (services.test.ts has how it is priced).
+    expect(costs?.[claims.id]?.calls).toEqual({ low: 0, high: 0 });
+    // B-107: the critic loop's two questions, each with the answer that goes on; nothing for the budget question.
+    expect([costs?.[best.id]?.asks, costs?.[best.id]?.answer, costs?.[keepGoing.id]?.answer]).toEqual(['cap', 'No', 'Yes']);
+    expect(Object.keys(costs ?? {}).sort()).toEqual([best.id, claims.id, framings.id, keepGoing.id].sort());
+    // Asked for the run's own profile, not the one this request's Settings name (services.test.ts has how it is priced),
+    // with the run's problem and the work beside the question (B-106, B-108).
     const asked = vi.fn(d.questionEstimates);
-    questionCosts({ ...d, profileId: 'best', questionEstimates: asked }, { ...run, profileId: 'balanced' }, recipe);
-    expect(asked).toHaveBeenCalledWith(recipe, 'balanced');
-    // A run whose recipe is not known gets none.
-    expect(questionCosts(d, run, undefined)).toBeNull();
+    await questionCosts({ ...d, profileId: 'best', questionEstimates: asked }, { ...run, profileId: 'balanced' }, [framings]);
+    expect(asked).toHaveBeenCalledWith(recipe, 'balanced', { problem: { text: 'A memo' }, work: ['# The offsite\n\nIt moves to May.\n'] });
+    // A run whose recipe is not known gets none; one with no question open, an empty set.
+    expect(await questionCosts(d, { ...run, recipeId: 'gone' }, [framings])).toBeUndefined();
+    expect(await questionCosts(d, run, [])).toEqual({});
+    // The Run screen's data carries them, on the first render and on each poll.
+    const data = await getRunData(d.services, runId, 0, async () => costs);
+    expect(data.questions).toEqual(costs);
   });
 
   it('refuses unknown intakes, a missing composed recipe, and budgets over what the workspace has left', async () => {

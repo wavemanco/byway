@@ -219,7 +219,6 @@ const runScreen = (run: RunRecord, spend?: RunData['ended']) =>
       presentation: null,
       label: null,
       steps: null,
-      questions: null,
     }),
   );
 
