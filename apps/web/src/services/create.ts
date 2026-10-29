@@ -138,10 +138,11 @@ export function createServiceHost(engine: EngineModules, opts: ServiceHostOption
       const status = gateway.profileStatus().find((s) => s.profile.id === priced);
       if (!status) return {};
       const work = known.work?.length ? Math.max(...known.work.map(engine.gateway.textTokens)) : undefined;
-      const { BEST_SO_FAR_PROMPT, NOT_CONVERGING_PROMPT, GATE_FAILED_PROMPT } = engine.runner;
+      const { BEST_SO_FAR_PROMPT, NOT_CONVERGING_PROMPT, GATE_FAILED_PROMPT, GATE_FAILED_NO_RETRY_PROMPT } = engine.runner;
       const asked: Partial<Record<QuestionEstimate['asks'], PricedQuestion['answers']>> = {
         cap: { [BEST_SO_FAR_PROMPT]: 'No', [NOT_CONVERGING_PROMPT]: 'Yes' },
-        gate: { [GATE_FAILED_PROMPT]: 'Yes' },
+        // A gate with a retry asks the first after its tries; a one-shot gate, the second (B-136). Yes goes on in both.
+        gate: { [GATE_FAILED_PROMPT]: 'Yes', [GATE_FAILED_NO_RETRY_PROMPT]: 'Yes' },
       };
       try {
         const ctx = { profile: status.profile, images: status.images, video: status.video, otherFamily: status.otherFamily, at: new Date() };

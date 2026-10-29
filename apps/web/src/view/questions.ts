@@ -2,7 +2,8 @@
  * What an answer to a run's question would cost, said beside the question (UX-4 remainder, B-107). The workflow asks
  * "Run this step?" for an optional, "Is this ready?" (or, at the last planned round, its cap's question) for a loop a
  * person ends, "Use the best version so far?" and "The outside critique is not improving the work. Keep going anyway?"
- * for a critic or check loop, and "It did not pass the final check, even after another try. Use it anyway?" for a gate.
+ * for a critic or check loop, and "It did not pass the final check, even after another try. Use it anyway?" for a gate
+ * with a retry, or "It did not pass the final check. Use it anyway?" for one without.
  * Its words say what each answer does, not what it costs: the runner has no estimator, and putting a figure into the
  * workflow's own words would change the workflow bundle (ADR-0078). So the server prices each open question with the
  * advisor's estimator and the run's own profile (Advisor estimateQuestions), sized by the run's problem and by the work
