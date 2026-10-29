@@ -165,6 +165,23 @@ describe('route handler logic', () => {
     expect(data.questions).toEqual(costs);
   });
 
+  // ENGINE-1 (check of 2026-10-28): a gate with no retry asks B-136's "It did not pass the final check. Use it anyway?",
+  // which the priced answers did not hold, so that question went without its figure.
+  it("prices a failed gate's question in both its wordings, with or without a retry, at Yes (ENGINE-1)", async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A launch page', recipeId: 'c5' });
+    const { runId } = await startRun(d, { intakeId, recipeId: 'c5', budgetUsd: 5 });
+    const run = await d.services.store.getRun(runId);
+    if (!run) throw new Error('run missing');
+    const open = (prompt: string): CheckpointRecord => ({ id: `${runId}/cp-${prompt.length}`, runId, stepId: 'launch-gate', kind: 'confirm', prompt, status: 'open', openedAt: '2026-10-28T10:00:00.000Z' });
+    const retried = open(ENGINE.runner.GATE_FAILED_PROMPT);
+    const oneShot = open(ENGINE.runner.GATE_FAILED_NO_RETRY_PROMPT);
+    expect(oneShot.prompt).toBe('It did not pass the final check. Use it anyway?');
+    const costs = await questionCosts(d, run, [retried, oneShot]);
+    expect(costs?.[retried.id]).toMatchObject({ asks: 'gate', answer: 'Yes' });
+    expect(costs?.[oneShot.id]).toEqual(costs?.[retried.id]);
+  });
+
   it('refuses unknown intakes, a missing composed recipe, and budgets over what the workspace has left', async () => {
     const d = await deps();
     await expect(recommendIntake(d, '0b7f2f5e-3c1a-4d2e-9f00-5a3c2b1d4e6f')).rejects.toBeInstanceOf(HttpError);
@@ -210,6 +227,24 @@ describe('route handler logic', () => {
     // The same size, other bytes: the start-up size check does not see it, and has() still finds the file.
     writeFileSync(path.join(current!.dataDir, 'artifacts', 'sha256', hex.slice(0, 2), hex.slice(2)), '# Bad?');
     expect(Object.keys(await artifactInfo(d.services, [good.id, bad.id]))).toEqual([good.id]);
+  });
+
+  // DATA-1 (check of 2026-10-28): the price beside an open question read the work unguarded, so the damaged file that
+  // artifactInfo leaves out failed every poll and the Run page while a question that commits money was open.
+  it('prices an open question beside a damaged artifact, leaving that artifact out, and the Run screen still loads (DATA-1)', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
+    const { runId } = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 });
+    const bad = await d.services.store.artifacts.putText('# Bad!', 'text/markdown');
+    const hex = bad.id.slice('sha256:'.length);
+    writeFileSync(path.join(current!.dataDir, 'artifacts', 'sha256', hex.slice(0, 2), hex.slice(2)), '# Bad?');
+    const cp = await d.services.store.openCheckpoint({ id: `${runId}/cp-damaged`, runId, stepId: 'framings-if-wanted', kind: 'confirm', prompt: 'Run this step?', artifactIds: [bad.id] });
+    const asked = vi.fn(d.questionEstimates);
+    const data = await getRunData(d.services, runId, 0, (run, cps) => questionCosts({ ...d, questionEstimates: asked }, run, cps));
+    expect(data.questions?.[cp.id]).toMatchObject({ asks: 'optional', answer: 'Yes' });
+    // Sized without the damaged work, as if it were missing.
+    expect(asked).toHaveBeenCalledWith(expect.anything(), 'demo', { problem: { text: 'A memo' }, work: [] });
+    expect(data.artifacts[bad.id]).toBeUndefined();
   });
 
   it('resolves a question only within its own run, and passes validation messages through', async () => {

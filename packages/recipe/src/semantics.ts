@@ -797,6 +797,39 @@ export function withoutFlowMemo<T>(fn: () => T): T {
   }
 }
 
+/** A walk went past the budget withWalkLimit set. */
+export class WalkLimitError extends Error {
+  constructor(limit: number) {
+    super(`the recipe's walks visited more than ${limit} nodes`);
+    this.name = 'WalkLimitError';
+  }
+}
+
+/** Inside withWalkLimit, its limit and the visits counted; undefined outside it, where nothing is counted. */
+let walkBudget: { limit: number; visits: number } | undefined;
+
+/**
+ * Run `fn` with the nodes that the flow walk (flowRecipe) and the work bound's walk (workBound) visit counted, every visit
+ * a memo answers included, and throw WalkLimitError at the first visit past `limit`. It exists for the tests that hold
+ * those walks to a cost linear in the recipe (flow-memo.test.ts, limits.test.ts): they count visits rather than time,
+ * and a walk that lost its memo fails them when the budget runs out rather than running for ever, which a timer cannot
+ * stop in a synchronous test.
+ */
+export function withWalkLimit<T>(limit: number, fn: () => T): T {
+  const was = walkBudget;
+  walkBudget = { limit, visits: 0 };
+  try {
+    return fn();
+  } finally {
+    walkBudget = was;
+  }
+}
+
+/** One node visited, against withWalkLimit's budget when one is set. */
+export function countWalkVisit(): void {
+  if (walkBudget && ++walkBudget.visits > walkBudget.limit) throw new WalkLimitError(walkBudget.limit);
+}
+
 /**
  * Walk a recipe along its control flow, carrying a state: the one flow walk every path rule reads (PR6, ST12, DR7, the
  * composed profile's writer counts; ADR-0092) and the analyses here of what reaches a step. Routes and optionals fork
@@ -828,6 +861,7 @@ export function flowRecipe<S>(recipe: Recipe, initial: S, ops: FlowOps<S>): S {
 }
 
 function flowNode<S>(walk: FlowWalk<S>, node: Node, state: S, path: string, stage: Stage['stage'], contained: boolean, loop: LoopExits<S> | undefined): S {
+  countWalkVisit();
   if (!walk.memo) return flowOnce(walk, node, state, path, stage, contained, loop);
   const key = `${path}|${contained ? 1 : 0}|${loop?.metric ?? ''}|${walk.ops.key!(state)}`;
   const known = walk.memo.get(key);

@@ -10,7 +10,7 @@
  * random recipes of every operator, the memoized walk gives exactly the verdict of the full one, finding for finding.
  */
 import { describe, expect, it } from 'vitest';
-import { loop, seq, step, type Gate, type Node, type Recipe, type Step } from '@byway/recipe';
+import { WalkLimitError, loop, seq, step, withWalkLimit, type Gate, type Node, type Recipe, type Step } from '@byway/recipe';
 import { flowRecipe, validate, withoutFlowMemo } from '../src/index.ts';
 import { randomRecipe, rng } from './random-recipes.ts';
 
@@ -67,9 +67,19 @@ describe('what the walk costs', () => {
     expect(walked(recipeOf(nest(22)), true)).toBeLessThanOrEqual(4 * steps);
   });
 
-  // By what it would cost, not by the clock: walked whole, 40 levels would be about 2^40 walks, which no machine ends, so a
-  // rule that gave the walk no key would hold this test until vitest's hang guard stopped it (backlog row B-120).
-  it('the validator over a nest of 40 loops returns, so every rule keys its walk', () => {
-    expect(validate(recipeOf(nest(40))).violations).toBeDefined();
+  // By what it costs, not by the clock (B-120): walked whole, 40 levels would be about 2^40 walks, which no machine ends,
+  // and vitest's hang guard is a timer, which cannot stop a synchronous test. So the nodes the validator's walks visit,
+  // all its rules' walks together, are counted against a budget (withWalkLimit), and a rule that gave its walk no key
+  // fails this test when the budget runs out, in well under a second, instead of hanging the worker (TESTS-1, check of
+  // 2026-10-28). The budget is the square of the nest's nodes: measured, the visits grow a little slower than that (651 at
+  // 10 levels, 1,996 at 20, 6,786 at 40, against 78,961 allowed there), and a walk that doubles per level passes it.
+  const nodes = (depth: number): number => depth * 7 + 1; // each level: a loop, its seq and five steps; then the core
+  const budget = (depth: number): number => nodes(depth) ** 2;
+  it('the validator over a nest of 40 loops visits at most the square of its nodes, so every rule keys its walk', () => {
+    expect(withWalkLimit(budget(40), () => validate(recipeOf(nest(40)))).violations).toBeDefined();
+  });
+
+  it('the budget stops a walk that lost its memo within it, so the test above fails rather than hangs', () => {
+    expect(() => withWalkLimit(budget(40), () => withoutFlowMemo(() => validate(recipeOf(nest(40)))))).toThrow(WalkLimitError);
   });
 });

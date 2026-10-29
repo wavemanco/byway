@@ -528,8 +528,9 @@ export function estimateRecipe(recipe: Recipe, ctx: PricingContext): CostEstimat
  * - `round`: a person's loop, "Is this ready?" or its cap's question; No runs one more round of its body;
  * - `cap`: a critic or check loop, "Use the best version so far?" at its cap (No allows more rounds) or "The outside
  *   critique is not improving the work. Keep going anyway?" (Yes goes on): the figure is one further round of its body;
- * - `gate`: a gate that failed, "It did not pass the final check, even after another try. Use it anyway?"; Yes goes on
- *   with the run: what follows the gate in its stage and the stages after it.
+ * - `gate`: a gate that failed, "It did not pass the final check, even after another try. Use it anyway?" when it has a
+ *   retry, or "It did not pass the final check. Use it anyway?" when it has none; Yes goes on with the run: what follows
+ *   the gate in its stage and the stages after it.
  */
 export interface QuestionEstimate {
   asks: 'optional' | 'round' | 'cap' | 'gate';

@@ -18,6 +18,7 @@ import {
   replicate,
   seq,
   step,
+  withWalkLimit,
   workBound,
   type Gate,
   type Node,
@@ -88,12 +89,17 @@ describe('workBound', () => {
     expect(workBound(fanOut(seedStep('s'))).batchBytes).toBe(workBound(fanOut(build('s'))).batchBytes);
   });
 
-  // By what it would cost, not by the clock: walked whole, each level doubles the walk, and 2^40 walks never end, so a
-  // walk that lost its memo would hold this test until vitest's hang guard stopped it (backlog row B-120).
+  // By what it costs, not by the clock (B-120): walked whole, each level doubles the walk, and 2^40 walks never end, and
+  // vitest's hang guard is a timer, which cannot stop a synchronous test. So the nodes the walk visits are counted against
+  // a budget linear in the nest's nodes (withWalkLimit): a walk that lost its memo fails this test when the budget runs
+  // out, instead of hanging the worker (TESTS-1, check of 2026-10-28).
   it('walks a nest of 40 loops in linear time (memoized by place and ports)', () => {
     let body: Node = seq(render('r'), critic('c'), fix('f'));
     for (let i = 0; i < 40; i++) body = loop(`l${i}`, body, scoreGate(1, 'policy-best-snapshot'));
-    expect(workBound(recipe(['D2', seq(build('b'), body)])).stepRuns).toBeGreaterThan(0);
+    // Each level: a loop around the level inside; the core is a seq of three steps; then the stage's seq and its build.
+    // Measured: 167 visits, about 4 a level (a body's two rounds, each from its own ports); 8 a node leaves room.
+    const nodes = 40 + 4 + 2;
+    expect(withWalkLimit(8 * nodes, () => workBound(recipe(['D2', seq(build('b'), body)]))).stepRuns).toBeGreaterThan(0);
   });
 });
 

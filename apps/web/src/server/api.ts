@@ -27,6 +27,7 @@ import { firstRecommendation, sharedCall } from './first-recommendation.ts';
 import type { HeldKeyIn } from './http.ts';
 import { modelProblem } from './model-errors.ts';
 import { RefError, storeRef } from './refs.ts';
+import { readIntact } from './run-data.ts';
 import type { AnswerWaitPatch, ControlInput, ProblemInput, RecommendInput, RefInput, RendererPatch, ResolutionInput, SettingsPatch, SpendAction, StartInput } from './schemas.ts';
 
 export class HttpError extends Error {
@@ -369,12 +370,16 @@ export async function recipeForRun(deps: Deps, run: RunRecord): Promise<RunRecip
   return {};
 }
 
-/** The text of each artifact that is text (a page's HTML included), as the gateway would size it in a prompt. */
+/**
+ * The text of each artifact that is text (a page's HTML included), as the gateway would size it in a prompt. A missing
+ * or damaged one is left out (readIntact), as the Run screen leaves it out, so the price never fails the screen.
+ */
 async function texts(services: Services, ids: readonly string[]): Promise<string[]> {
   const out: string[] = [];
   for (const id of new Set(ids)) {
-    if (!(await services.store.artifacts.has(id))) continue;
-    const { record, bytes } = await services.store.artifacts.get(id);
+    const got = await readIntact(services, id);
+    if (!got) continue;
+    const { record, bytes } = got;
     const type = record.mediaType.split(';')[0]?.trim() ?? '';
     if (type.startsWith('text/') || type === 'application/json') out.push(new TextDecoder().decode(bytes));
   }
