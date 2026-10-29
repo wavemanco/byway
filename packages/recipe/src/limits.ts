@@ -20,7 +20,7 @@
  * `@byway/recipe/limits`.
  */
 import type { Gate, Node, OneShotGate, Pick as PickNode, Recipe, Stage, Step } from './schema.ts';
-import { PICK_JUDGE_ROLES } from './semantics.ts';
+import { PICK_JUDGE_ROLES, countWalkVisit } from './semantics.ts';
 import { children as childNodes } from './walk.ts';
 
 /** Automatic re-runs after a failed one-shot gate (02 §2 Retry: "bounded", e.g. once). */
@@ -148,6 +148,7 @@ class Walker {
   }
 
   node(n: Node, at: Shape, path: string): Work {
+    countWalkVisit();
     const key = `${path}|${at.options}|${at.optionViews}|${at.view}`;
     const known = this.memo.get(key);
     if (known) return known;
