@@ -23,7 +23,7 @@ import { isEnded } from '../view/run.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
 import { artifactHeaders, isArtifactId, mediaServing, pageScriptsGranted } from './artifacts.ts';
 import { exportsInline, selfContained } from './export.ts';
-import { firstRecommendation } from './first-recommendation.ts';
+import { firstRecommendation, sharedCall } from './first-recommendation.ts';
 import type { HeldKeyIn } from './http.ts';
 import { modelProblem } from './model-errors.ts';
 import { RefError, storeRef } from './refs.ts';
@@ -91,9 +91,15 @@ export async function createIntake(deps: Deps, input: z.infer<typeof ProblemInpu
  * Recommends for the intake's problem. Answers you flipped are passed in and routing re-runs; the answers and the
  * recommendation are kept on the intake, so coming back to the screen shows them as you left them. The route choices
  * the intake model read from the problem are passed back too, so a re-route with every answer given (no new intake
- * call) keeps them.
+ * call) keeps them. A re-route asked again with the same answers and model profile while it is under way (a reload, a
+ * second tab) joins that call instead of buying a second one (sharedCall, B-070).
  */
 export async function recommendIntake(deps: Deps, intakeId: string, answers?: ChooserAnswer[]): Promise<Recommendation> {
+  if (answers === undefined) return recommendFrom(deps, intakeId);
+  return sharedCall(deps.services.store, `route:${intakeId}:${deps.profileId}:${JSON.stringify(answers)}`, () => recommendFrom(deps, intakeId, answers));
+}
+
+async function recommendFrom(deps: Deps, intakeId: string, answers?: ChooserAnswer[]): Promise<Recommendation> {
   const intake = await requireIntake(deps, intakeId);
   const given = answers ?? intake.answers;
   const routes = intake.recommendation?.routes;
@@ -133,11 +139,18 @@ export function composeView(result: ComposeResult): ComposeView {
   return { ...view, takesRefs: takesRefs(recipe) };
 }
 
+/**
+ * "Build my own". A press again while a compose of this intake under the same model profile is under way (a reload, a
+ * second tab) joins that call instead of buying a second one beside it (sharedCall, B-070); once it settles, the next
+ * press composes again.
+ */
 export async function composeIntake(deps: Deps, intakeId: string): Promise<ComposeView> {
-  const intake = await requireIntake(deps, intakeId);
-  const result = await asking(() => deps.services.advisor.compose(intake.problem, { workspaceId: deps.workspaceId, profileId: deps.profileId }));
-  await deps.services.store.updateIntake(intakeId, { composed: result });
-  return composeView(result);
+  return sharedCall(deps.services.store, `compose:${intakeId}:${deps.profileId}`, async () => {
+    const intake = await requireIntake(deps, intakeId);
+    const result = await asking(() => deps.services.advisor.compose(intake.problem, { workspaceId: deps.workspaceId, profileId: deps.profileId }));
+    await deps.services.store.updateIntake(intakeId, { composed: result });
+    return composeView(result);
+  });
 }
 
 /**
@@ -243,7 +256,10 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
     }
   }
   const spend = await workspaceRemaining(deps);
-  const problem = budgetProblem(input.budgetUsd, spend);
+  // A Start sent again under its id, with the same budget, is that run (ADR-0099 decision 7): its own first call has
+  // already lowered what is left, so it is not checked again. The runner still decides same run or conflict.
+  const before = input.runId !== undefined ? await services.store.getRun(input.runId) : undefined;
+  const problem = before !== undefined && before.budgetUsd === input.budgetUsd ? null : budgetProblem(input.budgetUsd, spend);
   if (problem) throw new HttpError(400, problem);
   const run = await refusedAsHttp(!input.recipeId, () => startOnce(services, {
     workspaceId: spend.workspaceId,

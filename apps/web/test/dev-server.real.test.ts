@@ -157,6 +157,11 @@ describe('pnpm dev’s web server, with the real next dev', { timeout: 3 * ANSWE
     expect((await upgrade(port, { Host: `127.0.0.1:${port}`, Origin: `http://127.0.0.1:${port}`, 'Sec-Fetch-Site': 'same-origin' })).status).toMatch(/ 101 /);
   });
 
+  it('has no image optimiser: /_next/image answers byway’s own page with a 404 (next.config.ts images.unoptimized)', async () => {
+    const res = await request(port, '/_next/image?url=%2Ficon.svg&w=64&q=75', { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'same-origin' });
+    expect(res.status, res.body).toBe(404);
+  });
+
   it('listens on the guarded port only: no internal next dev port, no other listener in its process tree', () => {
     const found = listening(child!.pid!);
     console.log(`dev-web.ts (pid ${child!.pid}) listens on: ${found.join(', ')}`);

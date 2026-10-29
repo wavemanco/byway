@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useRef, useState, type FormEvent, type Ref } from 'react';
+import { ATTACHMENT_NAME_MAX, ATTACHMENT_TEXT_MAX, MAX_ATTACHMENTS, PROBLEM_TEXT_MAX } from '../view/format.ts';
 import { recipeTitle } from '../view/vocabulary.ts';
 import { HELD_KEY_REFUSAL, heldKeyParts, startRefusalNow, type StartRefusal } from '../view/refusals.ts';
 import { ActionButton } from './ActionButton.tsx';
@@ -30,7 +31,7 @@ interface Attachment {
 }
 
 /** The most attachments Start's request takes (server/schemas.ts ProblemInput). */
-export const MAX_ATTACHMENTS = 5;
+export { MAX_ATTACHMENTS };
 
 /** What Start says in place of its attach button once five attachments are listed. */
 export const ATTACH_LIMIT_NOTE = 'byway takes up to five attachments for one problem.';
@@ -196,7 +197,7 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
         onChange={(e) => edit(e.target.value)}
         aria-describedby={hintId}
         aria-invalid={error !== null && !text.trim() ? true : undefined}
-        maxLength={20_000}
+        maxLength={PROBLEM_TEXT_MAX}
         autoFocus
       />
 
@@ -239,7 +240,7 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
                   className="input attachment-name"
                   value={a.name}
                   placeholder="Name, e.g. Current draft"
-                  maxLength={200}
+                  maxLength={ATTACHMENT_NAME_MAX}
                   onChange={(e) => updateAttachment(a.key, { name: e.target.value })}
                 />
                 <button
@@ -263,7 +264,7 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
                 rows={8}
                 value={a.text}
                 placeholder="Paste a draft, notes or a diff"
-                maxLength={200_000}
+                maxLength={ATTACHMENT_TEXT_MAX}
                 onChange={(e) => updateAttachment(a.key, { text: e.target.value })}
               />
             </li>

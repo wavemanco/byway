@@ -86,6 +86,12 @@ export function suggestBudget(estimate: { lowUsd: number; highUsd: number }): nu
 /** The largest budget the budget fields accept; a typo should not authorise a large spend. */
 export const MAX_BUDGET_USD = 1000;
 
+/** What Start takes for one problem: its text, and up to five attachments, each a name and a text (ProblemInput). */
+export const PROBLEM_TEXT_MAX = 20_000;
+export const MAX_ATTACHMENTS = 5;
+export const ATTACHMENT_NAME_MAX = 200;
+export const ATTACHMENT_TEXT_MAX = 200_000;
+
 /** Parses a typed budget ("2.50", "$3"); null when it is not a positive amount within the limit. */
 export function parseBudgetInput(text: string): number | null {
   const cleaned = text.trim().replace(/^\$/, '').trim();

@@ -106,9 +106,6 @@ export interface RunEventPayloads {
   'renderer-sandbox-off': { note: string };
 }
 
-/** A RunEvent whose data is typed by its event type. */
-export type TypedRunEvent<T extends RunEventType = RunEventType> = Omit<RunEvent, 'type' | 'data'> & { type: T; data: RunEventPayloads[T] };
-
 export interface RunEvent {
   runId: string;
   seq: number;

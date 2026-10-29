@@ -8,7 +8,7 @@ import type { ComposeResultView, ComposeView, RecommendResult } from '../server/
 import { formatCostRange, formatMinutes, formatUsd, formatWorkRange, parseBudgetInput, suggestBudget } from '../view/format.ts';
 import { composedRefusalGroups, composeNotice } from '../view/composed.ts';
 import { ROUTING_NOTE, answerNote, decidingQuestion, fitText, showAnswerNote } from '../view/labels.ts';
-import { awaitingFirst, composedAfterStart, composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState, type Selection } from '../view/recommendation.ts';
+import { COMPOSE_WAIT_NOTE, RECOMMEND_WAIT_NOTE, ROUTE_WAIT_NOTE, awaitingFirst, composedAfterStart, composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState, type Selection } from '../view/recommendation.ts';
 import type { PricesChecked } from '../view/prices.ts';
 import { recipeTitle } from '../view/vocabulary.ts';
 import { ActionButton } from './ActionButton.tsx';
@@ -196,6 +196,7 @@ export function RecommendationView(props: Props) {
           <div className="empty">
             <h1>Choosing a recipe</h1>
             <p>byway is reading what you wrote, to choose a recipe for it.</p>
+            <p className="muted small">{RECOMMEND_WAIT_NOTE}</p>
           </div>
         ) : shown === 'failed' ? (
           <div className="empty" role="alert">
@@ -269,6 +270,7 @@ export function RecommendationView(props: Props) {
               </section>
 
               <Chooser questions={questions} answers={rec.answers} busy={routing.busy} onFlip={flip} />
+              {routing.busy ? <p className="muted small">{ROUTE_WAIT_NOTE}</p> : null}
 
               <section className="aside-section" aria-labelledby="alt-title">
                   <h2 id="alt-title">Other recipes</h2>
@@ -324,6 +326,7 @@ export function RecommendationView(props: Props) {
                 </ActionButton>
               ) : null}
             </div>
+            {composing.busy ? <p className="muted small">{COMPOSE_WAIT_NOTE}</p> : null}
           </section>
         </div>
       </div>

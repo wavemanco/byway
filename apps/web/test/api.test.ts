@@ -30,7 +30,7 @@ import {
   workspaceRemaining,
 } from '../src/server/api.ts';
 import { AnswerWaitPatch, RecommendInput } from '../src/server/schemas.ts';
-import { getRunData } from '../src/server/run-data.ts';
+import { artifactInfo, getRunData } from '../src/server/run-data.ts';
 import { FIRST_QUESTION } from './fixtures/runner.ts';
 import { ENGINE, TINY_PNG_BASE64, testHost, type TestHost } from './fixtures/services.ts';
 
@@ -186,6 +186,30 @@ describe('route handler logic', () => {
     await expect(startRun(d, { intakeId: other, recipeId: 'c4', budgetUsd: 2, runId })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/another problem/) });
     // The same Start id asking for another recipe is another start, whatever its id says (the screen mints a new id then).
     await expect(startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 2, runId })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/another problem or recipe/) });
+  });
+
+  it("returns the same run for a Start sent again after the run's first call has lowered what is left; another budget is still checked (WEB-1)", async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
+    const runId = '6e7f8091-a2b3-4c5d-9e0f-6a7b8c9d0e1f';
+    const budgetUsd = (await workspaceRemaining(d)).remainingUsd;
+    expect(await startRun(d, { intakeId, recipeId: 'c4', budgetUsd, runId })).toEqual({ runId });
+    await d.services.store.spendBook.admit({ opId: 'first-call', owner: 'worker', leaseMs: 60_000, workspaceId: d.workspaceId, runId, purpose: 'build:prose', kind: 'completion', provider: 'google', model: 'gemini-3-pro', reserveUsd: 0.5, paid: true, caps: { workspaceUsd: 1000 } });
+    // The answer was lost; the same Start again is the same run, though what is left is now below its budget.
+    expect(await startRun(d, { intakeId, recipeId: 'c4', budgetUsd, runId })).toEqual({ runId });
+    expect((await d.services.store.listRuns(d.workspaceId)).filter((r) => r.id === runId)).toHaveLength(1);
+    // A resend under that id with another budget is checked as a new Start is.
+    await expect(startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 500, runId })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/workspace budget/) });
+  });
+
+  it('leaves a damaged artifact out of what the Run screen polls, as a missing one is, and shows the rest (WEB-4)', async () => {
+    const d = await deps();
+    const good = await d.services.store.artifacts.putText('# Good', 'text/markdown');
+    const bad = await d.services.store.artifacts.putText('# Bad!', 'text/markdown');
+    const hex = bad.id.slice('sha256:'.length);
+    // The same size, other bytes: the start-up size check does not see it, and has() still finds the file.
+    writeFileSync(path.join(current!.dataDir, 'artifacts', 'sha256', hex.slice(0, 2), hex.slice(2)), '# Bad?');
+    expect(Object.keys(await artifactInfo(d.services, [good.id, bad.id]))).toEqual([good.id]);
   });
 
   it('resolves a question only within its own run, and passes validation messages through', async () => {
@@ -742,5 +766,51 @@ describe('the first recommendation is asked for once per intake (F03, ADR-0091)'
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
     await Promise.all([currentRecommendation(d, one.intakeId), currentRecommendation(d, two.intakeId)]);
     expect(recommend).toHaveBeenCalledTimes(2);
+  });
+});
+
+// B-070: a compose or a re-route runs inside its web request, with no bound of byway's own but the model's wait, and
+// goes on when the request ends. A press again after a reload, or a second tab, joins the call under way instead of
+// buying a second one beside it.
+describe('"Build my own" and a re-route asked again while under way join the call (B-070)', PRODUCT_PATH, () => {
+  it('two composes of one intake at once share one advisor call; once it settles, the next is a new one', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
+    const compose = vi.spyOn(d.services.advisor, 'compose');
+    const [a, b] = await Promise.all([composeCommand(d, intakeId), composeCommand(d, intakeId)]);
+    expect(a.composed).toEqual(b.composed);
+    expect(compose).toHaveBeenCalledTimes(1);
+    // "Try building again" once nothing is under way composes again, as it always has.
+    await composeCommand(d, intakeId);
+    expect(compose).toHaveBeenCalledTimes(2);
+    // Another intake's compose is its own.
+    const other = await createIntake(d, { text: 'Tighten my quarterly memo' });
+    await Promise.all([composeCommand(d, intakeId), composeCommand(d, other.intakeId)]);
+    expect(compose).toHaveBeenCalledTimes(4);
+  });
+
+  it('two re-routes of one intake with the same answers share one call; other answers are their own', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
+    const { answers } = await currentRecommendation(d, intakeId);
+    const flipped = answers.map((a, i) => (i === 0 ? { ...a, answer: !a.answer, confidence: 1, setBy: 'user' as const } : a));
+    const recommend = vi.spyOn(d.services.advisor, 'recommend');
+    const [a, b] = await Promise.all([recommendCommand(d, intakeId, { answers: flipped }), recommendCommand(d, intakeId, { answers: flipped })]);
+    expect(a.recommendation).toEqual(b.recommendation);
+    expect(recommend).toHaveBeenCalledTimes(1);
+    await Promise.all([recommendCommand(d, intakeId, { answers: flipped }), recommendCommand(d, intakeId, { answers })]);
+    expect(recommend).toHaveBeenCalledTimes(3);
+  });
+
+  it('shares a failure with the presses that joined it, keeps nothing, and the next press tries again', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo' });
+    const compose = vi.spyOn(d.services.advisor, 'compose');
+    compose.mockRejectedValueOnce(new GatewayError('rate-limited', 'rate-limited from the provider'));
+    const both = await Promise.allSettled([composeCommand(d, intakeId), composeCommand(d, intakeId)]);
+    expect(both.map((r) => r.status)).toEqual(['rejected', 'rejected']);
+    expect(compose).toHaveBeenCalledTimes(1);
+    expect((await composeCommand(d, intakeId)).composed).toBeTruthy();
+    expect(compose).toHaveBeenCalledTimes(2);
   });
 });

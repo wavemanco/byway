@@ -45,7 +45,16 @@ export async function artifactInfo(services: Services, ids: Iterable<string>): P
   const out: Record<string, ArtifactInfo> = {};
   for (const id of new Set(ids)) {
     if (!(await services.store.artifacts.has(id))) continue;
-    const { record, bytes } = await services.store.artifacts.get(id);
+    let got;
+    try {
+      got = await services.store.artifacts.get(id);
+    } catch (e) {
+      // A damaged file is left out, as a missing one is, so one bad artifact does not fail the whole run's screen and
+      // every poll. Matched by name: the store may come from another server bundle.
+      if (e instanceof Error && e.name === 'ArtifactCorruptError') continue;
+      throw e;
+    }
+    const { record, bytes } = got;
     const mediaType = record.mediaType.split(';')[0]?.trim() ?? 'application/octet-stream';
     out[id] = TEXT_TYPES.has(mediaType) ? textInfo(mediaType, bytes) : { mediaType };
   }
