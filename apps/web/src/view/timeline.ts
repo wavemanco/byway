@@ -11,6 +11,7 @@ import type { CheckpointRecord, RunEvent, RunStatus } from '@byway/contracts';
 import { BLOCK_CODES, type BlockCode } from '@byway/protocol';
 import { ArtifactData, CheckpointEventData, LoopIterationData, ModelDeclinedData, RendererSandboxOffData, StepFailedData, StepFinishedData, StepStartedData, read } from './events.ts';
 import { isEnded } from './run.ts';
+import type { UnusedAnswerNote } from './rundata.ts';
 import { shownStep, type ShownStep, type StepIndex } from './steps.ts';
 import { BLOCK_NAMES, stageFromCode, type StageName, type Who } from './vocabulary.ts';
 
@@ -105,7 +106,11 @@ function whoFrom(actor: string | undefined): Who {
 
 const micro = (n: number) => Math.round(n * 1e6) / 1e6;
 
-export function buildTimeline(events: RunEvent[], checkpoints: CheckpointRecord[], runStatus: RunStatus, index?: StepIndex | null): TimelineStage[] {
+/**
+ * `unused`: the answers of yours the finished run left unused (F01 (a), view/unused.ts), each said with the notes of the
+ * step that asked it.
+ */
+export function buildTimeline(events: RunEvent[], checkpoints: CheckpointRecord[], runStatus: RunStatus, index?: StepIndex | null, unused?: readonly UnusedAnswerNote[]): TimelineStage[] {
   const rows: Row[] = [];
   const latest = new Map<string, Row>();
   const rounds = new Map<string, number>();
@@ -261,6 +266,11 @@ export function buildTimeline(events: RunEvent[], checkpoints: CheckpointRecord[
     if (rows.some((r) => r.step.checkpointIds.includes(cp.id))) continue;
     const row = latest.get(groupOf(cp.stepId).group);
     if (row) row.step.checkpointIds.push(cp.id);
+  }
+
+  for (const u of unused ?? []) {
+    const row = rows.find((r) => r.step.checkpointIds.includes(u.checkpointId));
+    if (row && !row.notes.includes(u.note)) row.notes.push(u.note);
   }
 
   const ended = isEnded(runStatus);

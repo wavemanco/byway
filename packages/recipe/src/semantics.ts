@@ -1322,7 +1322,7 @@ function decidesWork(recipe: Recipe): Set<string> {
  *   (R-DECLINED), which carries nothing: the writer after it makes no change. In a lens or a gate body it is read as a
  *   person's empty answer is there, so an audit drops that lens, and a gate hands it on.
  */
-function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<string> {
+export function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<string> {
   const askedAt = new Set(asked.map((p) => p.path));
   const medium = recipe.medium;
   const skippable = skippableJudges(recipe);

@@ -49,11 +49,12 @@ export async function skipStep(deps: RunnerDeps, input: SkipInput): Promise<void
 
 /**
  * A step that has nothing to do (the fix after "Nothing to remove."): it finishes at once with the work unchanged and
- * says why. Not "skipped", which means the product could not run it.
+ * says why. Not "skipped", which means the product could not run it, but "passed": no model was asked, so nothing the
+ * step would have taken in reached the work (the run's unused answers read it, F01 (a)).
  */
 export async function passStep(deps: RunnerDeps, input: SkipInput): Promise<void> {
   await stepStarted(deps, input.run, input.call, input.step, input.meta);
-  await stepFinished(deps, input.run, input.call, { costUsd: 0, note: input.note });
+  await stepFinished(deps, input.run, input.call, { costUsd: 0, passed: true, note: input.note });
 }
 
 /**

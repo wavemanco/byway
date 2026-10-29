@@ -120,8 +120,13 @@ for (const c of CASES) {
 
     // Demo mode spends nothing: the meter reads the gateway's $0 ledger entries through the run's cost events.
     await expect(page.locator('.meter-spent')).toHaveText('$0.00');
+    // Every answer you gave was used, so the run names none as unused (F01 (a)), here or in the Result's steps.
+    await expect(page.getByRole('link', { name: 'See the result' })).toBeVisible();
+    await expect(page.locator('[data-unused-answer]')).toHaveCount(0);
+    await expect(page.getByText('went unused')).toHaveCount(0);
 
     const result = await openResult(page);
+    await expect(page.getByText('went unused')).toHaveCount(0);
     await c.deliverable(result, page);
     // The export carries its images: nothing in it points back at byway (EXP-1).
     expect(await exportText(page)).not.toContain('/api/artifacts/');

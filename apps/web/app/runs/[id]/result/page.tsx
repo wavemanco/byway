@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ResultView } from '../../../../src/components/result/ResultView.tsx';
-import { recipeForRun } from '../../../../src/server/api.ts';
+import { recipeForRun, unusedAnswersOf } from '../../../../src/server/api.ts';
 import { getDeps } from '../../../../src/server/deps.ts';
 import { artifactInfo } from '../../../../src/server/run-data.ts';
 import { parseStoryboard, storyboardArtifacts } from '../../../../src/view/result.ts';
@@ -40,7 +40,9 @@ export default async function ResultPage({ params }: PageProps<'/runs/[id]/resul
 
   const view = await services.runner.view(run.id);
   const { presentation, label, steps } = await recipeForRun(deps, run);
-  const timeline = buildTimeline(view.events, view.checkpoints, run.status, steps);
+  // An answer of yours the run left unused is said with its step (F01 (a)).
+  const unused = await unusedAnswersOf(deps, run);
+  const timeline = buildTimeline(view.events, view.checkpoints, run.status, steps, unused);
   const made = howItWasMade(timeline);
   const { record, bytes } = await services.store.artifacts.get(run.outputArtifactId);
   const mediaType = record.mediaType.split(';')[0]?.trim() ?? 'text/plain';

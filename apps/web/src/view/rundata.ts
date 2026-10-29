@@ -40,6 +40,16 @@ export interface EndedSpend {
   settledUsd: number;
 }
 
+/**
+ * An answer of yours that the finished run left unused (F01 (a), view/unused.ts): the question it answered, as you were
+ * asked it, and what the Run and Result screens say of it.
+ */
+export interface UnusedAnswerNote {
+  checkpointId: string;
+  question: string;
+  note: string;
+}
+
 export interface RunData {
   view: RunView;
   artifacts: Record<string, ArtifactInfo>;
@@ -50,6 +60,8 @@ export interface RunData {
    * priced while it is open on the work beside it (B-108). Absent when the run's recipe is not known.
    */
   questions?: QuestionCosts;
+  /** Only for a run that finished, and only when its recipe is known: the answers of yours it left unused (F01 (a)). */
+  unused?: UnusedAnswerNote[];
 }
 
 /** Folds a poll (events after the last seen seq) into what the screen already has. */
@@ -62,6 +74,8 @@ export function mergeRunData(prev: RunData, next: RunData): RunData {
     // What the latest poll said: an older answer about calls under way, or an older question's figure, is not carried forward.
     ...(next.ended ? { ended: next.ended } : {}),
     ...(next.questions ? { questions: next.questions } : {}),
+    // Worked out once the run has finished, from all its events; a later poll of the same run says the same.
+    ...((next.unused ?? prev.unused) ? { unused: next.unused ?? prev.unused! } : {}),
   };
 }
 

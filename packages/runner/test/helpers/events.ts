@@ -1,10 +1,12 @@
 /**
  * Checks that a run's events are exactly the contract's RunEventPayloads and that every event naming a step can be
- * labelled with the recipe's presentation (presentedStepFor), as the app's timeline does.
+ * labelled with the recipe's presentation (presentedStepFor), as the app's timeline does; and, for a protocol
+ * configuration's finished run, that no answer of the person's went unused (@byway/recipe unusedAnswers, F01 (a)).
  */
 import { expect } from 'vitest';
 import { z } from 'zod';
-import { presentationOf, presentedStepFor } from '@byway/catalog';
+import { PROTOCOL_CONFIGS, presentationOf, presentedStepFor } from '@byway/catalog';
+import { unusedAnswers } from '@byway/recipe';
 import type { RunEvent, RunEventType, RunView } from '@byway/contracts';
 
 const id = z.string().regex(/^sha256:[0-9a-f]{64}$/);
@@ -15,7 +17,7 @@ const PAYLOADS: Record<RunEventType, z.ZodType> = {
   'step-started': z
     .object({ label: z.string().min(1), stage: z.enum(['D1', 'D2', 'D3']), role: z.string().min(1), actor: z.enum(['model', 'human', 'policy', 'tool']), block: z.string().optional(), glue: z.string().optional() })
     .strict(),
-  'step-finished': z.object({ costUsd: z.number().min(0), skipped: z.boolean().optional(), note: z.string().optional(), outputArtifactIds: z.array(id).optional() }).strict(),
+  'step-finished': z.object({ costUsd: z.number().min(0), skipped: z.boolean().optional(), passed: z.literal(true).optional(), note: z.string().optional(), outputArtifactIds: z.array(id).optional() }).strict(),
   'step-failed': z.object({ error: z.string().min(1), retryable: z.boolean() }).strict(),
   'checkpoint-opened': z.object({ checkpointId: z.string().min(1), kind: z.enum(['pick', 'select', 'react', 'confirm', 'compare', 'directive', 'write', 'choose']) }).strict(),
   'checkpoint-resolved': z.object({ checkpointId: z.string().min(1) }).strict(),
@@ -66,6 +68,9 @@ export function checkEvents(view: RunView, recipeId?: string): void {
   const started = view.events.filter((e) => e.type === 'step-started').length;
   const ended = view.events.filter((e) => e.type === 'step-finished' || e.type === 'step-failed').length;
   if (view.run.status === 'done') expect(ended).toBe(started);
+  // A protocol configuration's run leaves no answer of yours unused (F01 (a)): the Run screen names none.
+  const config = PROTOCOL_CONFIGS.find((r) => r.id === recipeId);
+  if (config && view.run.status === 'done') expect(unusedAnswers(config, view.events, view.checkpoints), `${recipeId}: an answer of yours went unused`).toEqual([]);
 }
 
 export const ofType = (view: RunView, type: RunEventType, stepId?: string): RunEvent[] => view.events.filter((e) => e.type === type && (stepId === undefined || e.stepId === stepId));
