@@ -568,6 +568,23 @@ describe("the weekly run's price report (PRICE-CADENCE)", () => {
   });
 });
 
+describe("the static security scan (X-VAL-4 (a))", () => {
+  it('runs Semgrep pinned, on the weekly run or one started by hand, on one job, after the checkout and before the tests, and cannot fail the job', () => {
+    const at = steps.findIndex((s) => /semgrep/.test(s.run ?? ''));
+    expect(steps.filter((s) => /semgrep/.test(s.run ?? ''))).toHaveLength(1);
+    const step = steps[at]!;
+    expect(step.if).toBe("${{ github.event_name != 'push' && matrix.name == 'linux' }}");
+    expect(step['continue-on-error']).toBe(true);
+    expect(step).not.toHaveProperty('env');
+    expect(step).not.toHaveProperty('uses');
+    // An exact version, metrics off, and no --error, so findings do not fail the step either.
+    expect(step.run).toMatch(/^pipx run semgrep==\d+\.\d+\.\d+ scan /);
+    expect(step.run).toContain('--metrics off');
+    expect(step.run).not.toMatch(/--error\b/);
+    expect(at).toBeLessThan(steps.findIndex((s) => s.run === 'pnpm verify'));
+  });
+});
+
 describe("the weekly run's advisories report (X-VAL-4 (a))", () => {
   it('runs on the weekly run only, on one job, once pnpm is set up and before the tests, and cannot fail the job', () => {
     const at = steps.findIndex((s) => s.run === 'node scripts/advisories.ts');

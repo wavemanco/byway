@@ -93,6 +93,16 @@ jobs:
         timeout-minutes: 5
         run: node scripts/advisories.ts
 
+      # The weekly run and a run started by hand, on one job: a static security scan of byway's own code with Semgrep's
+      # open-source engine and its registry's default rules (X-VAL-4 (a)), pinned to a release at least two weeks old. No
+      # account, no key, nothing uploaded (--metrics off). It writes what it finds to the log and the run's summary, and
+      # fails nothing: Semgrep exits 0 on findings without --error, and the step has continue-on-error.
+      - name: Does a static scan find security problems in byway's code? (the weekly run or one started by hand, Linux only; it reports and fails nothing)
+        if: ${{ github.event_name != 'push' && matrix.name == 'linux' }}
+        continue-on-error: true
+        timeout-minutes: 15
+        run: pipx run semgrep==1.180.0 scan --config p/default --metrics off --disable-version-check --exclude docs . | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 

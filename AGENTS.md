@@ -73,7 +73,9 @@ minor release whose two weeks are running out.
 Read the advisories report of the same run too: the step "Do byway's dependencies or its Node have known advisories?"
 (backlog row X-VAL-4 (a); `node scripts/advisories.ts` runs it by hand, with no key). Tell the owner of each advisory it
 names that applies, of each Node security release after `.node-version`, and of anything it could not read. A version
-bump that fixes one goes to the owner as any dependency change does; the report only says what it found.
+bump that fixes one goes to the owner as any dependency change does; the report only says what it found. Read the
+static scan's step beside it too ("Does a static scan find security problems in byway's code?"), and tell the owner of
+each finding in byway's own code that holds.
 
 ## Before a first live run of a new kind
 
