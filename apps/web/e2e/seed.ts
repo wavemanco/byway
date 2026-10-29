@@ -128,12 +128,12 @@ export async function cancelSeeded(s: Seeding, runIds: readonly string[]): Promi
 
 /**
  * Runs the engine's lost-run pass once, as the engine repeats it while it runs (reconcileWhilePolling: the default
- * workspace, byway's own queue, queued runs left alone), and fails if it ended any of these seeded runs: they would not
+ * workspace, byway's own queue, queued runs with no workflow left alone), and fails if it ended any of these seeded runs: they would not
  * have outlasted a pass falling while a spec used them.
  */
 export async function outlastLostRunPass(s: Seeding, runIds: readonly string[]): Promise<void> {
   const workspace = await s.store.ensureDefaultWorkspace();
-  const { lost } = await reconcileLostRuns(s.engine, s.store, [workspace.id], { skipQueued: true });
+  const { lost } = await reconcileLostRuns(s.engine, s.store, [workspace.id], { whilePolling: true });
   const ended = runIds.filter((id) => lost.includes(id));
   if (ended.length > 0) throw new Error(`The engine's lost-run pass ended ${ended.length} of the ${runIds.length} seeded runs (${ended.join(', ')}): their parked workflows are not running.`);
 }

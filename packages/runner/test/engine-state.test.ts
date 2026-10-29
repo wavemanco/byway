@@ -214,5 +214,7 @@ describe('what byway prints about the runs the engine ended at start', () => {
       'ended 2 runs the engine no longer has, which cannot continue',
       "stopped 1 run that byway's records do not have (the data directory was probably restored from an older backup)",
     ]);
+    expect(engineStartLines({ retired: [], lost: [], orphaned: [], stuck: [] })).toEqual([]);
+    expect(engineStartLines({ retired: [], lost: [], orphaned: [], stuck: ['e', 'f'] })).toEqual(['ended 2 runs whose next step the engine failed to take each time it tried, which cannot continue']);
   });
 });

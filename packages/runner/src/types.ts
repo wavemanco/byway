@@ -183,8 +183,8 @@ export const toStepSpec = (s: Step): StepSpec => ({
   ...(s.variant ? { variant: s.variant } : {}),
 });
 
-/** The statuses of a run that has ended: nothing more is written to it, paid for or asked of the person. */
-export const ENDED_STATUSES: ReadonlySet<RunStatus> = new Set(['done', 'failed', 'cancelled']);
+/** Kept in the contracts beside RunStatus, where the store's endRun reads it too. */
+export { ENDED_STATUSES } from '@byway/contracts';
 
 
 // ---- Activity inputs and results -------------------------------------------------------------------------------
