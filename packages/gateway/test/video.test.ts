@@ -268,14 +268,23 @@ describe('gateway: video through fal.ai', () => {
     expect((await artifacts.get(res.lastFrameArtifactId)).record.mediaType).toBe('image/jpeg');
   });
 
-  it('keeps and ledgers a paid clip that is not MP4, then fails clearly (the contract knows MP4 clips only)', async () => {
+  it('hands on a WebM clip under its own type, billed, stored and ledgered (B-012)', async () => {
     const fal = fakeFal({}, { clipUrl: 'https://v3.fal.media/files/clip.webm' });
-    const err = (await gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch }).video(req()).catch((e: unknown) => e)) as GatewayError;
-    expect(err).toBeInstanceOf(GatewayError);
-    expect(err.code).toBe('provider-error');
-    expect(err.message).toMatch(/video\/webm/);
+    const res = await gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch }).video(req());
+    expect(res).toMatchObject({ provider: 'fal', mediaType: 'video/webm', costUsd: 0.352 });
+    expect((await artifacts.get(res.artifactId)).record.mediaType).toBe('video/webm');
     expect(ledgerLines()).toHaveLength(1);
-    expect([...artifacts.items.values()].filter((i) => i.record.mediaType === 'video/webm')).toHaveLength(1);
+  });
+
+  it('keeps and ledgers a paid clip of a type the contract does not name, then fails clearly', async () => {
+    const fal = fakeFal();
+    const real = falAdapter({ client: fal.client, fetch: fakeFetch().fetch });
+    const adapter: ProviderAdapter = { ...real, video: async (r) => { const out = await real.video!(r); return { ...out, clip: { ...out.clip!, mediaType: 'video/quicktime' } }; } };
+    const err = (await gateway({ adapters: { fal: adapter } }).video(req()).catch((e: unknown) => e)) as GatewayError;
+    expect(err).toBeInstanceOf(GatewayError);
+    expect(err).toMatchObject({ code: 'provider-error', billed: true });
+    expect(err.message).toMatch(/it is video\/quicktime, not MP4 or WebM \(the clip is kept as sha256:/);
+    expect(ledgerLines()).toHaveLength(1);
   });
 
   it('records the storyboard shot in the stored request, and refuses a shot that is not a positive integer', async () => {

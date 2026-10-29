@@ -158,16 +158,17 @@ export const PRICES: readonly PriceRow[] = [
     longContext: { aboveInputTokens: 272_000, inputPerMTok: 4, outputPerMTok: 15, cacheReadPerMTok: 0.2, cacheWritePerMTok: 5 },
     source: OPENAI,
   },
-  // gpt-6-luna: $0.10 / $0.50, 30-minute cache writes $0.125; long context $0.20 / $0.75, 30-minute cache writes $0.25.
-  // Source: OPENAI. Its cached input ($0.01, long context $0.02) is not recorded, so a cached token would be charged at
-  // the input rate of its tier, which leans high; no profile uses this model.
+  // gpt-6-luna: $0.10 / $0.50, cached input $0.01, 30-minute cache writes $0.125; long context $0.20 / $0.75, cached
+  // input $0.02, 30-minute cache writes $0.25. Source: OPENAI. No profile uses this model. Its cached input was left out
+  // until 2026-10-28 (ADR-0109, "Rates byway does not record"; backlog row B-030), from the page as read on 2026-10-22.
   {
     provider: 'openai',
     model: 'gpt-6-luna',
     inputPerMTok: 0.1,
     outputPerMTok: 0.5,
+    cacheReadPerMTok: 0.01,
     cacheWritePerMTok: 0.125,
-    longContext: { aboveInputTokens: 272_000, inputPerMTok: 0.2, outputPerMTok: 0.75, cacheWritePerMTok: 0.25 },
+    longContext: { aboveInputTokens: 272_000, inputPerMTok: 0.2, outputPerMTok: 0.75, cacheReadPerMTok: 0.02, cacheWritePerMTok: 0.25 },
     source: OPENAI,
   },
   // gpt-image-2.5-flare and gpt-image-2.5-sunburst: text input $5, image output $30 per 1M tokens. Source: OPENAI. The
@@ -191,25 +192,27 @@ export const PRICES: readonly PriceRow[] = [
   // rates on all its tokens (tokenCost; LC-TIERS, block 2), which a maximal brief can reach (see the OpenAI rows). The
   // page lists one rate at every length for gemini-3.8-flash and gemini-nano-banana-2.1. Read 2026-10-22, the page
   // "Last updated 2026-10-22 UTC".
-  // Context caching is not recorded. The page lists a cache rate for both text models below (gemini-3.1-pro-preview
-  // $0.20; gemini-3.8-flash $0.075 through 2026-12-31, then $0.15), and Google's caching guide
-  // (ai.google.dev/gemini-api/docs/caching, read 2026-10-21) says implicit caching "is enabled by default for all Gemini
-  // 2.5 and newer models". google.ts reports a hit (cachedContentTokenCount) as cache reads, which these rows charge at the
-  // input rate, so the cost leans high. byway makes no explicit caches, so the storage price does not apply. Above
-  // 200k the page's cache rate is $0.40, likewise not recorded: a hit there is charged at the long input rate.
-  // gemini-3.1-pro-preview: $2 / $12, output including thinking; prompts > 200k tokens $4 / $18. Source: GOOGLE.
+  // Context caching: Google's caching guide (ai.google.dev/gemini-api/docs/caching, read 2026-10-21) says implicit
+  // caching "is enabled by default for all Gemini 2.5 and newer models", and google.ts reports a hit
+  // (cachedContentTokenCount, which promptTokenCount includes) as cache reads, charged at the page's "Context caching
+  // price". byway makes no explicit caches, so the storage price does not apply. These cache rates were left out until
+  // 2026-10-28, which charged a hit at the input rate, $4 above 200k (ADR-0109, "Rates byway does not record"; backlog
+  // row B-030); they are the page's as read on 2026-10-22.
+  // gemini-3.1-pro-preview: $2 / $12, output including thinking, context caching $0.20; prompts > 200k tokens $4 / $18,
+  // context caching $0.40. Source: GOOGLE.
   {
     provider: 'google',
     model: 'gemini-3.1-pro-preview',
     inputPerMTok: 2,
     outputPerMTok: 12,
-    longContext: { aboveInputTokens: 200_000, inputPerMTok: 4, outputPerMTok: 18 },
+    cacheReadPerMTok: 0.2,
+    longContext: { aboveInputTokens: 200_000, inputPerMTok: 4, outputPerMTok: 18, cacheReadPerMTok: 0.4 },
     source: GOOGLE,
   },
-  // gemini-3.8-flash: $0.75 / $3.75 through 2026-12-31, then $1.50 / $7.50 from 2027-01-01, output including thinking.
-  // Source: GOOGLE.
-  { provider: 'google', model: 'gemini-3.8-flash', inputPerMTok: 0.75, outputPerMTok: 3.75, source: GOOGLE },
-  { provider: 'google', model: 'gemini-3.8-flash', from: '2027-01-01', inputPerMTok: 1.5, outputPerMTok: 7.5, source: GOOGLE },
+  // gemini-3.8-flash: $0.75 / $3.75, context caching $0.075, through 2026-12-31, then $1.50 / $7.50, context caching
+  // $0.15, from 2027-01-01, output including thinking. Source: GOOGLE.
+  { provider: 'google', model: 'gemini-3.8-flash', inputPerMTok: 0.75, outputPerMTok: 3.75, cacheReadPerMTok: 0.075, source: GOOGLE },
+  { provider: 'google', model: 'gemini-3.8-flash', from: '2027-01-01', inputPerMTok: 1.5, outputPerMTok: 7.5, cacheReadPerMTok: 0.15, source: GOOGLE },
   // gemini-nano-banana-2.1: input $1.50 per 1M tokens. Output is priced two ways: "text and thinking" at $7.50 per 1M
   // tokens, and images at $30 per 1M tokens, which Google gives as $0.0336 for a 1K image (1,120 tokens), the size the
   // gateway asks for. So the image is charged per image, and the answer's text and thinking tokens on top

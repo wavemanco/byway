@@ -255,8 +255,9 @@ export async function cancelJob(fetchImpl: typeof fetch, key: string, endpointId
  */
 export function createFalClient(key: string, fetchImpl: typeof fetch = fetch): FalClientLike {
   const client = createFalSdkClient({ credentials: key, retry: { maxRetries: 0 }, fetch: fetchImpl });
+  const storage = createFalSdkClient({ credentials: key, retry: { maxRetries: 0 }, fetch: uploadFetch(fetchImpl) });
   return {
-    storage: { upload: (file) => client.storage.upload(file) },
+    storage: { upload: (file) => storage.storage.upload(file) },
     queue: {
       submit: (endpointId, options) => submitJob(fetchImpl, key, endpointId, options.input, options.startTimeoutSeconds),
       subscribeToStatus: (endpointId, options) => client.queue.subscribeToStatus(endpointId, options),
@@ -292,6 +293,25 @@ export function admitMediaUrl(u: URL): boolean {
 
 /** Where a URL points, for messages: scheme and host only, never userinfo or path. */
 const originOf = (u: URL) => `${u.protocol}//${u.host}`;
+
+/** fal's REST API, where the SDK asks for an upload's slot (storage.js initiateUpload, getRestApiUrl). */
+const FAL_REST_ORIGIN = 'https://rest.fal.ai';
+
+/**
+ * The fetch the SDK's start-frame upload goes through (F17 (a)). The SDK asks fal's REST API for a slot, then PUTs the
+ * frame to the `upload_url` fal's answer names, with fetch's default redirects (@fal-ai/client 1.10.1, storage.js).
+ * That URL is fal's to name, as a media URL is, so it is held to admitMediaUrl (ADR-0088), and its redirects are not
+ * followed at all: a PUT followed hop by hop would send the frame again to each hop. A slot outside fal's media host is
+ * refused before anything is sent, and nothing is billed, since the upload comes before the clip's submission.
+ */
+function uploadFetch(fetchImpl: typeof fetch): typeof fetch {
+  return (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.origin === FAL_REST_ORIGIN) return fetchImpl(input, init);
+    if (!admitMediaUrl(url)) return Promise.reject(mediaError(`fal named an upload address for the start frame outside its media host (${originOf(url)})`));
+    return fetchImpl(input, { ...init, redirect: 'error' });
+  };
+}
 
 const mediaError = (message: string, retryable = false) => new GatewayError('provider-error', message, retryable);
 
@@ -481,17 +501,30 @@ const droppedAtStart = (e: unknown): boolean => {
 };
 
 /**
- * fal's own failure answer to a read, in words (its HTTP status), or undefined when the failure is not fal's word: an
- * HTTP status that came with fal's JSON error body, which @fal-ai/client 1.10.1 hands on as an ApiError (a
- * ValidationError for 422) carrying `status` and `body`. A page from a proxy in between has no body (the SDK sets one
- * only from a JSON answer), and a lost connection or a timeout has no status, so neither is fal's word on the job. The
- * body is how errors.ts tells fal's own 5xx from a proxy's (hasProviderBody); here it is asked of a 4xx too, since a
- * status without fal's body says nothing of the job either (Claude's reading). Read by those fields, as droppedAtStart
- * reads them, and before the gateway maps the error, which keeps neither.
+ * The statuses with which fal answers a job's result to say that the job itself failed: 400 (`bad_request`), 422 (its
+ * model errors, `content_policy_violation`, `no_media_generated` and the input checks) and 500 (`internal_server_error`,
+ * `downstream_service_error`), from fal's errors page (fal.ai/docs/model-apis/errors, read 2026-10-28). The others are
+ * about the read, not the job: 401 and 403 (the key), 408, 429 (fal's limits, which @fal-ai/client 1.10.1 retries), 499,
+ * 502 and 503 (fal's runners and gateway, retried too), and a 504 without the start-deadline header, whose types on that
+ * page are a timeout of the request as often as of the generation (R2-MONEY-1, Block 2's second re-check; Claude's
+ * choice, which the row left to Claude).
+ */
+const JOB_FAILED_STATUSES = new Set([400, 422, 500]);
+
+/**
+ * fal's own word that a job failed, in words (its HTTP status), or undefined when the failure is not that word: one of
+ * JOB_FAILED_STATUSES with fal's JSON error body (an object with its `detail`), which @fal-ai/client 1.10.1 hands on as
+ * an ApiError (a ValidationError for 422) carrying `status` and `body`. A page from a proxy in between has no such body,
+ * and a lost connection or a timeout has no status, so neither is fal's word on the job. The body is how errors.ts tells
+ * fal's own 5xx from a proxy's (hasProviderBody); here it is asked of a 4xx too, since a status without fal's body says
+ * nothing of the job either (Claude's reading). Read by those fields, as droppedAtStart reads them, and before the
+ * gateway maps the error, which keeps neither.
  */
 const falFailure = (e: unknown): string | undefined => {
   const err = e as { status?: unknown; body?: unknown } | null;
-  return typeof err?.status === 'number' && typeof err.body === 'object' && err.body !== null ? `HTTP ${err.status}` : undefined;
+  const body = err?.body;
+  const fals = typeof body === 'object' && body !== null && 'detail' in body;
+  return typeof err?.status === 'number' && JOB_FAILED_STATUSES.has(err.status) && fals ? `HTTP ${err.status}` : undefined;
 };
 
 /**
@@ -629,12 +662,13 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
    * deadline is done too: only its result says it never ran (droppedAtStart). So is a job that failed: fal reports it
    * done, and only its result says it failed. So before a done job is settled as made, its result is read once (a free
    * read; no new job, which is all a stop forbids), for at most RESULT_LOOK_MS, and fal's word on the job is taken over
-   * the stop's. Its word that the job never ran comes first, and nothing is counted for it (notStartedError). Any other
-   * failure fal answers the read with itself (falFailure: a status with fal's own body, such as a 500 or a 422) means
-   * the clip was not made, but fal may have billed the work: the call is counted as "may have been billed", at its
-   * estimate, listed with the job's id, and nothing is ledgered, as the same answer is counted without a stop
-   * (acceptedButUnread). A result that comes back, a failure that is not fal's word (a lost connection, a proxy's page)
-   * or no answer in time leaves it settled as made, as before. (TESTS-1, Block 2's check: a stop during the dropped
+   * the stop's. Its word that the job never ran comes first, and nothing is counted for it (notStartedError). fal's word
+   * that the job failed (falFailure: a 400, a 422 or a 500 with fal's own body) says the clip may not have been made,
+   * and fal may have billed the work: the call is counted as "may have been billed", at its estimate, listed with the
+   * job's id, and nothing is ledgered, as the same answer is counted without a stop (acceptedButUnread). A result that
+   * comes back, an answer about the read rather than the job (fal's limits, its gateway, the key: a 429, a 503, a 401),
+   * a failure that is not fal's word (a lost connection, a proxy's page) or no answer in time leaves it settled as made,
+   * as before (R2-MONEY-1, Block 2's second re-check). (TESTS-1, Block 2's check: a stop during the dropped
    * job's result read, or during its poll with fal answering the cancel "already completed", ledgered a clip fal had not
    * made or billed. R-MONEY-1, its re-check: the same two races ledgered a clip whose result fal answered with its own
    * failure, which the look had read and dropped.)

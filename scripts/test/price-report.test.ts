@@ -71,7 +71,7 @@ function openaiScript(rows = PRICES.filter((r) => r.provider === 'openai' && r.l
       .map((r) => {
         const t = r.longContext!;
         const at = (n: number) => lit(times(n, k * (scale[r.model] ?? 1)));
-        // A cached-input rate the row does not record is still in the script (gpt-6-luna's).
+        // A cached-input rate a row does not record would still be in the script.
         return `"${r.model}":{input:${at(t.inputPerMTok)},output:${at(t.outputPerMTok)},cachedInput:${at(t.cacheReadPerMTok ?? t.inputPerMTok / 10)},cacheWrite:${at(t.cacheWritePerMTok!)}}`;
       })
       .join(',');
@@ -92,7 +92,9 @@ function googlePage(rows: readonly PriceRow[] = PRICES.filter((r) => r.provider 
   const sections = [...byModel].map(([model, rs]) => {
     const long = rs[0]!.longContext;
     const image = rs[0]!.perImageUsd !== undefined ? ` Equivalent to ${$(rs[0]!.perImageUsd)} per 1K image.` : '';
-    return `<h3>${model}</h3><table><tr><td>Input price</td><td>Not available</td><td>${price(rs, (r) => r.inputPerMTok, long?.inputPerMTok)}</td></tr><tr><td>Output price</td><td>Not available</td><td>${price(rs, (r) => r.outputPerMTok, long?.outputPerMTok)}${image}</td></tr></table>`;
+    // The page's "Context caching price", where the row records one.
+    const cache = rs[0]!.cacheReadPerMTok !== undefined ? `<tr><td>Context caching price</td><td>Not available</td><td>${price(rs, (r) => r.cacheReadPerMTok!, long?.cacheReadPerMTok)}</td></tr>` : '';
+    return `<h3>${model}</h3><table><tr><td>Input price</td><td>Not available</td><td>${price(rs, (r) => r.inputPerMTok, long?.inputPerMTok)}</td></tr><tr><td>Output price</td><td>Not available</td><td>${price(rs, (r) => r.outputPerMTok, long?.outputPerMTok)}${image}</td></tr>${cache}</table>`;
   });
   return `<html><body>${first}${sections.join('')}</body></html>`;
 }
@@ -165,7 +167,7 @@ describe("the weekly run's price report (PRICE-CADENCE)", () => {
     const googleLines = async (now: Date) => (await run(web({ [GOOGLE]: after }).fetch, now)).lines.filter((l) => l.startsWith('Google'));
     expect(await googleLines(day('2027-01-05'))).toEqual([`Google: every figure byway records was found on ${GOOGLE}.`]);
     // Before then the introductory row is in force, so a page without its figures is flagged.
-    expect(await googleLines(CHECKED)).toEqual([`Google gemini-3.8-flash: not found after its name on the page: input $${intro.inputPerMTok}, output $${intro.outputPerMTok}.`]);
+    expect(await googleLines(CHECKED)).toEqual([`Google gemini-3.8-flash: not found after its name on the page: input $${intro.inputPerMTok}, output $${intro.outputPerMTok}, cache read $${intro.cacheReadPerMTok}.`]);
   });
 
   it('finds every figure on pages shaped as the providers write them, and flags nothing', async () => {

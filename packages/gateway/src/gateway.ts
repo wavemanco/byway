@@ -132,8 +132,8 @@ const IMAGE_SIZES = new Set(['1024x1024', '1536x1024', '1024x1536']);
 const MOCK_MODELS = { big: 'mock-big', mid: 'mock-mid', image: 'mock-image', video: 'mock-video' } as const;
 /** Relay links are a few seconds each (03 C5); a request far beyond that is a mistake, not a clip. */
 const MAX_VIDEO_SECONDS = 60;
-/** The clip types VideoResult.mediaType can name: real providers' MP4, and the demo mock's labelled SVG placeholder. */
-const CLIP_TYPES = new Set<VideoResult['mediaType']>(['video/mp4', 'image/svg+xml']);
+/** The clip types VideoResult.mediaType can name: real providers' MP4 and WebM, and the demo mock's labelled SVG placeholder. */
+const CLIP_TYPES = new Set<VideoResult['mediaType']>(['video/mp4', 'video/webm', 'image/svg+xml']);
 const FIDELITIES = new Set<PromptRef['fidelity']>(['verbatim', 'paraphrase', 'project']);
 const SHA256_ID = /^sha256:[0-9a-f]{64}$/;
 
@@ -331,7 +331,7 @@ export class ModelGateway implements Gateway {
         },
         this.retry,
         BILLABLE_CALL,
-        { ...this.retainBeforeResend(op, req.workspaceId, estimate), ...(stop ? { stop } : {}) },
+        { ...this.retainBeforeResend(op, req.workspaceId, estimate), ...haltOn(stop, req.operation?.cancel) },
       );
       const { completion: out, replaced } = finiteCompletion(reported, { inputTokens, outputTokens: maxOutputTokens });
       const { costUsd, assumed } = this.completionCost(ref, out);
@@ -461,7 +461,7 @@ export class ModelGateway implements Gateway {
         },
         this.retry,
         BILLABLE_CALL,
-        { ...this.retainBeforeResend(op, req.workspaceId, estimate), ...(stop ? { stop } : {}) },
+        { ...this.retainBeforeResend(op, req.workspaceId, estimate), ...haltOn(stop, req.operation?.cancel) },
       );
       const usage = finiteUsage(reported.usage, { inputTokens: textTokens(req.prompt), outputTokens: price.estimatedOutputTokensPerImage ?? 0, units: 1 });
       const out = { ...reported, usage: usage.usage };
@@ -762,11 +762,11 @@ export class ModelGateway implements Gateway {
         // Not retryable: a retry would generate (and bill) another clip; the run decides what to do instead.
         throw new GatewayError(failure?.code ?? 'provider-error', redact(`${ref.provider} made the clip and billed it, but ${what}: ${failure?.message ?? 'no media arrived'}`), false, { billed: true });
       }
-      // The contract names two clip types (MP4, and the demo's SVG placeholder) and three frame types. Anything else is
-      // kept and ledgered above (it was billed) but not handed to a run that could not show or relay it.
+      // The contract names three clip types (MP4, WebM, and the demo's SVG placeholder) and three frame types. Anything
+      // else is kept and ledgered above (it was billed) but not handed to a run that could not show or relay it.
       const mediaType = clip.mediaType as VideoResult['mediaType'];
       if (!CLIP_TYPES.has(mediaType)) {
-        throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but it is ${clip.mediaType}, not MP4 (the clip is kept as ${clip.id})`, false, { billed: true });
+        throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but it is ${clip.mediaType}, not MP4 or WebM (the clip is kept as ${clip.id})`, false, { billed: true });
       }
       const lastFrameMediaType = lastFrame.mediaType as MediaType;
       if (!MEDIA_TYPES.has(lastFrameMediaType)) {
@@ -818,7 +818,7 @@ export class ModelGateway implements Gateway {
     await this.paid.absorb();
     const brokenAt = await this.ledger.verify();
     const written = new Map<string, number>();
-    for (const e of await this.ledger.entries()) if (typeof e.id === 'string') written.set(e.id, e.costUsd);
+    for (const e of await this.ledger.entries()) if (typeof e?.id === 'string') written.set(e.id, e.costUsd);
     const missing = (await this.book.ledgeredCalls()).filter((c) => {
       const cost = written.get(c.entryId);
       return cost === undefined || Math.abs(cost - c.costUsd) > 1e-9;
@@ -1261,6 +1261,15 @@ const UNREAD_MESSAGE = 'byway could not read this error’s message as text.';
  * (a number, an object) is redacted as its text rather than making the redactor throw (B1R2-CODE-6, the re-check of
  * block 1's second fix round), and one whose message cannot be read as text at all is copied with UNREAD_MESSAGE.
  */
+/**
+ * What ends a call's retries: its stop, or Temporal's cancel of its attempt (F03 (g)). Once the attempt is cancelled a
+ * later attempt takes the call over, so this one sends nothing again. The cut-off stays on the stop alone (ADR-0111).
+ */
+function haltOn(stop: AbortSignal | undefined, cancel: AbortSignal | undefined): { stop?: AbortSignal } {
+  const halt = stop && cancel ? AbortSignal.any([stop, cancel]) : (stop ?? cancel);
+  return halt ? { stop: halt } : {};
+}
+
 function redactMessage(e: unknown, redact: Redactor): unknown {
   if (!(e instanceof Error)) return e;
   const message = { value: UNREAD_MESSAGE, writable: true, configurable: true, enumerable: false };
