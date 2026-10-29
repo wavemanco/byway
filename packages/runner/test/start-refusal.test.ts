@@ -9,7 +9,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { c1 } from '@byway/catalog';
 import { RecipeRefusedError, type Store } from '@byway/contracts';
-import { withHash, type Recipe } from '@byway/recipe';
+import { loop, pick, replicate, seq, step, withHash, type Node, type Recipe } from '@byway/recipe';
 import { createRunnerClient } from '../src/client.ts';
 
 type N = Record<string, any>;
@@ -71,6 +71,37 @@ describe('Runner.start refuses what the engine cannot run, before a run exists',
 
   it('a catalog recipe starts', async () => {
     await expect(startWith(c1)).resolves.toMatchObject({ recipeId: 'c1', status: 'queued' });
+  });
+});
+
+describe('Runner.start checks the product rules for a recipe that is not a catalog or research recipe (F01 (d))', () => {
+  // Every product run used to reach Runner.start through the web start, which admits a composed recipe again; a second
+  // entry point (a CLI, the agent channel, a hosted API) would have run one without them (ADR-0092, ADR-0093).
+  const composed = (body: Node): Recipe =>
+    withHash({ schema: 'byway.recipe/1', id: 'composed-x', title: 'composed-x', kind: 'composed', family: 'test', channel: 'workspace', medium: 'prose', inputs: ['intent'], stages: [{ stage: 'D1', body }], sitsOut: [], exceptions: [], bank: false } as Recipe);
+  const draft = (id: string) => step({ id, role: 'build', actor: 'model', tier: 'mid', prompt: `product.test.${id}`, consumes: ['intent'], produces: ['artifact'], writes: true });
+  const yours = step({ id: 'yours', role: 'voice', block: 'VOICE', actor: 'human', consumes: ['artifact'], produces: ['voice', 'artifact'], writes: true });
+  const look = step({ id: 'look', role: 'vision', block: 'VISION', actor: 'human', consumes: ['artifact'], produces: ['taste'] });
+
+  it.each([
+    ['a pick after your words', composed(seq(replicate('drafts', 2, draft('d')), yours, pick('p', 'H', 1, 'human'))), /"yours", a person's write, set aside/],
+    [
+      'LS1: a loop you hold that hands its last round to a policy',
+      composed(seq(draft('d'), loop('l', look, { metric: 'human', hidden: false, holder: 'human', probe: 1, max: 3, onCap: 'policy-best-snapshot', onNoConverge: 'continue' }))),
+      /loop "l" is yours to end, but hands its last round to a policy/,
+    ],
+  ] as [string, Recipe, RegExp][])('%s is refused before a run exists', async (_name, recipe, message) => {
+    const { r, createRun, start, putText } = runner();
+    const refused = await r.start({ workspaceId: 'default', recipe, problem: { text: 'A landing page' }, profileId: 'demo', budgetUsd: 5 }).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(RecipeRefusedError);
+    expect((refused as RecipeRefusedError).problems).toEqual(expect.arrayContaining([expect.stringMatching(message)]));
+    expect(createRun).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+    expect(putText).not.toHaveBeenCalled();
+  });
+
+  it('a composed recipe that keeps them starts', async () => {
+    await expect(startWith(composed(seq(replicate('drafts', 2, draft('d')), pick('p', 'H', 1, 'human'), yours)))).resolves.toMatchObject({ status: 'queued' });
   });
 });
 

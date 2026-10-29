@@ -16,6 +16,7 @@
     "@byway/protocol": "workspace:*",
     "@byway/recipe": "workspace:*",
     "@byway/store": "workspace:*",
+    "@byway/validator": "workspace:*",
     "@temporalio/activity": "1.24.0",
     "@temporalio/client": "1.24.0",
     "@temporalio/common": "1.24.0",
@@ -28,7 +29,6 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@byway/validator": "workspace:*",
     "@tailwindcss/browser": "4.1.11"
   }
 }

@@ -57,6 +57,22 @@ interface Sink {
   add(ruleId: RuleId, path: string, message: string, clause?: string): void;
 }
 
+/**
+ * The options' own views (the interpreter's optionViews), typed as a port no step can name: in `must` when every option
+ * has a view of its own on every path, with who made it, and in `may` when one may. Each hands a candidate its own view
+ * and no other (B-063), so this, not the view of the work before the options, is the `view` in scope inside each.
+ */
+const OPTION_VIEWS = 'option_views' as PortType;
+
+/** Moves the views of `from` (OPTION_VIEWS, or `view`) into `to` of `st` as they are in `src`, or out of it. */
+function carryView(src: ScopeState, from: PortType, st: MutableState, to: PortType): void {
+  const made = src.must.get(from);
+  if (made) st.must.set(to, [...made]);
+  else st.must.delete(to);
+  if (src.may.has(from)) st.may.add(to);
+  else st.may.delete(to);
+}
+
 /** ST5 for a consumed option set that is not in scope: 'set-aside' when a person's write set it aside. */
 function missingOptions(st: ScopeState, path: string, what: string, findings: Sink): void {
   const by = st.aside.get(OPTION_SET);
@@ -178,6 +194,8 @@ class ScopeWalk {
           st.may.add(port);
           st.aside.delete(port);
         }
+        // A render of the option set (the interpreter's pool render) gives every option its own view.
+        if (node.role === 'render' && node.actor === 'tool' && node.consumes.includes(OPTION_SET) && !node.consumes.includes('artifact')) carryView(st, 'view', st, OPTION_VIEWS);
         setAside(node, st);
         return st;
       }
@@ -194,21 +212,34 @@ class ScopeWalk {
         st.must.set(OPTION_SET, [{ kind: 'operator', op: 'replicate' }]);
         st.may.add(OPTION_SET);
         st.aside.delete(OPTION_SET);
+        // An option's view is one its branch made: a view handed in is of the work before the options (B-063).
+        const before = new Set(input.must.get('view') ?? []);
+        const views = out.must.get('view');
+        if (views && !views.some((p) => before.has(p))) st.must.set(OPTION_VIEWS, [...views]);
+        else st.must.delete(OPTION_VIEWS);
+        if (out.may.has('view') && producedWithin(node.body).has('view')) st.may.add(OPTION_VIEWS);
+        else st.may.delete(OPTION_VIEWS);
         return st;
       }
       case 'each': {
         if (!st.must.has(OPTION_SET)) missingOptions(st, path, `each "${node.id}" needs`, findings);
-        // Each candidate runs on its own option: the runner hands it the option as the work, and no option list.
+        // Each candidate runs on its own option: the runner hands it the option as the work, with that option's own view
+        // (none when it has none), and no option list.
         const inner = clone(st);
         inner.must.set('artifact', [{ kind: 'operator', op: 'each' }]);
         inner.may.add('artifact');
-        inner.must.delete(OPTION_SET);
-        inner.may.delete(OPTION_SET);
+        carryView(st, OPTION_VIEWS, inner, 'view');
+        for (const port of [OPTION_SET, OPTION_VIEWS]) {
+          inner.must.delete(port);
+          inner.may.delete(port);
+        }
         inner.aside.delete(OPTION_SET);
         inner.held = false;
-        this.type(node.body, inner, `${path}.body`, pass, label);
-        // What it hands on (HANDED_ON.each): its candidates' work, one per option, so in scope where the options were.
+        const out = this.type(node.body, inner, `${path}.body`, pass, label);
+        // What it hands on (HANDED_ON.each): its candidates' work, one per option, so in scope where the options were,
+        // each with the view its candidate ended with.
         for (const port of HANDED_ON.each) if (st.must.has(port)) st.must.set(port, [{ kind: 'operator', op: 'each' }]);
+        carryView(out, 'view', st, OPTION_VIEWS);
         return st;
       }
       case 'pick': {
@@ -228,6 +259,10 @@ class ScopeWalk {
           st.held = true;
           st.must.set('artifact', [{ kind: 'operator', op: 'pick' }]);
           st.may.add('artifact');
+          // The work's view is the chosen option's own, where it has one; else the view from before stays.
+          const own = st.must.get(OPTION_VIEWS);
+          if (own) st.must.set('view', [...own]);
+          if (st.may.has(OPTION_VIEWS)) st.may.add('view');
         }
         return st;
       }

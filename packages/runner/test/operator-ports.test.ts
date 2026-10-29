@@ -14,7 +14,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { OPTION_SET, type PortType } from '@byway/protocol';
-import { audit, each, oneShotGate, pick, replicate, seq, step, type Node, type Recipe, type Step } from '@byway/recipe';
+import { audit, each, oneShotGate, optional, pick, replicate, seq, step, type Node, type Recipe, type Step } from '@byway/recipe';
 import { scopeTyping, validate } from '@byway/validator';
 import type { Ports, RunInput } from '../src/types.ts';
 import { UNREAD_BRIEF } from './helpers/briefs.ts';
@@ -219,5 +219,47 @@ describe('each, over a pool render, then a pick', () => {
     const [choose] = r.at('choose');
     expect(choose!.options).toEqual(r.after('per-draft-fix').map((p) => p.artifact));
     expect(choose!.options!.every((o) => o.startsWith('work:per-draft-fix#'))).toBe(true);
+  });
+});
+
+describe('each, over options made after a render of the work (B-063)', () => {
+  // The render is of the draft before the options; the options are new drafts no one rendered, so no view is theirs.
+  const recipe = recipeOf(
+    seq(draft('first'), render('look'), replicate('drafts', 2, draft('draft')), each('per-draft', seq(critic('per-draft-critic'), fix('per-draft-fix'))), pick('choose', 'H', 1, 'human')),
+  );
+
+  it('is refused: a critic inside it would judge every candidate by the earlier render, not its own (ST5)', () => {
+    expect(validate(recipe).violations.map((v) => `${v.ruleId} ${v.message}`)).toEqual(['ST5 step "per-draft-critic" consumes view, which is not in scope on every path']);
+  });
+
+  it('hands no candidate the earlier render as its view, inside it or at the pick', async () => {
+    const r = await run(recipe);
+    expect(r.at('per-draft').map((p) => p.optionViews)).toEqual([[undefined, undefined]]);
+    expect(r.at('per-draft-critic').map((p) => p.view)).toEqual([undefined, undefined]);
+  });
+});
+
+describe('each, over options whose drafts each rendered (B-064 (c))', () => {
+  const recipe = recipeOf(seq(replicate('drafts', 2, seq(draft('draft'), render('shot'))), each('per-draft', seq(critic('per-draft-critic'), fix('per-draft-fix'))), pick('choose', 'H', 1, 'human')));
+
+  it('is admitted, and every node is handed what the typing says is in scope there', async () => {
+    expect(validate(recipe).violations).toEqual([]);
+    expect(disagreements(recipe, await run(recipe))).toEqual([]);
+  });
+
+  it('hands each candidate its own render', async () => {
+    const r = await run(recipe);
+    const options = r.at('per-draft')[0]!.options!;
+    expect(r.at('per-draft-critic').map((p) => p.view)).toEqual(options.map((o) => ({ pool: false, items: [{ imageArtifactIds: [`view:shot:${o}`] }] })));
+  });
+});
+
+describe('each, over options some of whose drafts may render', () => {
+  const recipe = recipeOf(
+    seq(draft('first'), render('look'), replicate('drafts', 2, seq(draft('draft'), optional('maybe', 'if wanted', render('shot')))), each('per-draft', fix('per-draft-fix', ['artifact', 'view']))),
+  );
+
+  it('is refused where a candidate may have no view of its own (ST5)', () => {
+    expect(validate(recipe).violations.map((v) => `${v.ruleId} ${v.message}`)).toEqual(['ST5 step "per-draft-fix" consumes view, which is not in scope on every path']);
   });
 });
