@@ -212,6 +212,24 @@ describe('route handler logic', () => {
     expect(Object.keys(await artifactInfo(d.services, [good.id, bad.id]))).toEqual([good.id]);
   });
 
+  // DATA-1 (check of 2026-10-28): the price beside an open question read the work unguarded, so the damaged file that
+  // artifactInfo leaves out failed every poll and the Run page while a question that commits money was open.
+  it('prices an open question beside a damaged artifact, leaving that artifact out, and the Run screen still loads (DATA-1)', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
+    const { runId } = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 });
+    const bad = await d.services.store.artifacts.putText('# Bad!', 'text/markdown');
+    const hex = bad.id.slice('sha256:'.length);
+    writeFileSync(path.join(current!.dataDir, 'artifacts', 'sha256', hex.slice(0, 2), hex.slice(2)), '# Bad?');
+    const cp = await d.services.store.openCheckpoint({ id: `${runId}/cp-damaged`, runId, stepId: 'framings-if-wanted', kind: 'confirm', prompt: 'Run this step?', artifactIds: [bad.id] });
+    const asked = vi.fn(d.questionEstimates);
+    const data = await getRunData(d.services, runId, 0, (run, cps) => questionCosts({ ...d, questionEstimates: asked }, run, cps));
+    expect(data.questions?.[cp.id]).toMatchObject({ asks: 'optional', answer: 'Yes' });
+    // Sized without the damaged work, as if it were missing.
+    expect(asked).toHaveBeenCalledWith(expect.anything(), 'demo', { problem: { text: 'A memo' }, work: [] });
+    expect(data.artifacts[bad.id]).toBeUndefined();
+  });
+
   it('resolves a question only within its own run, and passes validation messages through', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page', recipeId: 'c1' });
