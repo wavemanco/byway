@@ -334,8 +334,8 @@ describe('a fal clip accepted by the provider is resumed, never submitted again 
     const out = await g.video(await clip(a.operation));
     expect(out).toMatchObject({ provider: 'fal', mediaType: 'video/mp4' });
     expect(fal.uploads).toHaveLength(1);
-    // One clip, the other attempt's: this call submitted only the last-frame job, and polled the clip by its id.
-    expect(fal.calls.map((c) => c.endpoint)).toEqual([MODEL, 'fal-ai/ffmpeg-api/extract-frame']);
+    // One clip, the other attempt's: this call submitted only the last-frame and middle-frame jobs (F10 (a)), and polled the clip by its id.
+    expect(fal.calls.map((c) => c.endpoint)).toEqual([MODEL, 'fal-ai/ffmpeg-api/extract-frame', 'fal-ai/ffmpeg-api/extract-frame']);
     expect(fal.polls).toContain('req-1');
     const records = await g.spendRecords('ws');
     expect(records.inFlight).toEqual([]);

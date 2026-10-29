@@ -299,7 +299,7 @@ describe('gateway: video through fal.ai', () => {
   it('hands on a WebM clip under its own type, billed, stored and ledgered (B-012)', async () => {
     const fal = fakeFal({}, { clipUrl: 'https://v3.fal.media/files/clip.webm' });
     const res = await gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch }).video(req());
-    expect(res).toMatchObject({ provider: 'fal', mediaType: 'video/webm', costUsd: 0.352 });
+    expect(res).toMatchObject({ provider: 'fal', mediaType: 'video/webm', costUsd: 0.354 });
     expect((await artifacts.get(res.artifactId)).record.mediaType).toBe('video/webm');
     expect(ledgerLines()).toHaveLength(1);
   });
