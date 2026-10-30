@@ -22,7 +22,7 @@ import { GatewayError, type CompletionRequest, type CompletionResult, type Decli
 import { PROFILES, waitedError, waitedWords } from '@byway/gateway';
 import { createPromptRenderer } from '@byway/prompts';
 import { steps } from '@byway/recipe';
-import { adviceNote, assetStep, NO_BRIEF_NOTE, NO_IMAGE_CHOSEN_NOTE, NO_IMAGE_MADE_NOTE, NO_SLOTS_NOTE } from '../src/activities/asset.ts';
+import { adviceNote, assetStep, NO_BRIEF_NOTE, NO_CHOSEN_NOTE, NO_IMAGE_CHOSEN_NOTE, NO_IMAGE_MADE_NOTE, NO_SLOTS_NOTE } from '../src/activities/asset.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { ContractMissed, StepError, toFailure } from '../src/activities/failures.ts';
 import { memoGateway, PaidNotKept } from '../src/activities/memo.ts';
@@ -127,7 +127,8 @@ async function newRun(medium: Medium): Promise<RunRef> {
 
 const storyboard = (shots = [1, 2, 3]) =>
   serializeJson({ storyboard: shots.map((shot) => ({ shot, description: `Shot ${shot} shows the cup`, imagePrompt: `The cup, angle ${shot}`, durationSec: 3 })), voiceover: 'Less waste.' });
-const optionsDoc = () => serializeJson({ options: ['One', 'Two', 'Three'].map((title) => ({ title, pitch: `${title} pitch`, rationale: 'Because.' })) });
+// Three chosen options, as C2's option map flags them: mood boards follow the chosen options (B-049).
+const optionsDoc = () => serializeJson({ options: ['One', 'Two', 'Three'].map((title) => ({ title, pitch: `${title} pitch`, rationale: 'Chosen. Because.', chosen: true })) });
 
 async function runAsset(medium: Medium, step: StepSpec, artifactText: string, gateway: Fake): Promise<{ result: AssetResult | unknown; notes: unknown[]; skipped: unknown[]; run: RunRef }> {
   const run = await newRun(medium);
@@ -877,6 +878,35 @@ describe('the slot plan on its own', () => {
     const options = eachPlan('options', optionsDoc(), 'Mood boards')!;
     expect(['a', ' B ', 'Option c', 'D'].map((s) => slotId(options, s))).toEqual(['A', 'B', 'C', undefined]);
     expect(slotId(freePlan({ min: 1, max: 3 }, undefined), '  hero ')).toBe('hero');
+  });
+
+  // The owner's choice of 2026-10-30 on B-049: "Chosen options, up to 3 (Recommended)".
+  it('on options, the chosen ones only, at most three: flagged, or in a map with no flags opened "Chosen.", the rest named', () => {
+    const map = (o: { chosen?: boolean; rationale?: string }[]) => serializeJson({ options: o.map((x, i) => ({ title: `T${i}`, pitch: 'p', rationale: x.rationale ?? 'r', ...(x.chosen !== undefined ? { chosen: x.chosen } : {}) })) });
+    // The flag decides, whatever a rationale says (VOICE may rewrite a rationale, never the flag).
+    expect(eachPlan('options', map([{ chosen: false, rationale: 'Chosen. Edited.' }, { chosen: true }, { chosen: false }]), 'Mood boards')).toEqual({ kind: 'each', medium: 'options', expected: ['B'] });
+    // A map written without flags falls back to "Chosen." as its prompt writes it, not "Not chosen.".
+    expect(eachPlan('options', map([{ rationale: 'Chosen. X' }, { rationale: 'Not chosen. Y' }, { rationale: 'chosen: Z' }]), 'Mood boards')).toEqual({ kind: 'each', medium: 'options', expected: ['A', 'C'] });
+    // More than three chosen: the first three, and the rest named for the note.
+    expect(eachPlan('options', map([1, 2, 3, 4, 5].map(() => ({ chosen: true }))), 'Mood boards')).toEqual({ kind: 'each', medium: 'options', expected: ['A', 'B', 'C'], over: ['D', 'E'] });
+    // None chosen: nothing to make.
+    expect(eachPlan('options', map([{ chosen: false }, { rationale: 'Not chosen. Y' }]), 'Mood boards')).toEqual({ kind: 'each', medium: 'options', expected: [] });
+  });
+
+  it('on options with none chosen, nothing is asked or bought, and the step says why; with more than three, the note names those without one', async () => {
+    const none = fake([]);
+    const unchosen = serializeJson({ options: [{ title: 'One', pitch: 'p', rationale: 'Not chosen. r', chosen: false }] });
+    const { notes, skipped } = await runAsset('options', spec('c2', 'mood-boards'), unchosen, none);
+    expect([none.completions.length, none.images.length]).toEqual([0, 0]);
+    expect(notes).toEqual([NO_CHOSEN_NOTE]);
+    expect(skipped).toEqual([true]);
+    const four = serializeJson({ options: ['One', 'Two', 'Three', 'Four'].map((title) => ({ title, pitch: 'p', rationale: 'Chosen. r', chosen: true })) });
+    const g = fake([briefsOf('A', 'B', 'C')]);
+    const made = await runAsset('options', spec('c2', 'mood-boards'), four, g);
+    expect(g.images).toHaveLength(3);
+    expect(made.notes[0]).toContain('Mood boards are made for at most 3 chosen options, so option D has none.');
+    // The prompt lists only the chosen options it asks boards for.
+    expect(g.completions[0]!.messages.map((m) => m.content.map((p) => (p.type === 'text' ? p.text : '')).join('')).join('\n')).not.toContain('Four: p');
   });
 
   it('a free plan takes the prompt’s range, capped by the step’s slots knob; a prompt that declares none asks for one to three', () => {

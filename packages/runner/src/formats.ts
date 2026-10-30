@@ -116,6 +116,12 @@ export const OptionSchema = z.object({
   rationale: z.string().min(1),
   /** Added by the runner when ASSET made a mood image for the option. */
   imageArtifactId: z.string().optional(),
+  /**
+   * True on the options the person chose, as C2's option-map step writes them (its prompt asks for it). VOICE edits only
+   * an option's title, pitch and rationale, so this is what the mood boards follow, not the "Chosen." a rationale opens
+   * with (B-049).
+   */
+  chosen: z.boolean().optional(),
 });
 export const OptionsSchema = z.object({ options: z.array(OptionSchema).min(1) });
 export type OptionsDoc = z.infer<typeof OptionsSchema>;

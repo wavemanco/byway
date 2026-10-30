@@ -167,7 +167,7 @@ const COPY: readonly Copy[] = [
       { label: 'Your words', explainer: "Your turn: put the option map's names and pitches in your own words, starting with the option you chose.", covers: ['voice'] },
       {
         label: 'Custom imagery',
-        explainer: 'If you want them, rough mood boards for the chosen option. They stay rough and stay out of the decision.',
+        explainer: 'If you want them, rough mood boards for the chosen options, one each and at most three. They stay rough and stay out of the decision.',
         covers: ['mood-boards'],
       },
     ],

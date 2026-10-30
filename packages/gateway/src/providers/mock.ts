@@ -64,6 +64,7 @@ export function mockAdapter(opts: MockAdapterOptions = {}): ProviderAdapter {
       const { text, truncated, declined } = reply(
         {
           purpose: req.context.purpose,
+          ...(req.context.promptId ? { promptId: req.context.promptId } : {}),
           role,
           medium,
           system: req.system ?? '',

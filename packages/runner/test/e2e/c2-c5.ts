@@ -79,11 +79,15 @@ export function c2c5Scenarios(use: () => Harness): void {
       const out = (await json(view.run.outputArtifactId!)) as { options: { title: string; imageArtifactId?: string }[] };
       expect(out.options[0]!.title).toBe('Fix-it Fridays');
       expect(out.options.every((o) => o.imageArtifactId === undefined)).toBe(true);
+      // One board for each chosen option, as the option map flags them, and none for the rest (B-049): the demo's map
+      // chooses the first two.
+      const chosen = (out.options as { chosen?: boolean }[]).map((o) => o.chosen === true);
+      expect(chosen.slice(0, 2)).toEqual([true, true]);
       const moods = h.succeeded(run.id).filter((c) => c.purpose === 'asset:options');
-      expect(moods).toHaveLength(out.options.length);
+      expect(moods).toHaveLength(chosen.filter(Boolean).length);
       const beside = ofType(view, 'step-finished', 'mood-boards')[0]!.data.outputArtifactIds as string[];
       const annotated = (await json(beside.at(-1)!)) as { options: { imageArtifactId?: string }[] };
-      expect(annotated.options.every((o) => o.imageArtifactId?.startsWith('sha256:'))).toBe(true);
+      expect(annotated.options.map((o) => o.imageArtifactId?.startsWith('sha256:') === true)).toEqual(chosen);
       const briefs = h.prompts.calls.filter((c) => c.id === 'product.c2.mood-boards').at(-1)!;
       expect(briefs.slots.options).toMatch(/^### A\nFix-it Fridays: /);
     }, 120_000);

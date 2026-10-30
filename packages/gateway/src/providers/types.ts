@@ -15,8 +15,11 @@ export interface ResolvedMessage {
   content: ResolvedPart[];
 }
 
-/** Who is asking: the mock answers by purpose and counts critic iterations by run and step. */
-export type CallContext = SpendContext & { tier?: Tier; profileId: string };
+/**
+ * Who is asking: the mock answers by purpose and counts critic iterations by run and step. `promptId` is the template
+ * behind a completion (CompletionRequest.prompt), which only the mock reads; it is never sent to a provider.
+ */
+export type CallContext = SpendContext & { tier?: Tier; profileId: string; promptId?: string };
 
 export interface ProviderCompletionRequest {
   model: string;

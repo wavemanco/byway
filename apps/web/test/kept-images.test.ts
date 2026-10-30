@@ -10,7 +10,8 @@ import { describe, expect, it } from 'vitest';
 import type { RunEvent, RunRecord } from '@byway/contracts';
 import { ResultView } from '../src/components/result/ResultView.tsx';
 import { StepDetail } from '../src/components/run/StepDetail.tsx';
-import { howItWasMade, resultImages } from '../src/view/run.ts';
+import { withMoodBoards } from '../src/server/export.ts';
+import { boardedOptions, howItWasMade, resultImages } from '../src/view/run.ts';
 import { buildTimeline } from '../src/view/timeline.ts';
 
 let n = 0;
@@ -51,6 +52,34 @@ describe('the Result screen shows the images a piece or page does not hold (B-04
     expect(resultImages('prose', timeline([A], [B]), piece([A])).map((i) => i.artifactId)).toEqual([B]);
     expect(resultImages('web-page', timeline([A], [B]), page([A])).map((i) => i.artifactId)).toEqual([B]);
     expect(resultImages('web-page', timeline([A, B], []), page([A, B]))).toEqual([]);
+  });
+
+  it('downloads an options run with its mood boards: the option map the image step kept beside it (B-014)', async () => {
+    const kept = `sha256:${'c'.repeat(64)}`;
+    const withBoards = buildTimeline(
+      [
+        ev('step-started', 'mood-boards', { label: 'Custom imagery', stage: 'D1', role: 'asset', actor: 'model', block: 'ASSET' }),
+        ev('artifact', 'mood-boards', { artifactId: A, mediaType: 'image/png', label: 'Image: A' }),
+        ev('artifact', 'mood-boards', { artifactId: kept, mediaType: 'application/json', label: 'Mood boards (kept beside the work)' }),
+        ev('step-finished', 'mood-boards', { costUsd: 0.1 }),
+        ev('run-finished', undefined, { costUsd: 0.1 }),
+      ],
+      [],
+      'done',
+      null,
+    );
+    expect(boardedOptions('options', withBoards)).toBe(kept);
+    expect(boardedOptions('prose', withBoards)).toBeUndefined();
+    expect(boardedOptions('options', timeline([], []))).toBeUndefined();
+    // The download carries each board inline beside its option, and leaves the rest of the map as it was.
+    const png = new Uint8Array([137, 80, 78, 71]);
+    const store = { has: async (id: string) => id === A, get: async () => ({ record: { id: A, mediaType: 'image/png', bytes: png.length, createdAt: '' }, bytes: png }) };
+    const out = JSON.parse(await withMoodBoards(JSON.stringify({ options: [{ title: 'A', imageArtifactId: A, chosen: true }, { title: 'B', chosen: false }] }), store)) as { options: { moodBoard?: string }[] };
+    expect(out.options[0]!.moodBoard).toBe(`data:image/png;base64,${Buffer.from(png).toString('base64')}`);
+    expect(out.options[1]).not.toHaveProperty('moodBoard');
+    // Anything that is not an option map is returned as it was.
+    expect(await withMoodBoards('not json', store)).toBe('not json');
+    expect(await withMoodBoards('{"storyboard":[]}', store)).toBe('{"storyboard":[]}');
   });
 
   it('still shows every image beside an options list, which cannot hold them (UX-8)', () => {

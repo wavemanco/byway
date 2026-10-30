@@ -304,7 +304,7 @@ export class ModelGateway implements Gateway {
               messages,
               maxOutputTokens,
               responseFormat: req.responseFormat ?? 'text',
-              context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, tier: req.tier, profileId: req.profileId },
+              context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, tier: req.tier, profileId: req.profileId, ...(prompt ? { promptId: prompt.id } : {}) },
               ...(signal ? { signal } : {}),
               // A streamed answer is read as stalled once it has sent nothing for its model's wait, however long its
               // step may run (the waits design of 2026-10-22).

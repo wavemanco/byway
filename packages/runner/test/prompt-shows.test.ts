@@ -62,7 +62,7 @@ const workText = (medium: Medium, mark: string): string =>
   ({
     prose: `# Memo\n\n${mark}\n`,
     'web-page': `<!doctype html><title>t</title><p>${mark}</p>`,
-    options: JSON.stringify({ options: [{ title: mark, pitch: 'p', rationale: 'r' }] }),
+    options: JSON.stringify({ options: [{ title: mark, pitch: 'p', rationale: 'Chosen. r', chosen: true }] }),
     media: JSON.stringify({ storyboard: [{ shot: 1, description: mark, imagePrompt: 'p', durationSec: 3 }], voiceover: 'v' }),
     'code-diff': `diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+${mark}\n\nWhy: w\n`,
   })[medium];

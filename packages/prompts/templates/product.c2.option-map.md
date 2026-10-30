@@ -1,6 +1,6 @@
 ---
 id: product.c2.option-map
-version: 1
+version: 2
 fidelity: project
 slots: options, brief, critique
 output: artifact:options
@@ -29,13 +29,13 @@ The person's sharpened direction for the options they chose:
 </brief>
 
 Compile the option map.
-- List the chosen options first, in the order the brief gives them. For each, the pitch is the sharpened one-line version, and the rationale starts with `Chosen.` followed by its brief, condensed to its essentials.
-- Then list every other option, in their original order, with its pitch as it was and a rationale that starts with `Not chosen.` followed by its annotation in one sentence (for example, that a plain request also produces it).
+- List the chosen options first, in the order the brief gives them. For each, the pitch is the sharpened one-line version, the rationale starts with `Chosen.` followed by its brief, condensed to its essentials, and `chosen` is true.
+- Then list every other option, in their original order, with its pitch as it was and a rationale that starts with `Not chosen.` followed by its annotation in one sentence (for example, that a plain request also produces it), and `chosen` is false.
 - Keep titles as the person and the options gave them; do not invent new options.
 
 ## Answer format
 One fenced ```json block, shaped like this:
 
-    {"options":[{"title":"…","pitch":"…","rationale":"Chosen. …"}]}
+    {"options":[{"title":"…","pitch":"…","rationale":"Chosen. …","chosen":true}]}
 
-Every option has `title`, `pitch` and `rationale`, all strings.
+Every option has `title`, `pitch` and `rationale`, all strings, and `chosen`, true or false.
