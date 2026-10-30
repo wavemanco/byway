@@ -10,7 +10,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 - A record's Context and Decision are final once it reaches main's first-parent history as Accepted. The commit that accepts a Proposed record may finalise its Decision. Branches merge with `--no-ff`, so a branch's own commits are drafts. A record that changes an Accepted one reaches main in the same commit as its "changed by" link: add the index row and the links on the branch before merging, or merge with `git merge --no-ff --no-commit <branch>` and add them before committing. Main's history is not rewritten (the "Protect main" ruleset blocks force-pushes), so a breach that reaches main is named in the test with its reason. `scripts/test/adr-records.test.ts` checks this against git history ([ADR-0103](0103-adr-log-rule-and-ci.md)): it fails an edited Context or Decision, a "changed by" link that reaches main after the record it names (from ADR-0103 on), and a breach on main that is not named. It cannot see a missing link, because no record says, in a form a test can read, which records it changes; adding the links is the author's job. It sees a fast-forward only through the edits that then show up on main.
 
-**115 records:** 108 accepted (15 of them by continuation, awaiting ratification; 38 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**116 records:** 109 accepted (15 of them by continuation, awaiting ratification; 38 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -151,6 +151,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0111](0111-cancel-cuts-off-the-calls-byway-can-stop.md) | Cancel cuts off the AI calls byway can stop; the others finish and are paid for | Accepted; changed by [ADR-0114](0114-each-models-answer-wait-is-chosen-in-settings.md) | User | 2026-10-21 23:05 |
 | [ADR-0114](0114-each-models-answer-wait-is-chosen-in-settings.md) | Each model's answer wait is chosen in Settings, and the steps are sized so the wait governs | Accepted | User | 2026-10-22 18:53 |
 | [ADR-0115](0115-the-price-table-kept-current-and-priced-by-tier.md) | The price table is kept current and priced by tier: a long prompt at its long-context rates, a weekly report, a re-read checked at each session's start by any agent, and the day of the last check in the app | Accepted | User | 2026-10-22 18:55 |
+| [ADR-0116](0116-mit-licence-contributors-pull-requests-and-a-readme-for-people-using-byway.md) | byway is licensed under MIT, takes pull requests from its contributors only for now, and its README is written for the people who use it | Accepted | User | 2026-10-30 14:41 |
 
 ## Open decisions (not yet ADRs)
 

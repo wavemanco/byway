@@ -16,7 +16,8 @@ import { actionProblems, usesValues } from './workflow-guard.ts';
 
 const workflow = read('.github/workflows/verify.yml');
 const pkg = JSON.parse(read('package.json')) as { packageManager?: string; scripts: Record<string, string> };
-const readme = read('README.md');
+// The technical README became docs/developers.md on 2026-10-30 (ADR-0116).
+const readme = read('docs/developers.md');
 
 /** The job matrix: one entry per operating system, written `- { name: …, os: …, playwright: … }`. */
 const matrix = [...workflow.matchAll(/^\s*- \{ name: ([\w-]+), os: ([\w.-]+), playwright: ([^}]+?) \}\s*$/gm)].map((m) => ({ name: m[1] ?? '', os: m[2] ?? '', playwright: (m[3] ?? '').trim() }));
@@ -193,7 +194,7 @@ describe('the CI workflow (ADR-0103)', () => {
   it('nowhere says the profile gives the namespaces to Chromium alone, that the rest of the machine stays restricted, that the sandbox off keeps the restriction whole, or that the profile covers every version', () => {
     // The ADRs quote them as what the checks found untrue: round 2's checks the first two (ADR-0105 and ADR-0103's later
     // note), round 3's checks and the check of a3d271f the others (ADR-0105, Evidence).
-    for (const file of [SCRIPT, '.github/workflows/verify.yml', 'README.md', 'apps/web/README.md', 'packages/runner/src/sandbox.ts', 'packages/runner/src/pages.ts', 'scripts/serve.ts', 'docs/backlog.md']) {
+    for (const file of [SCRIPT, '.github/workflows/verify.yml', 'README.md', 'docs/developers.md', 'apps/web/README.md', 'packages/runner/src/sandbox.ts', 'packages/runner/src/pages.ts', 'scripts/serve.ts', 'docs/backlog.md']) {
       expect(read(file), file).not.toMatch(/and nothing else, create user namespaces|for nothing else; the rest|rest of the machine stays restricted|Chromium alone|only the Chromium there|restriction whole|every version in that folder|Chromium, any version/);
     }
   });

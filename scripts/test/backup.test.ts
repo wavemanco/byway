@@ -107,8 +107,9 @@ describe('the backup unit is the whole data directory (R4, ADR-0094)', () => {
   });
 });
 
-describe('README: data and backup (R4)', () => {
-  const readme = read('README.md');
+// The technical README became docs/developers.md on 2026-10-30 (ADR-0116); its links resolve from docs/.
+describe('The developers\' guide: data and backup (R4)', () => {
+  const readme = read('docs/developers.md');
 
   it("the Data table names every file byway writes in the data directory, the store's WAL sidecars and the ledger head included", async () => {
     const { dir, store } = await liveDataDir();
@@ -140,17 +141,17 @@ describe('README: data and backup (R4)', () => {
     expect(backup).not.toMatch(/\*\*Spend after a restore/);
     const ledgerMix = backup.split('\n').find((l) => l.startsWith('- An older or missing `ledger.jsonl`')) ?? '';
     expect(ledgerMix).toMatch(/spend book in `byway\.sqlite` is their authority/);
-    expect(ledgerMix).toMatch(/docs\/adr\/0095-/);
+    expect(ledgerMix).toMatch(/\(adr\/0095-/);
     expect(backup).toMatch(/calls made since are in neither the spend book nor the ledger/);
     expect(backup).toMatch(/providers' own dashboards/);
   });
 
   it('points to ADR-0094, which corrects ADR-0066', () => {
     const links = relativeLinks(section(readme, '## Back up and restore') ?? '').map((l) => l.target);
-    const adr = links.find((t) => t.startsWith('docs/adr/0094-')) ?? '';
+    const adr = links.find((t) => t.startsWith('adr/0094-')) ?? '';
     expect(adr).not.toBe('');
-    expect(brokenLink('README.md', adr)).toBeUndefined();
-    const record = read(adr);
+    expect(brokenLink('docs/developers.md', adr)).toBeUndefined();
+    const record = read(`docs/${adr}`);
     expect(record).toMatch(/^\| \*\*Status\*\* \| Accepted \|$/m);
     expect(record).toMatch(/corrects \[ADR-0066\]/);
   });
