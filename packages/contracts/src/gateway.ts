@@ -118,6 +118,8 @@ export interface DeclinedAttempt {
   reason?: string;
   /** What byway counts for it as "may have been billed" (DeclineRecord.uncertainUsd), when anything. */
   uncertainUsd?: number;
+  /** The declined answer came with no token counts, so its cost is byway's figure (B-147). */
+  usageMissing?: true;
 }
 
 /**
@@ -172,6 +174,8 @@ export interface DeclineRecord {
   retryUncertainUsd?: number;
   /** Why the retry was not made, or how it failed, in words. */
   problem?: string;
+  /** The declined attempt's answer came with no token counts, so its cost is byway's figure (B-147). */
+  usageMissing?: true;
 }
 
 /** Which prompt template produced a call (from RenderedPrompt), recorded in the ledger for provenance (CR14). */
@@ -444,12 +448,12 @@ export class GatewayError extends Error {
    * Set when the call was settled and ledgered before this error (the provider answered and billed it, and byway then
    * could not use the answer): its ledger entry and what it cost, so whoever counts the call's cost has it.
    */
-  settled?: { ledgerEntryId: string; costUsd: number };
+  settled?: { ledgerEntryId: string; costUsd: number; usageMissing?: true };
   constructor(
     code: GatewayErrorCode,
     message: string,
     retryable = false,
-    opts: { billed?: boolean; settledEarlier?: boolean; declined?: DeclineRecord; settled?: { ledgerEntryId: string; costUsd: number } } = {},
+    opts: { billed?: boolean; settledEarlier?: boolean; declined?: DeclineRecord; settled?: { ledgerEntryId: string; costUsd: number; usageMissing?: true } } = {},
   ) {
     super(message);
     this.code = code;

@@ -177,15 +177,20 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const waited: { slot: string; words: string }[] = [];
   const outputs: string[] = [];
   for (const brief of briefs.value.briefs) {
-    const image = await makeImage(deps, input, brief, slots.kind === 'each' && brief.slot === slots.first ? Math.max(tries, 2) : tries).catch((e: unknown) => {
+    // What this slot's refused attempts were billed, which another try does not undo (B-147's check).
+    const refused = { costUsd: 0, usageMissing: 0 };
+    const image = await makeImage(deps, input, brief, slots.kind === 'each' && brief.slot === slots.first ? Math.max(tries, 2) : tries, refused).catch((e: unknown) => {
       throw (e instanceof GatewayError && e.billed === true) || e instanceof PaidNotKept ? billedStop(e, slots, brief.slot, made, what) : e;
     });
+    costUsd += refused.costUsd;
+    usageMissing += refused.usageMissing;
     if (!image || 'declined' in image || 'waited' in image) {
       failed.push(brief.slot);
       if (image && 'declined' in image) {
         // What each attempt of a declined image cost (a retry billed with no usable image included) is this step's cost too.
         declined.push({ slot: brief.slot, record: image.declined });
         costUsd += image.declined.costUsd + (image.declined.retryCostUsd ?? 0);
+        if (image.declined.usageMissing) usageMissing++;
       }
       // An image whose wait ran out may have been billed: the spend book holds it at its estimate as waited, until the
       // person clears it in Settings, so it is not this step's cost; the note says what the gateway said of it.
@@ -243,6 +248,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
       // No answer was usable: the work stays as it was, and every image is kept beside it.
       if (!(e instanceof ContractMissed)) throw e;
       result.costUsd += e.costUsd;
+      usageMissing += e.usageMissing;
       placed = { missing: made, restored: [] };
     }
     restored = placed.restored;
@@ -304,7 +310,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
  * wait ran out, that it may have billed the work and where to wait longer, go in the step's note (waitedSentences). The
  * memo keeps that outcome as it keeps a decline (B-045), so the step run again gets it back and asks nothing.
  */
-async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, tries: number): Promise<{ made: MadeImage; costUsd: number; usageMissing?: true } | { declined: DeclineRecord } | { waited: string } | undefined> {
+async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, tries: number, refused: { costUsd: number; usageMissing: number }): Promise<{ made: MadeImage; costUsd: number; usageMissing?: true } | { declined: DeclineRecord } | { waited: string } | undefined> {
   const { run, call, step } = input;
   const medium = run.medium;
   for (let attempt = 1; attempt <= tries; attempt++) {
@@ -315,6 +321,11 @@ async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, 
       return { made: { slot: brief.slot, alt, artifactId: img.artifactId }, costUsd: img.costUsd, ...(img.usageMissing ? { usageMissing: true as const } : {}) };
     } catch (e) {
       if (!(e instanceof GatewayError) || STOPS_THE_STEP.has(e.code) || e.billed === true || isHeldKeyError(e)) throw e;
+      // An answer with no usable image was settled and ledgered before it was refused: billed, and this step's cost.
+      if (e.settled) {
+        refused.costUsd += e.settled.costUsd;
+        if (e.settled.usageMissing) refused.usageMissing++;
+      }
       if (e.declined) return { declined: e.declined };
       if (waitedOf(e)) return { waited: e.message };
     }

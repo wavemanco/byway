@@ -25,10 +25,13 @@ export class ContractMissed extends StepError {
   readonly problem: string;
   /** What the two answers cost, for a caller that goes on and reports the step's cost. */
   readonly costUsd: number;
-  constructor(message: string, problem: string, costUsd = 0) {
+  /** How many of them came back with no token counts (ModelAnswer.usageMissing, B-147). */
+  readonly usageMissing: number;
+  constructor(message: string, problem: string, costUsd = 0, usageMissing = 0) {
     super(message);
     this.problem = problem;
     this.costUsd = costUsd;
+    this.usageMissing = usageMissing;
   }
 }
 

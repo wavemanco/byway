@@ -253,7 +253,7 @@ export function parseImagesResponse(res: ImagesResponseLike, model: string): Omi
   if (!b64) return { bytes: new Uint8Array(), mediaType: 'image/png', servedModel: model, usage, refusal: 'returned no image', responseBody: body };
   // The SDK types usage as optional ("For gpt-image-1 only"): an image that came without it was billed at a cost byway
   // cannot read, so its counts are unknown and the gateway settles it at its planning figures, marked (B-147).
-  const missing = res.usage == null;
+  const missing = res.usage?.input_tokens == null && res.usage?.output_tokens == null;
   return {
     bytes: Buffer.from(b64, 'base64'),
     mediaType: FORMAT_TYPES[res.output_format ?? 'png'] ?? 'image/png',

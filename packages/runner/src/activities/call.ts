@@ -112,5 +112,5 @@ export async function askModel<T>(deps: RunnerDeps, reader: ArtifactReader, req:
     ];
   }
   if (usable) return { value: usable.value, costUsd, shortfall: usable.problem, ...(missing ? { usageMissing: missing } : {}) };
-  throw new ContractMissed(`The ${req.what} step's answer could not be used after a retry: ${problem}`, problem, costUsd);
+  throw new ContractMissed(`The ${req.what} step's answer could not be used after a retry: ${problem}`, problem, costUsd, missing);
 }

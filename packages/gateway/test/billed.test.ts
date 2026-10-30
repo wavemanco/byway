@@ -223,6 +223,26 @@ describe('an answer that comes back with no token counts is settled at byway’s
     expect(ledgerLines()).toEqual(marked('completion'));
   });
 
+  it('Google: an image answer with no counts and no usable image, text only or of a type byway cannot use (the check)', async () => {
+    const textOnly = fakeGoogle([{ modelVersion: 'gemini-nano-banana-2.1', candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'A loaf, described.' }] } }] }]);
+    expect(await gateway({ clients: { google: textOnly.client } }).image(imageReq()).catch((e: unknown) => e)).toMatchObject({ code: 'refused', settled: { usageMissing: true } });
+    const gif = fakeGoogle([{ modelVersion: 'gemini-nano-banana-2.1', candidates: [{ finishReason: 'STOP', content: { parts: [{ inlineData: { data: png, mimeType: 'image/gif' } }] } }], usageMetadata: {} }]);
+    await gateway({ clients: { google: gif.client } }).image(imageReq()).catch(() => undefined);
+    const [a, b] = ledgerLines();
+    expect([a, b]).toEqual([expect.objectContaining({ priceBasis: 'assumed', usageMissing: true }), expect.objectContaining({ priceBasis: 'assumed', usageMissing: true })]);
+    // Costed at byway's figures, not at nothing and not at the per-image price alone.
+    expect(a?.costUsd as number).toBeGreaterThan(0);
+    expect(b?.costUsd as number).toBeGreaterThan(0.0336);
+  });
+
+  it('OpenAI: a declined answer whose usage never came is said with the retry that answered', async () => {
+    const openai = fakeOpenAI([{ model: 'gpt-6-astra', choices: [{ finish_reason: 'stop', message: { content: null, refusal: 'No.' } }] }]);
+    const out = await gateway({ clients: { openai: openai.client } }).complete(completion({ profileId: 'openai' }));
+    expect(out.declined).toMatchObject({ retry: 'answered', usageMissing: true });
+    expect(out.usageMissing).toBe(true);
+    expect(ledgerLines()[0]).toMatchObject({ declined: expect.anything(), usageMissing: true });
+  });
+
   it('an answer with its counts is not marked', async () => {
     const { client } = fakeOpenAI([], [{ data: [{ b64_json: png }], output_format: 'png', usage: { input_tokens: 20, output_tokens: 400 } }]);
     const out = await gateway({ clients: { openai: client } }).image(imageReq({ profileId: 'best' }));
