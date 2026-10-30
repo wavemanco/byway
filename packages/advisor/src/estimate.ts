@@ -337,6 +337,12 @@ function stepSpan(w: Walk, s: Step, set: Count): Span {
         if (audioAsset(s)) return NONE;
         // With no image model the runner skips the whole step, its briefs and integrate calls included (asset.ts).
         if (!w.priced.image) return NONE;
+        // C5's anchor frame: one still, shot 1's, checked once before any clip and made again once at worst (F12 (b),
+        // F10 (b); asset.ts checkAnchor).
+        if (medium === 'media' && s.produces.includes('anchor')) {
+          const check = completion(w, 'check', 'big', count(1, 1), undefined);
+          return add(completion(w, 'asset.briefs', tierOf(s), count(1, 1), s), images(w, count(1, 1)), check, onlyHigh(images(w, count(1, 1))));
+        }
         const slots = knobNumber(s, 'slots') ?? DEFAULT_SLOTS;
         // On options, a board for each chosen option, at most MOOD_BOARDS (the runner reads no slots knob there).
         const n = medium === 'media' ? count(STORYBOARD_SHOTS.low, STORYBOARD_SHOTS.high) : medium === 'options' ? count(1, MOOD_BOARDS) : count(1, slots);

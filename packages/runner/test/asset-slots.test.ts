@@ -57,6 +57,12 @@ const spec = (recipeId: string, stepId: string): StepSpec => {
   return toStepSpec(steps(recipe).find(({ step }) => step.id === stepId)!.step);
 };
 
+/**
+ * A still per storyboard shot: C5's anchor-frames step without its anchor, which makes only shot 1's still since
+ * 2026-10-30 (F12 (b)). The per-shot slot rules these tests hold apply to it unchanged.
+ */
+const perShot = (): StepSpec => ({ ...spec('c5', 'anchor-frames'), produces: ['artifact'] });
+
 interface Fake extends Gateway {
   completions: CompletionRequest[];
   images: ImageRequest[];
@@ -68,6 +74,9 @@ interface Fake extends Gateway {
  * stored as small PNGs unless `refuse` says otherwise for that request (true: a plain refusal; an Error: that failure).
  * `place` chooses which of the image addresses the nth integrate answer (from 1) places, or answers with no document.
  */
+/** Answers the anchor check's calls in order, then "No defects." (F10 (b)). */
+let anchorChecks: string[] = [];
+
 function fake(briefs: string[], refuse: (req: ImageRequest) => boolean | Error = () => false, place: (ids: string[], n: number) => string[] | 'no document' = (ids) => ids): Fake {
   const completions: CompletionRequest[] = [];
   const images: ImageRequest[] = [];
@@ -90,6 +99,8 @@ function fake(briefs: string[], refuse: (req: ImageRequest) => boolean | Error =
         return answer(req, `\`\`\`markdown\n# Piece\n\n${ids.map((id, i) => `![Image ${i + 1}](${id})`).join('\n\n')}\n\nThe text.\n\`\`\``);
       }
       if (req.purpose === 'relay:media') return answer(req, '```json\n{"clipPrompt":"Shot 1: the cup turns","durationSec":3}\n```');
+      // C5's check of shot 1's frame before any clip (F10 (b)): clean unless a test scripts its answer.
+      if (req.purpose === 'check:media') return answer(req, anchorChecks.shift() ?? 'No defects.');
       return answer(req, briefs.shift() ?? '');
     },
     async image(req): Promise<ImageResult> {
@@ -142,7 +153,7 @@ async function runAsset(medium: Medium, step: StepSpec, artifactText: string, ga
 const json = async (id: string) => JSON.parse(await store.artifacts.getText(id)) as { storyboard?: { shot: number; imageArtifactId?: string }[]; options?: { imageArtifactId?: string }[] };
 
 describe('one slot identity on media (C5 anchor frames)', () => {
-  const frames = () => spec('c5', 'anchor-frames');
+  const frames = perShot;
 
   it('a shot number with spaces around it attaches to its shot', async () => {
     const g = fake([briefsOf(' 1 ', '2', '3')]);
@@ -220,7 +231,7 @@ describe('one slot identity on media (C5 anchor frames)', () => {
  * declined image is a slot not made, with what happened in the step's note, and both attempts' cost in the step's cost.
  */
 describe('an image the model declined (ADR-0102)', () => {
-  const frames = () => spec('c5', 'anchor-frames');
+  const frames = perShot;
   const declinedImage = (req: ImageRequest, outcome: Partial<DeclineRecord> = {}) =>
     new GatewayError('refused', 'the gateway’s plain message', false, {
       declined: {
@@ -276,7 +287,7 @@ describe('an image whose wait ran out (the waits design; MONEY-1)', () => {
 
   it('on media, shot 1’s frame (at least two tries for any other failure) is asked for once, the other shots are made, and the note says the wait ran out and where to change it', async () => {
     const g = fake([briefsOf('1', '2', '3')], (req) => (req.prompt.endsWith('for 1') ? waited() : false));
-    const { result, notes, skipped } = await runAsset('media', spec('c5', 'anchor-frames'), storyboard(), g);
+    const { result, notes, skipped } = await runAsset('media', perShot(), storyboard(), g);
     expect(g.images.filter((r) => r.prompt.endsWith('for 1'))).toHaveLength(1);
     expect(g.images).toHaveLength(3);
     expect((result as AssetResult).anchor).toBeUndefined();
@@ -352,7 +363,7 @@ describe('an image whose wait ran out (the waits design; MONEY-1)', () => {
 describe('a brief answer that covers every slot and names some the work does not have (round 2)', () => {
   it('on media: no retry, every shot bought and attached, and the note names only what was left out', async () => {
     const g = fake([briefsOf('1', '2', '3', '4')]);
-    const { result, notes, skipped } = await runAsset('media', spec('c5', 'anchor-frames'), storyboard(), g);
+    const { result, notes, skipped } = await runAsset('media', perShot(), storyboard(), g);
     expect(g.completions.filter((c) => c.purpose === 'asset.briefs:media')).toHaveLength(1);
     expect(g.images).toHaveLength(3);
     const sb = await json((result as AssetResult).artifactId!);
@@ -372,14 +383,14 @@ describe('a brief answer that covers every slot and names some the work does not
 
   it('“Not every image was made” only when an image is missing: a missing shot and a left-out one are said apart', async () => {
     const g = fake([briefsOf('1', '2', '4'), briefsOf('1', '2', '4')]);
-    const { notes } = await runAsset('media', spec('c5', 'anchor-frames'), storyboard(), g);
+    const { notes } = await runAsset('media', perShot(), storyboard(), g);
     expect(g.images).toHaveLength(2);
     expect(notes).toEqual(['Not every image was made: no image brief was written for shot 3. Briefs for “4”, which the storyboard has no shot for, were left out.']);
   });
 });
 
 describe('a short answer keeps every usable brief across the two tries (round 2)', () => {
-  const frames = () => spec('c5', 'anchor-frames');
+  const frames = perShot;
 
   it('short, then empty: the first answer’s briefs are bought, and the note says exactly what is missing', async () => {
     const g = fake([briefsOf('2', '3'), EMPTY]);
@@ -420,7 +431,7 @@ describe('an image billed but not kept stops the run and says what that leaves (
 
   it('on media: not bought again; the failure says the run stops, what was billed, and that the images already made are not in the work', async () => {
     const g = fake([briefsOf('1', '2', '3')], (req) => (req.prompt.endsWith('for 2') ? lost() : false));
-    const { result, run } = await runAsset('media', spec('c5', 'anchor-frames'), storyboard(), g);
+    const { result, run } = await runAsset('media', perShot(), storyboard(), g);
     expect(g.images.map((r) => r.prompt)).toEqual(['An image for 1', 'An image for 2']);
     expect(result).toBeInstanceOf(GatewayError);
     expect(result).toMatchObject({ code: 'byway-failure', billed: true, retryable: false });
@@ -438,10 +449,10 @@ describe('an image billed but not kept stops the run and says what that leaves (
 
   it('several already made are named; with none made, nothing is said of them', async () => {
     const g = fake([briefsOf('1', '2', '3')], (req) => (req.prompt.endsWith('for 3') ? lost() : false));
-    const { result } = await runAsset('media', spec('c5', 'anchor-frames'), storyboard(), g);
+    const { result } = await runAsset('media', perShot(), storyboard(), g);
     expect((result as GatewayError).message).toMatch(/That was the image for shot 3, so the run stops here, at the Custom imagery step, and buys no more images. The 2 images already made for shot 1 and shot 2 were billed too, and they are not in the work\.$/);
     const h = fake([briefsOf('1', '2', '3')], () => lost());
-    const first = await runAsset('media', spec('c5', 'anchor-frames'), storyboard(), h);
+    const first = await runAsset('media', perShot(), storyboard(), h);
     expect(h.images).toHaveLength(1);
     expect((first.result as GatewayError).message).toMatch(/That was the image for shot 1, so the run stops here, at the Custom imagery step, and buys no more images.$/);
   });

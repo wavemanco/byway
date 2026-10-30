@@ -293,7 +293,7 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Custom imagery',
-        explainer: 'The AI makes the key frames, product shots and style frames the shots will start from.',
+        explainer: 'The AI makes the frame the first shot starts from, and checks it for visible defects before any clip is made, making it again once if one shows. Each later shot starts from the clip before it.',
         covers: ['anchor-frames'],
       },
       {

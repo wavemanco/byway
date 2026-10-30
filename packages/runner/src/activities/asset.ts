@@ -34,7 +34,7 @@ import { declineStory, isHeldKeyError, waitedOf } from '@byway/gateway';
 import { audioAsset } from '@byway/recipe/semantics';
 import { parseHtml, parseMarkdown, parseOptions, parseStoryboard, serializeJson, textView, type Parsed } from '../formats.ts';
 import { imagesSlot, labelled, labelOf } from '@byway/prompts/pure';
-import { parseBriefs } from '../parse.ts';
+import { parseBriefs, parseCheck } from '../parse.ts';
 import type { AssetInput, AssetResult } from '../types.ts';
 import { askModel, usageMissingNote } from './call.ts';
 import { mediaStatus } from './availability.ts';
@@ -130,7 +130,11 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const slotsKnob = typeof knobs.slots === 'number' ? knobs.slots : undefined;
   const tries = typeof knobs.triesPerSlot === 'number' ? Math.max(1, knobs.triesPerSlot) : 1;
   // On media and options the work decides the slots, read before anything is asked or bought.
-  const each = eachPlan(medium, current, what);
+  const planned = eachPlan(medium, current, what);
+  // C5's anchor frames: only shot 1's still starts the relay chain (every later link starts from the clip before it), so
+  // only it is made (the owner's "Shot 1 only", 2026-10-30, F12 (b); ADR-0090's Later note).
+  const anchorOnly = medium === 'media' && step.produces.includes('anchor');
+  const each: SlotPlan | undefined = anchorOnly && planned?.kind === 'each' && planned.first !== undefined ? { ...planned, expected: [planned.first] } : planned;
   // Mood boards follow the chosen options: with none marked, nothing is asked or bought (B-049).
   if (each?.kind === 'each' && each.medium === 'options' && !each.expected.length) return skip(NO_CHOSEN_NOTE);
 
@@ -180,6 +184,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const declined: { slot: string; record: DeclineRecord }[] = [];
   const waited: { slot: string; words: string }[] = [];
   const outputs: string[] = [];
+  const briefOf = new Map<string, SlotBrief>();
   for (const brief of briefs.value.briefs) {
     // What this slot's refused attempts were billed, which another try does not undo (B-147's check).
     const refused = { costUsd: 0, usageMissing: 0 };
@@ -204,7 +209,25 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     costUsd += image.costUsd;
     if (image.usageMissing) usageMissing++;
     made.push(image.made);
+    briefOf.set(image.made.slot, brief);
     outputs.push(image.made.artifactId);
+  }
+
+  // Shot 1's still is checked for objective defects before any clip starts from it, and made again once, naming them
+  // (the owner's "Yes, check it first", 2026-10-30, F10 (b); ADR-0090's Later note): each clip's own check leaves out
+  // what its start frame already shows, so nothing else would catch them.
+  let anchorNote: string | undefined;
+  const firstShot = anchorOnly && slots.kind === 'each' ? slots.first : undefined;
+  const at = firstShot === undefined ? -1 : made.findIndex((m) => m.slot === firstShot);
+  if (at >= 0) {
+    const checked = await checkAnchor(deps, reader, input, current, made[at]!, briefOf.get(made[at]!.slot)!, tries);
+    costUsd += checked.costUsd;
+    usageMissing += checked.usageMissing;
+    if (checked.remade) {
+      made[at] = checked.remade;
+      outputs.push(checked.remade.artifactId);
+    }
+    anchorNote = checked.note;
   }
   if (!made.length) {
     await stepFinished(deps, run, call, { costUsd, skipped: true, note: said([NO_IMAGE_MADE_NOTE, ...declinedSentences(slots, declined), ...waitedSentences(slots, waited), ...leftOutSentences(slots, briefs.value), overSentence(slots)].filter(Boolean).join(' '))! }, true);
@@ -282,7 +305,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   // not when no image is in the work, as Trim then has none to cut), and what keepsVoice wrote back (ADR-0081), in one note.
   const placedNone = unplaced !== undefined && unplaced.text === undefined;
   const advice = briefs.value.advice && !placedNone ? adviceNote(briefs.value.advice) : undefined;
-  const note = said([partialNote(slots, briefs.value, failed, anchorWanted && !anchor, declined, waited), overSentence(slots), unplaced ? unplacedNote(slots, unplaced) : undefined, advice, restoredNote(restored)].filter((n): n is string => !!n).join(' ') || undefined);
+  const note = said([anchorNote, partialNote(slots, briefs.value, failed, anchorWanted && !anchor, declined, waited), overSentence(slots), unplaced ? unplacedNote(slots, unplaced) : undefined, advice, restoredNote(restored)].filter((n): n is string => !!n).join(' ') || undefined);
   await stepFinished(deps, run, call, { costUsd: result.costUsd, ...(note ? { note } : {}), outputArtifactIds: outputs }, true);
   return result;
 }
@@ -461,6 +484,55 @@ function optionLabels(artifact: string, plan: SlotPlan | undefined): string {
   return r.value.options
     .flatMap((o, i) => (!wanted || wanted.has(labelOf(i)) ? [`### ${labelOf(i)}\n${o.title}: ${o.pitch}`] : []))
     .join('\n\n');
+}
+
+/** What the anchor check says: no defect; defects, and the frame made again; defects, and no new frame (F10 (b)). */
+export const ANCHOR_CLEAN_NOTE = 'Shot 1’s start frame was checked for visible defects before any clip was made: none were found.';
+export const anchorRemadeNote = (defects: string): string =>
+  `Shot 1’s start frame showed visible defects before any clip was made (${defects}), so it was made again once, with the defects named; the new frame was not checked again.`;
+export const anchorKeptNote = (defects: string): string =>
+  `Shot 1’s start frame showed visible defects before any clip was made (${defects}). Making it again did not give a frame, so the first one is used.`;
+
+/**
+ * One check of shot 1's still for objective defects (product.c5.anchor-check), and, when it names any, one more still
+ * from the same brief with the defects named. Its calls are the step's: their cost, and any that came back with no token
+ * counts, go into the step's figures.
+ */
+async function checkAnchor(
+  deps: RunnerDeps,
+  reader: ArtifactReader,
+  input: AssetInput,
+  storyboard: string,
+  anchor: MadeImage,
+  brief: SlotBrief,
+  tries: number,
+): Promise<{ costUsd: number; usageMissing: number; remade?: MadeImage; note: string }> {
+  const { run, call } = input;
+  // Shown what shot 1 should be and the image, never the storyboard's source (port rule 1), as the shot check is.
+  const board = parseStoryboard(storyboard);
+  const shot = board.ok ? board.value.storyboard.find((s) => String(s.shot) === anchor.slot) : undefined;
+  const answer = await askModel(deps, reader, {
+    run,
+    call,
+    promptId: 'product.c5.anchor-check',
+    slots: { view: shot ? `Shot ${shot.shot}: ${shot.description}` : `Shot ${anchor.slot}` },
+    images: [{ caption: 'The frame shot 1 will start from', artifactIds: [anchor.artifactId] }],
+    purpose: 'check:media',
+    tier: 'big',
+    what: 'Start frame check',
+    maxOutputTokens: 4_000,
+    parse: (text) => parseCheck(text),
+  });
+  let costUsd = answer.costUsd;
+  let usageMissing = answer.usageMissing ?? 0;
+  if (answer.value.clean) return { costUsd, usageMissing, note: ANCHOR_CLEAN_NOTE };
+  const defects = oneLine(answer.value.defects.replace(/^\s*[-*•]\s+/gm, '').split('\n').join('; '));
+  const refused = { costUsd: 0, usageMissing: 0 };
+  const again = await makeImage(deps, input, { ...brief, prompt: `${brief.prompt}\n\nAvoid these defects, which an earlier frame had: ${defects}` }, tries, refused);
+  costUsd += refused.costUsd;
+  usageMissing += refused.usageMissing;
+  if (!again || 'declined' in again || 'waited' in again) return { costUsd, usageMissing, note: anchorKeptNote(defects) };
+  return { costUsd: costUsd + again.costUsd, usageMissing: usageMissing + (again.usageMissing ? 1 : 0), remade: again.made, note: anchorRemadeNote(defects) };
 }
 
 /** The chosen options a plan left without a mood board, beyond the most it makes (MOOD_BOARDS_MAX, B-049). */

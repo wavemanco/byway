@@ -45,6 +45,7 @@ export const TEMPLATE_SLOTS: TemplateSlots = {
   'product.c4.recipient': { '*': ['view', 'refs', 'labels'] },
   'product.c4.revise': { '*': ['critique', 'artifact'] },
   'product.c4.tells-sweep': { '*': ['view', 'tells'] },
+  'product.c5.anchor-check': { '*': ['view'] },
   'product.c5.anchor-frames': { '*': ['artifact'] },
   'product.c5.apply-cut': { '*': ['critique', 'artifact'] },
   'product.c5.apply-swaps': { '*': ['critique', 'artifact'] },

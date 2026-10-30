@@ -169,17 +169,24 @@ export class FalQueueError extends Error {
 }
 
 /**
+ * Turns off fal's fallbacks for the job: a request whose endpoint fails is not rerouted to "an equivalent endpoint", so
+ * what served it is the endpoint asked for, as for every other provider (the owner's "Send it: fallbacks off", 2026-10-30;
+ * ADR-0102's Later note, B-024). Sent on every submission, the clip and its extract-frame jobs alike.
+ */
+export const FAL_NO_FALLBACK_HEADER = 'x-app-fal-disable-fallback';
+
+/**
  * Enqueues one fal job: a single HTTP request, never repeated here (see the header). A redirect is refused rather than
  * followed with the key. An answer without a request id is an error that may have been billed: fal may have enqueued
  * the job and only the answer was lost. `startTimeoutSeconds`, when given, is the job's start deadline, under both of
- * fal's names for it (FAL_START_TIMEOUT_HEADERS).
+ * fal's names for it (FAL_START_TIMEOUT_HEADERS). Every job turns fal's fallbacks off (FAL_NO_FALLBACK_HEADER).
  */
 export async function submitJob(fetchImpl: typeof fetch, key: string, endpointId: string, input: Record<string, unknown>, startTimeoutSeconds?: number): Promise<{ request_id: string }> {
   if (!ENDPOINT_ID.test(endpointId)) throw new GatewayError('invalid-request', `"${endpointId}" is not a fal endpoint id`);
   const start = startTimeoutSeconds === undefined ? {} : Object.fromEntries(FAL_START_TIMEOUT_HEADERS.map((h) => [h, String(startTimeoutSeconds)]));
   const res = await fetchImpl(`${FAL_QUEUE_URL}/${endpointId}`, {
     method: 'POST',
-    headers: { Authorization: `Key ${key}`, 'Content-Type': 'application/json', Accept: 'application/json', ...start },
+    headers: { Authorization: `Key ${key}`, 'Content-Type': 'application/json', Accept: 'application/json', [FAL_NO_FALLBACK_HEADER]: 'true', ...start },
     body: JSON.stringify(input),
     redirect: 'error',
     signal: AbortSignal.timeout(SUBMIT_TIMEOUT_MS),

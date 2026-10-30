@@ -99,6 +99,12 @@ export const HELPER_PROMPTS = {
   rerank: 'helper.rerank',
 } as const;
 
+/**
+ * Calls an activity makes inside a step that has its own prompt: C5's check of the frame its chain starts from, made by
+ * the anchor-frames step before any clip (F10 (b); ADR-0090's Later note of 2026-10-30).
+ */
+export const ACTIVITY_PROMPT_IDS = ['product.c5.anchor-check'] as const;
+
 /** Advisor calls: the purpose and the prompt id are the same. */
 export const ADVISOR_PROMPT_IDS = ['advisor.intake', 'advisor.compose', 'advisor.compose.repair'] as const;
 
@@ -109,6 +115,7 @@ export const TELLS_DOMAIN_IDS = TELLS_DOMAINS.map((d) => `tells.${d}`);
 export const PROMPT_IDS: readonly string[] = [
   ...RECIPE_PROMPT_IDS,
   ...Object.values(HELPER_PROMPTS),
+  ...ACTIVITY_PROMPT_IDS,
   ...ADVISOR_PROMPT_IDS,
   ...TELLS_MEDIUM_IDS,
   ...TELLS_DOMAIN_IDS,
