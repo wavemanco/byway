@@ -77,10 +77,14 @@ export function partShown(shownBytes: number, totalBytes: number | undefined): s
   return shown === total ? `the first ${count.format(shownBytes)} of ${count.format(totalBytes)} bytes` : `the first ${shown} of ${total}`;
 }
 
-/** A default run budget: a quarter above the high estimate, rounded up to 50 cents; $1 when nothing is spent. */
-export function suggestBudget(estimate: { lowUsd: number; highUsd: number }): number {
+/**
+ * A default run budget: a quarter above the high estimate, or a tenth above what the run holds at once if that is more
+ * (a fan-out's calls reserve together, B-148; the tenth covers prompts longer than planned), rounded up to 50 cents; $1
+ * when nothing is spent.
+ */
+export function suggestBudget(estimate: { lowUsd: number; highUsd: number; holdUsd?: number }): number {
   if (estimate.highUsd <= 0) return 1;
-  return Math.max(0.5, Math.ceil(estimate.highUsd * 1.25 * 2) / 2);
+  return Math.max(0.5, Math.ceil(Math.max(estimate.highUsd * 1.25, (estimate.holdUsd ?? 0) * 1.1) * 2) / 2);
 }
 
 /** The largest budget the budget fields accept; a typo should not authorise a large spend. */

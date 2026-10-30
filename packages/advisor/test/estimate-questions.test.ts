@@ -13,6 +13,8 @@ import { estimateQuestions, estimateRecipe, type PricingContext, type QuestionEs
 const AT = new Date('2026-10-07T12:00:00Z');
 const priced = (id: string): PricingContext => ({ profile: PROFILES.find((p) => p.id === id)!, images: true, video: true, otherFamily: true, at: AT });
 const BALANCED = priced('balanced');
+/** A recipe's estimate as figures a question shows: a question's estimate has no hold (CostEstimate holdUsd, B-148). */
+const figures = ({ holdUsd: _hold, ...e }: ReturnType<typeof estimateRecipe>) => e;
 
 /** The recipe's node with this id. */
 function node<T extends Node>(recipe: Recipe, id: string): T {
@@ -50,7 +52,7 @@ describe('the estimate of a question an optional or a person’s loop asks', () 
     const question = estimateQuestions(c4, BALANCED)['framings-if-wanted']!;
     expect(question.asks).toBe('optional');
     // The step alone, priced as the recipe prices it.
-    expect(question.estimate).toEqual(estimateRecipe(alone(c4, framings.body), BALANCED));
+    expect(question.estimate).toEqual(figures(estimateRecipe(alone(c4, framings.body), BALANCED)));
     expect(question.estimate.lowUsd).toBeGreaterThan(0);
     expect(question.estimate.modelCalls).toEqual({ low: 1, high: 1 });
     // A recipe that is only this optional costs nothing at the low end (No) and the step at the high end (Yes).
@@ -62,7 +64,7 @@ describe('the estimate of a question an optional or a person’s loop asks', () 
   it('inside a draft, an optional’s is for that one draft (C1 asks once per draft)', () => {
     const plain = node<Optional>(c1, 'asset-if-plain');
     const question = estimateQuestions(c1, BALANCED)['asset-if-plain']!;
-    expect(question.estimate).toEqual(estimateRecipe(alone(c1, plain.body), BALANCED));
+    expect(question.estimate).toEqual(figures(estimateRecipe(alone(c1, plain.body), BALANCED)));
     expect(question.estimate.images.low).toBeGreaterThan(0);
   });
 
@@ -70,12 +72,12 @@ describe('the estimate of a question an optional or a person’s loop asks', () 
     const authorLoop = node<Loop>(c6, 'author-loop');
     const round = estimateQuestions(c6, BALANCED)['author-loop']!;
     expect(round.asks).toBe('round');
-    expect(round.estimate).toEqual(estimateRecipe(alone(c6, authorLoop.body), BALANCED));
+    expect(round.estimate).toEqual(figures(estimateRecipe(alone(c6, authorLoop.body), BALANCED)));
     expect(round.estimate.modelCalls.low).toBeGreaterThan(0);
     expect(round.estimate.humanMinutes.low).toBeGreaterThan(0);
     // An optional whose step is a loop of its own counts that loop's planned rounds.
     const critique = node<Optional>(c4, 'recipient-critic');
-    expect(estimateQuestions(c4, BALANCED)['recipient-critic']!.estimate).toEqual(estimateRecipe(alone(c4, critique.body), BALANCED));
+    expect(estimateQuestions(c4, BALANCED)['recipient-critic']!.estimate).toEqual(figures(estimateRecipe(alone(c4, critique.body), BALANCED)));
   });
 
   // B-107: the other yes/no questions that lead to paid work.
@@ -83,7 +85,7 @@ describe('the estimate of a question an optional or a person’s loop asks', () 
     const critic = node<Loop>(c4, 'critic-loop');
     const q = estimateQuestions(c4, BALANCED)['critic-loop']!;
     expect(q.asks).toBe('cap');
-    expect(q.estimate).toEqual(estimateRecipe(alone(c4, critic.body), BALANCED));
+    expect(q.estimate).toEqual(figures(estimateRecipe(alone(c4, critic.body), BALANCED)));
     expect(q.estimate.modelCalls.low).toBeGreaterThan(0);
   });
 
@@ -98,7 +100,7 @@ describe('the estimate of a question an optional or a person’s loop asks', () 
     const twoStages = { ...c4, stages: [{ stage: 'D1', body: { op: 'seq', steps: [draft, gate, draft] } }, { stage: 'D2', body: draft }] } as Recipe;
     const after = estimateQuestions(twoStages, BALANCED)['launch-gate']!.estimate;
     const twoDrafts = estimateRecipe({ ...c4, stages: [{ stage: 'D1', body: { op: 'seq', steps: [draft, draft] } }] } as Recipe, BALANCED);
-    expect(after).toEqual(twoDrafts);
+    expect(after).toEqual(figures(twoDrafts));
   });
 
   // B-108: the figure is sized by the work beside the question when it is known.

@@ -9,6 +9,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CompletionRequest, CompletionResult, Gateway, ProfileStatus } from '@byway/contracts';
 import { PROFILES } from '@byway/gateway';
+import { outputAllowance } from '@byway/advisor';
 import { CATALOG, PROTOCOL_CONFIGS } from '@byway/catalog';
 import { createPromptRenderer, outputForStep, slotsForStep } from '@byway/prompts';
 import { DIRECTION_FIRST_SEED_PROMPTS, hasNoExecutor, HUMAN_WRITE_ROLES, leavesNote, personWrite, restoresWork, ROLES, stepEffect, steps, voiceWrite, type Role } from '@byway/recipe';
@@ -231,6 +232,35 @@ describe('the slots the composed profile renders a template with are slots the r
     });
     const filled = new Set([...Object.keys(built.slots), ...activityAdds(step.role, medium)]);
     expect([...slotsForStep(step, medium)].filter((s) => !filled.has(s))).toEqual([]);
+  });
+});
+
+// The estimate's in-flight figure reserves each call at the output allowance the runner asks for (@byway/advisor
+// outputAllowance, B-148): held here to what modelStep sends, role by role.
+describe('the output allowance a model step asks for', () => {
+  it('is the one the estimate reserves it at, for every role modelStep runs', async () => {
+    const run = await newRun();
+    const doc = (await store.artifacts.putText('# Memo\n', 'text/markdown')).id;
+    const asked = new Map<Role, number | undefined>();
+    for (const role of ROLES) {
+      let first: number | undefined;
+      let sent = false;
+      const gateway: Gateway = {
+        ...scripted([]),
+        async complete(req: CompletionRequest): Promise<CompletionResult> {
+          if (!sent) (sent = true), (first = req.maxOutputTokens);
+          return { text: '', stopReason: 'end', servedModel: 'scripted', provider: 'mock', usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0, ledgerEntryId: 'l' };
+        },
+      };
+      try {
+        await modelStep({ gateway, store, prompts: fakePrompts() }, { run, call: call(run, `allow-${role}`), step: spec(role, 'model', ['critique'], { produces: role === 'build' || role === 'seed' || role === 'fix' ? ['artifact'] : ['critique'] }), ports: { artifact: doc }, refs: [] });
+      } catch {
+        // An empty answer misses most parsers; only the first request's allowance matters here.
+      }
+      if (sent) asked.set(role, first);
+    }
+    expect([...asked.keys()]).toEqual(expect.arrayContaining(['build', 'seed', 'fix', 'critic', 'check', 'cut']));
+    for (const [role, allowance] of asked) expect(allowance, role).toBe(outputAllowance(role));
   });
 });
 

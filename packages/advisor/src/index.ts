@@ -18,6 +18,7 @@ export {
   ARTIFACT_TOKENS,
   CLIP_SECONDS,
   criticPlanBound,
+  outputAllowance,
   estimateQuestions,
   estimateRecipe,
   HUMAN_MINUTES,

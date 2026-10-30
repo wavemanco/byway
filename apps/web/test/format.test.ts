@@ -74,6 +74,13 @@ describe('budgets', () => {
     expect(suggestBudget({ lowUsd: 0.03, highUsd: 0.15 })).toBe(0.5);
     expect(suggestBudget({ lowUsd: 0, highUsd: 0 })).toBe(1);
   });
+  it('covers what the run holds at once, with a tenth to spare, when that is above the high estimate (B-148)', () => {
+    // C2 on Balanced: twelve seeds reserve $1.98 together on a run whose high estimate is $1.10.
+    expect(suggestBudget({ lowUsd: 0.37, highUsd: 1.1, holdUsd: 1.98 })).toBe(2.5);
+    // A hold below a quarter over the high estimate changes nothing; nor does an estimate stored without one.
+    expect(suggestBudget({ lowUsd: 0.6, highUsd: 2.4, holdUsd: 2.5 })).toBe(3);
+    expect(suggestBudget({ lowUsd: 0.37, highUsd: 1.1 })).toBe(1.5);
+  });
   it('parses what people type into the budget field', () => {
     expect(parseBudgetInput('2.50')).toBe(2.5);
     expect(parseBudgetInput(' $3 ')).toBe(3);

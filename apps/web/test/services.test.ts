@@ -270,7 +270,8 @@ describe('the service host', () => {
     // The same figure the advisor gives a recipe that is that step alone.
     const optional = c4.stages.flatMap((s) => (s.body.op === 'seq' ? s.body.steps : [s.body])).find((n) => n.op === 'optional' && n.id === 'framings-if-wanted');
     if (optional?.op !== 'optional') throw new Error('framings-if-wanted missing');
-    expect(framings?.estimate).toEqual(live.advisor.estimate({ ...c4, stages: [{ stage: 'D1', body: optional.body }] }, 'balanced'));
+    const { holdUsd: _hold, ...alone } = live.advisor.estimate({ ...c4, stages: [{ stage: 'D1', body: optional.body }] }, 'balanced');
+    expect(framings?.estimate).toEqual(alone);
     // A run started in demo mode is on the demo profile, and its calls cost nothing.
     expect(current.host.questionEstimates(c4, 'demo')['framings-if-wanted']?.estimate.highUsd).toBe(0);
     // Settings' demo switch, on now, does not move a run started live onto the mock: the worker still makes its calls.
