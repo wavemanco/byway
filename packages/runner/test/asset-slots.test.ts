@@ -367,7 +367,7 @@ describe('a brief answer that covers every slot and names some the work does not
     const { notes } = await runAsset('options', spec('c2', 'mood-boards'), optionsDoc(), g);
     expect(g.completions.filter((c) => c.purpose === 'asset.briefs:options')).toHaveLength(1);
     expect(g.images).toHaveLength(3);
-    expect(notes).toEqual(['Briefs for “Z” and “Option Y”, which are not among the options, were left out.']);
+    expect(notes).toEqual(['Briefs for “Z” and “Option Y”, which are not among the chosen options, were left out.']);
   });
 
   it('“Not every image was made” only when an image is missing: a missing shot and a left-out one are said apart', async () => {
@@ -891,6 +891,13 @@ describe('the slot plan on its own', () => {
     expect(eachPlan('options', map([1, 2, 3, 4, 5].map(() => ({ chosen: true }))), 'Mood boards')).toEqual({ kind: 'each', medium: 'options', expected: ['A', 'B', 'C'], over: ['D', 'E'] });
     // None chosen: nothing to make.
     expect(eachPlan('options', map([{ chosen: false }, { rationale: 'Not chosen. Y' }]), 'Mood boards')).toEqual({ kind: 'each', medium: 'options', expected: [] });
+    // A map with flags is read by its flags alone (the check of B-049): every flag false is none chosen, whatever a
+    // rationale says; with no flags, markdown around the word is allowed.
+    expect(eachPlan('options', map([{ chosen: false, rationale: 'Chosen. X' }, { chosen: false, rationale: 'Chosen. Y' }]), 'Mood boards')).toEqual({ kind: 'each', medium: 'options', expected: [] });
+    expect(eachPlan('options', map([{ rationale: '**Chosen.** X' }, { rationale: '“Chosen.” Y' }]), 'Mood boards')).toEqual({ kind: 'each', medium: 'options', expected: ['A', 'B'] });
+    // A flag that is not true or false reads as unflagged: the map still parses.
+    const odd = serializeJson({ options: [{ title: 'T', pitch: 'p', rationale: 'Chosen. r', chosen: null }] });
+    expect(eachPlan('options', odd, 'Mood boards')).toEqual({ kind: 'each', medium: 'options', expected: ['A'] });
   });
 
   it('on options with none chosen, nothing is asked or bought, and the step says why; with more than three, the note names those without one', async () => {

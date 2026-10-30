@@ -17,7 +17,7 @@ The option map:
 {{artifact}}
 ```
 
-Make one mood image for each of the chosen options below (their labels are the ones they have in the option map):
+Make one mood image for each of the chosen options below, each under its label in the option map's order:
 
 <labels>
 {{options}}

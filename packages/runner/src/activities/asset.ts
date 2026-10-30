@@ -168,7 +168,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     // below 1, so every brief was left out); or because no usable brief came even when asked again.
     const none = slots.kind === 'free' && slots.max < 1;
     const chosen = briefs.shortfall === undefined && !none;
-    const note = chosen ? NO_IMAGE_CHOSEN_NOTE : [none ? NO_SLOTS_NOTE : NO_BRIEF_NOTE, ...leftOutSentences(slots, briefs.value)].join(' ');
+    const note = chosen ? NO_IMAGE_CHOSEN_NOTE : [none ? NO_SLOTS_NOTE : NO_BRIEF_NOTE, ...leftOutSentences(slots, briefs.value), overSentence(slots)].filter(Boolean).join(' ');
     await stepFinished(deps, run, call, { costUsd, ...(chosen ? {} : { skipped: true }), note: said(note)! }, true);
     return chosen ? { costUsd } : { costUsd, skipped: true };
   }
@@ -207,7 +207,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     outputs.push(image.made.artifactId);
   }
   if (!made.length) {
-    await stepFinished(deps, run, call, { costUsd, skipped: true, note: said([NO_IMAGE_MADE_NOTE, ...declinedSentences(slots, declined), ...waitedSentences(slots, waited), ...leftOutSentences(slots, briefs.value)].join(' '))! }, true);
+    await stepFinished(deps, run, call, { costUsd, skipped: true, note: said([NO_IMAGE_MADE_NOTE, ...declinedSentences(slots, declined), ...waitedSentences(slots, waited), ...leftOutSentences(slots, briefs.value), overSentence(slots)].filter(Boolean).join(' '))! }, true);
     return { costUsd, skipped: true };
   }
 
@@ -437,7 +437,7 @@ function leftOutSentence(plan: Extract<SlotPlan, { kind: 'each' }>, unknown: str
   const names = [...new Set(unknown)];
   const quoted = list(names.map((u) => `“${u}”`));
   const several = names.length > 1;
-  const which = plan.medium === 'media' ? `the storyboard has no ${several ? 'shots' : 'shot'} for` : several ? 'are not among the options' : 'is not one of the options';
+  const which = plan.medium === 'media' ? `the storyboard has no ${several ? 'shots' : 'shot'} for` : several ? 'are not among the chosen options' : 'is not one of the chosen options';
   return unknown.length > 1 ? `Briefs for ${quoted}, which ${which}, were left out.` : `The brief for ${quoted}, which ${which}, was left out.`;
 }
 
@@ -453,8 +453,7 @@ function droppedSentence(plan: Extract<SlotPlan, { kind: 'free' }>, dropped: str
   return dropped.length > 1 ? `${most}, so the briefs for ${quoted} were left out.` : `${most}, so the brief for ${quoted} was left out.`;
 }
 
-/** The options slot of an options brief: each option's label and title, as "### A" headings. */
-/** The options the step makes images for, under their labels in the option map: the chosen ones (eachPlan). */
+/** The options slot of an options brief: the options the step makes images for, the chosen ones (eachPlan), each under its "### A" label in the option map. */
 function optionLabels(artifact: string, plan: SlotPlan | undefined): string {
   const r = parseOptions(artifact);
   if (!r.ok) return textView('options', artifact);

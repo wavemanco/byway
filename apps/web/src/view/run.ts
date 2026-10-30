@@ -154,8 +154,10 @@ export function sideImages(stages: TimelineStage[]): SideImage[] {
  */
 export function boardedOptions(medium: RunRecord['medium'], stages: TimelineStage[]): string | undefined {
   if (medium !== 'options') return undefined;
-  const kept = stages.flatMap((stage) => stage.steps.filter((s) => s.block === 'ASSET').flatMap((s) => s.artifacts.filter((a) => outputKind(a.mediaType) === 'data')));
-  return kept.at(-1)?.artifactId;
+  // Only when nothing rewrote the work after it (a composed recipe may put VOICE after the boards): else the deliverable,
+  // in the person's words, is downloaded as it is.
+  const last = stages.flatMap((stage) => stage.steps.flatMap((s) => s.artifacts.filter((a) => outputKind(a.mediaType) === 'data').map((a) => ({ a, asset: s.block === 'ASSET' })))).at(-1);
+  return last?.asset ? last.a.artifactId : undefined;
 }
 
 /**

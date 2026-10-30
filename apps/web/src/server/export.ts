@@ -33,6 +33,7 @@ export async function withMoodBoards(text: string, artifacts: Pick<ArtifactStore
   } catch {
     return text;
   }
+  if (typeof doc !== 'object' || doc === null) return text;
   const options = (doc as { options?: unknown }).options;
   if (!Array.isArray(options)) return text;
   let total = 0;

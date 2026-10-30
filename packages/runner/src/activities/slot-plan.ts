@@ -42,8 +42,10 @@ export function eachPlan(medium: Medium, artifact: string, what: string): SlotPl
     if (!r.ok) throw new StepError(`The ${what} step could not read the options: ${r.problem}`);
     // The chosen options only, at most MOOD_BOARDS_MAX (the owner's choice for C2, B-049): those the option map flags,
     // or, in a map written without flags, those whose rationale opens with "Chosen." as its prompt asks.
+    const flags = r.value.options.some((o) => o.chosen !== undefined);
     const flagged = r.value.options.flatMap((o, i) => (o.chosen === true ? [labelOf(i)] : []));
-    const chosen = flagged.length ? flagged : r.value.options.flatMap((o, i) => (/^chosen\b/i.test(o.rationale.trim()) ? [labelOf(i)] : []));
+    // Markdown or quotes around the word are allowed ("**Chosen.**").
+    const chosen = flags ? flagged : r.value.options.flatMap((o, i) => (/^[\s*_"'“]*chosen\b/i.test(o.rationale) ? [labelOf(i)] : []));
     return { kind: 'each', medium, expected: chosen.slice(0, MOOD_BOARDS_MAX), ...(chosen.length > MOOD_BOARDS_MAX ? { over: chosen.slice(MOOD_BOARDS_MAX) } : {}) };
   }
   return undefined;

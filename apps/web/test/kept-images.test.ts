@@ -71,6 +71,22 @@ describe('the Result screen shows the images a piece or page does not hold (B-04
     expect(boardedOptions('options', withBoards)).toBe(kept);
     expect(boardedOptions('prose', withBoards)).toBeUndefined();
     expect(boardedOptions('options', timeline([], []))).toBeUndefined();
+    // A composed recipe whose VOICE rewrote the map after the boards: the deliverable, in the person's words (the check).
+    const voicedAfter = buildTimeline(
+      [
+        ev('step-started', 'mood-boards', { label: 'Custom imagery', stage: 'D1', role: 'asset', actor: 'model', block: 'ASSET' }),
+        ev('artifact', 'mood-boards', { artifactId: kept, mediaType: 'application/json', label: 'Mood boards (kept beside the work)' }),
+        ev('step-finished', 'mood-boards', { costUsd: 0.1 }),
+        ev('step-started', 'voice', { label: 'Your words', stage: 'D1', role: 'voice', actor: 'human', block: 'VOICE' }),
+        ev('artifact', 'voice', { artifactId: B, mediaType: 'application/json', label: 'Option map' }),
+        ev('step-finished', 'voice', { costUsd: 0 }),
+        ev('run-finished', undefined, { costUsd: 0.1 }),
+      ],
+      [],
+      'done',
+      null,
+    );
+    expect(boardedOptions('options', voicedAfter)).toBeUndefined();
     // The download carries each board inline beside its option, and leaves the rest of the map as it was.
     const png = new Uint8Array([137, 80, 78, 71]);
     const store = { has: async (id: string) => id === A, get: async () => ({ record: { id: A, mediaType: 'image/png', bytes: png.length, createdAt: '' }, bytes: png }) };
@@ -80,6 +96,7 @@ describe('the Result screen shows the images a piece or page does not hold (B-04
     // Anything that is not an option map is returned as it was.
     expect(await withMoodBoards('not json', store)).toBe('not json');
     expect(await withMoodBoards('{"storyboard":[]}', store)).toBe('{"storyboard":[]}');
+    expect(await withMoodBoards('null', store)).toBe('null');
   });
 
   it('still shows every image beside an options list, which cannot hold them (UX-8)', () => {

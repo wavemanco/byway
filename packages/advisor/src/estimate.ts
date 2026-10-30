@@ -115,6 +115,8 @@ export const STORYBOARD_SHOTS = { low: 3, high: 6 } as const;
 export const CLIP_SECONDS = { low: 5, high: 10 } as const;
 /** Image slots when an ASSET step names none (01 ASSET: up to 3). `triesPerSlot` is not counted: v1 makes one image per brief. */
 const DEFAULT_SLOTS = 3;
+/** The most mood boards an options step makes: the runner's MOOD_BOARDS_MAX (slot-plan.ts; B-049). */
+const MOOD_BOARDS = 3;
 const IMAGE_PROMPT_TOKENS = 300;
 
 /** Minutes a person spends at each kind of checkpoint (spec §3.2 "Human checkpoint kinds by role"). */
@@ -336,7 +338,8 @@ function stepSpan(w: Walk, s: Step, set: Count): Span {
         // With no image model the runner skips the whole step, its briefs and integrate calls included (asset.ts).
         if (!w.priced.image) return NONE;
         const slots = knobNumber(s, 'slots') ?? DEFAULT_SLOTS;
-        const n = medium === 'media' ? count(STORYBOARD_SHOTS.low, STORYBOARD_SHOTS.high) : count(1, slots);
+        // On options, a board for each chosen option, at most MOOD_BOARDS (the runner reads no slots knob there).
+        const n = medium === 'media' ? count(STORYBOARD_SHOTS.low, STORYBOARD_SHOTS.high) : medium === 'options' ? count(1, MOOD_BOARDS) : count(1, slots);
         const integrate = medium === 'web-page' || medium === 'prose' ? completion(w, 'asset.integrate', 'mid', count(1, 1), undefined) : NONE;
         return add(completion(w, 'asset.briefs', tierOf(s), count(1, 1), s), images(w, n), integrate);
       }

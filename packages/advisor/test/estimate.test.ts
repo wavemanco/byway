@@ -413,6 +413,13 @@ describe('the call counts the interpreter makes (B-152)', () => {
     expect(calls(recipe(seq(draft, loop('critic-loop', seq(view, critic({ mode: 'OK' }), revise), gate))))).toEqual({ low: 2, high: 7 });
   });
 
+  it('on options, an ASSET step makes a board for each chosen option, at most three, whatever its slots knob (B-049)', () => {
+    const boards = (knobs: Record<string, unknown>) =>
+      estimateRecipe(withHash({ ...c4, medium: 'options', stages: [{ stage: 'D1', body: seq(draft, step({ id: 'mood', role: 'asset', block: 'ASSET', actor: 'model', tier: 'mid', prompt: 'product.c2.mood-boards', consumes: ['artifact'], produces: ['asset'], knobs: knobs as Step['knobs'] })) }] } as Recipe), ctx).images;
+    expect(boards({})).toEqual({ low: 1, high: 3 });
+    expect(boards({ slots: 1 })).toEqual({ low: 1, high: 3 });
+  });
+
   it('an ASSET step makes no call when the profile cannot make images (asset.ts; B-154)', () => {
     expect(calls(c3, { images: false }).high).toBe(calls(c3).high - 2);
   });

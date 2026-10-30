@@ -121,7 +121,8 @@ export const OptionSchema = z.object({
    * an option's title, pitch and rationale, so this is what the mood boards follow, not the "Chosen." a rationale opens
    * with (B-049).
    */
-  chosen: z.boolean().optional(),
+  // Anything but true or false (a model's null or "true") reads as unflagged rather than failing the map.
+  chosen: z.boolean().optional().catch(undefined),
 });
 export const OptionsSchema = z.object({ options: z.array(OptionSchema).min(1) });
 export type OptionsDoc = z.infer<typeof OptionsSchema>;
