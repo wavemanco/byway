@@ -65,6 +65,12 @@ export interface CostEstimate {
   clips?: { low: number; high: number };
   /** Human time the run asks for, in minutes. */
   humanMinutes: { low: number; high: number };
+  /**
+   * The most of the budget the run holds at once, at the high end: what it has spent and what its calls in flight
+   * reserve, which a fan-out's calls do together (B-148). A budget below it can stop a run that would cost less.
+   * Absent from an estimate stored before it was counted, and from a question's estimate.
+   */
+  holdUsd?: number;
 }
 
 /** Plain-language presentation of a recipe for the product UI (no protocol jargon by default). */

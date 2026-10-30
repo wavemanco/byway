@@ -1,9 +1,9 @@
 import { c1, c2, c3, c4, c5, c6a, c7, PROTOCOL_CONFIGS } from '@byway/catalog';
 import type { CostEstimate } from '@byway/contracts';
-import { EXTRACT_FRAME_SECONDS_BOUND, FAL_EXTRACT_FRAME, PRICES, PROFILES } from '@byway/gateway';
-import { loop, oneShotGate, seq, step, withHash, type Node, type Recipe, type Step } from '@byway/recipe';
+import { EXTRACT_FRAME_SECONDS_BOUND, FAL_EXTRACT_FRAME, maxCompletionCost, PRICES, priceFor, PROFILES } from '@byway/gateway';
+import { loop, oneShotGate, replicate, seq, step, withHash, type Node, type Recipe, type Step } from '@byway/recipe';
 import { describe, expect, it } from 'vitest';
-import { createAdvisor, estimateRecipe, HUMAN_MINUTES, TOKEN_ASSUMPTIONS } from '../src/index.ts';
+import { createAdvisor, estimateRecipe, HUMAN_MINUTES, outputAllowance, TOKEN_ASSUMPTIONS } from '../src/index.ts';
 import { demoAdvisor, demoGateway, recordingPrompts } from './helpers.ts';
 
 /** A copy of the recipe with the node of this id changed. */
@@ -415,6 +415,22 @@ describe('the call counts the interpreter makes (B-152)', () => {
 
   it('an ASSET step makes no call when the profile cannot make images (asset.ts; B-154)', () => {
     expect(calls(c3, { images: false }).high).toBe(calls(c3).high - 2);
+  });
+
+  it('holds what a fan-out reserves at once: each call at its whole output allowance, the branches together (B-148)', () => {
+    const balanced = PROFILES.find((p) => p.id === 'balanced')!;
+    const mid = priceFor(PRICES, balanced.tiers.mid.provider, balanced.tiers.mid.model, at)!;
+    const held = (r: Recipe) => estimateRecipe(r, ctx).holdUsd!;
+    // One build alone holds its reservation; twelve at once hold twelve; one after another hold one more than spent.
+    const one = held(recipe(draft));
+    expect(one).toBeGreaterThanOrEqual(maxCompletionCost(mid, 0, outputAllowance('build')));
+    expect(held(recipe(replicate('twelve', 12, draft)))).toBeGreaterThanOrEqual(12 * maxCompletionCost(mid, 0, outputAllowance('build')));
+    const inTurn = estimateRecipe(recipe(seq(draft, draft, draft)), ctx);
+    expect(inTurn.holdUsd!).toBeLessThan(inTurn.highUsd + one);
+    // C2's twelve seeds hold more than its whole high estimate, so its budget covers them (the case the row found).
+    const c2e = estimateRecipe(c2, { ...ctx, profile: balanced, otherFamily: true });
+    expect(c2e.holdUsd!).toBeGreaterThan(c2e.highUsd);
+    expect(c2e.holdUsd!).toBeGreaterThanOrEqual(12 * maxCompletionCost(mid, 0, outputAllowance('seed')));
   });
 
   it('a model step with no tier is priced at the tier the runner calls: big for a critic or judge, mid for the rest (modelStep; B-153)', () => {

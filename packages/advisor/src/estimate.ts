@@ -1,5 +1,5 @@
 import type { CostEstimate, Medium, ModelProfile, ProblemBrief, Tier } from '@byway/contracts';
-import { FAL_VIDEO_EXTRAS, PRICES, falVideoSeconds, priceFor, textTokens, tokenCost, type PriceRow } from '@byway/gateway';
+import { FAL_VIDEO_EXTRAS, PRICES, falVideoSeconds, maxCompletionCost, priceFor, textTokens, tokenCost, type PriceRow } from '@byway/gateway';
 import { GREAT_MIN_REFERENCES, problemSlot } from '@byway/prompts/pure';
 import { MEDIUM_FORMAT } from '@byway/protocol';
 import { asksSwaps, audioAsset, exitPoints, loopRounds, promptShows, type Gate, type Loop, type Node, type Recipe, type Seq, type Stage, type Step } from '@byway/recipe';
@@ -205,6 +205,10 @@ interface Walk {
   /** The recipe's stages in order, and the one being walked: a retry re-runs the stages from its target through this. */
   order?: readonly Stage['stage'][];
   stage?: Stage['stage'];
+  /** Each stage's `over` (Walked), for a retry that re-runs it. */
+  stageOver?: Map<Stage['stage'], number>;
+  /** The most one call priced since walkNode last reset it reserves over its planned cost (completion sets it). */
+  callOver?: number;
   /** When set, what each question that commits money commits to, by the node's id (estimateQuestions). */
   questions?: Map<string, Question>;
   /** With `questions`: each gate's "Use it anyway?", to which the walk adds what follows the gate as it reaches it. */
@@ -241,11 +245,26 @@ function completion(w: Walk, role: string, tier: Tier, readers: Count, step: Ste
     const t = rule(z, Math.max(1, readersN));
     return tokenCost(price, { inputTokens: Math.ceil(t.input * band), outputTokens: Math.ceil(t.output * band) });
   };
+  const high = usd(readers.high, TOKEN_BAND.high);
+  // The gateway reserves a call at its whole output allowance before sending it (maxCompletionCost), far above what it
+  // plans to cost: what the call holds over that, for the walk's in-flight figure (B-148).
+  const input = Math.ceil(rule(z, Math.max(1, readers.high)).input * TOKEN_BAND.high);
+  w.callOver = Math.max(w.callOver ?? 0, maxCompletionCost(price, input, outputAllowance(role)) - high);
   return {
     low: { ...ZERO, calls: 1, usd: usd(readers.low, TOKEN_BAND.low) },
-    high: { ...ZERO, calls: 1, usd: usd(readers.high, TOKEN_BAND.high) },
+    high: { ...ZERO, calls: 1, usd: high },
   };
 }
+
+/** Roles whose calls write the work: the runner leaves them the gateway's default output allowance. */
+const WRITING_ROLES = new Set(['build', 'seed', 'fix', 'voice', 'asset.integrate']);
+
+/**
+ * The output allowance the runner asks a call of this role for, which the gateway reserves it at: 16,000 tokens for a
+ * call that writes the work (model-step.ts BUILDERS; asset.integrate), 4,000 for the rest (JUDGE_MAX_OUTPUT; the image
+ * briefs, relay links and the cap's re-rank). The runner's model-step test holds it to modelStep's rule.
+ */
+export const outputAllowance = (role: string): number => (WRITING_ROLES.has(role) ? 16_000 : 4_000);
 
 function images(w: Walk, n: Count): Span {
   const row = w.priced.image;
@@ -363,40 +382,55 @@ function atCap(w: Walk, gate: Gate): Span {
 interface Walked {
   span: Span;
   set: Count;
+  /**
+   * The most the node holds of the budget at once, at the high end: what it has spent and what its calls in flight
+   * reserve (B-148). Branches of a replicate, an each or an audit run at once (interpreter.ts Promise.all), so their
+   * holds add; anything else runs one step at a time.
+   */
+  hold: number;
+  /** The most its calls in flight at once reserve over their planned cost. */
+  over: number;
 }
 
-/** A seq's spans in order, and after each child how many of them it and those before it gave. */
-function walkSeq(w: Walk, n: Seq, set: Count): { spans: Span[]; ends: number[]; set: Count } {
+/** A seq's spans in order, after each child how many of them it and those before it gave, and its hold and over. */
+function walkSeq(w: Walk, n: Seq, set: Count): { spans: Span[]; ends: number[]; set: Count; hold: number; over: number } {
   let cur = set;
   const spans: Span[] = [];
   const marks: Mark[] = [];
+  let spent = 0;
+  let hold = 0;
+  let over = 0;
   n.steps.forEach((c, i) => {
     const from = w.gates?.length ?? 0;
     const r = walkNode(w, c, cur);
     spans.push(r.span);
     cur = r.set;
+    // One child at a time: what those before it spent, and what it holds.
+    hold = Math.max(hold, spent + r.hold);
+    over = Math.max(over, r.over);
+    spent += r.span.high.usd;
     // A cliché sweep whose finds feed a swap step: you choose which to swap before it runs (convention C2), exactly
     // where the interpreter asks (asksSwaps reads the steps after it in this seq).
     if (asksSwaps(c, n.steps.slice(i + 1))) spans.push(minutes('select'));
     marks.push({ from, to: w.gates?.length ?? 0, at: spans.length });
   });
   follow(w, marks, spans);
-  return { spans, ends: marks.map((m) => m.at), set: cur };
+  return { spans, ends: marks.map((m) => m.at), set: cur, hold, over };
 }
 
 /**
  * A critic or check loop's round, split after its last child that is or holds an exit point: the gate is applied right
  * after the critic or check, so the round that ends the loop runs the head and not the tail (the fix after it).
  */
-function loopRound(w: Walk, n: Loop, set: Count): { head: Span; tail: Span; set: Count } {
+function loopRound(w: Walk, n: Loop, set: Count): { head: Span; tail: Span; set: Count; over: number } {
   if (n.gate.metric !== 'human' && n.body.op === 'seq') {
     const r = walkSeq(w, n.body, set);
     const k = n.body.steps.findLastIndex((c) => exitPoints({ ...n, body: c }).length > 0);
     const cut = k < 0 ? r.spans.length : r.ends[k]!;
-    return { head: add(...r.spans.slice(0, cut)), tail: add(...r.spans.slice(cut)), set: r.set };
+    return { head: add(...r.spans.slice(0, cut)), tail: add(...r.spans.slice(cut)), set: r.set, over: r.over };
   }
   const body = walkNode(w, n.body, set);
-  return { head: body.span, tail: NONE, set: body.set };
+  return { head: body.span, tail: NONE, set: body.set, over: body.over };
 }
 
 /** A retry re-runs the stages from its target through the gate's own (interpreter.ts runStages; limits.ts counts the same). */
@@ -408,29 +442,48 @@ function retried(w: Walk, target: Stage['stage']): Span | undefined {
   return add(...w.order.slice(from, to + 1).map((s) => w.stageBase!.get(s) ?? NONE));
 }
 
+/**
+ * One node's walk. The calls a node asks itself (a step's, a judging pick's, a loop's re-rank) are made one at a time,
+ * so it holds what it spent and the most one of them reserves over its planned cost.
+ */
 function walkNode(w: Walk, n: Node, set: Count): Walked {
+  const outer = w.callOver;
+  w.callOver = 0;
+  const r = walkOp(w, n, set);
+  const own = w.callOver;
+  w.callOver = outer;
+  return { ...r, hold: Math.max(r.hold, r.span.high.usd + own), over: Math.max(r.over, own) };
+}
+
+/** What a node holds when it runs one thing after another and its calls in flight reserve `over` at most. */
+const inTurn = (span: Span, set: Count, over: number): Walked => ({ span, set, hold: span.high.usd + over, over });
+
+function walkOp(w: Walk, n: Node, set: Count): Walked {
   switch (n.op) {
     case 'step':
-      return { span: stepSpan(w, n, set), set: n.role === 'dedupe' ? count(Math.ceil(set.low / 2), set.high) : set };
+      return inTurn(stepSpan(w, n, set), n.role === 'dedupe' ? count(Math.ceil(set.low / 2), set.high) : set, 0);
     case 'seq': {
       const r = walkSeq(w, n, set);
-      return { span: add(...r.spans), set: r.set };
+      return { span: add(...r.spans), set: r.set, hold: r.hold, over: r.over };
     }
     case 'replicate': {
       const reps = count(n.n, n.n);
-      return { span: times(walkNode(w, n.body, count(1, 1)).span, reps), set: reps };
+      const body = walkNode(w, n.body, count(1, 1));
+      return { span: times(body.span, reps), set: reps, hold: n.n * body.hold, over: n.n * body.over };
     }
-    case 'each':
-      return { span: times(walkNode(w, n.body, count(1, 1)).span, set), set };
+    case 'each': {
+      const body = walkNode(w, n.body, count(1, 1));
+      return { span: times(body.span, set), set, hold: set.high * body.hold, over: set.high * body.over };
+    }
     case 'pick': {
       const after = count(Math.min(n.k, set.low), Math.min(n.k, set.high));
-      if (n.mode === 'H') return { span: minutes('pick'), set: after };
-      if (n.mode === 'C') return { span: n.judge ? completion(w, n.judge.role, tierOf(n.judge), set, n.judge) : completion(w, 'judge', 'big', set, undefined), set: after };
-      return { span: NONE, set: after };
+      if (n.mode === 'H') return inTurn(minutes('pick'), after, 0);
+      if (n.mode === 'C') return inTurn(n.judge ? completion(w, n.judge.role, tierOf(n.judge), set, n.judge) : completion(w, 'judge', 'big', set, undefined), after, 0);
+      return inTurn(NONE, after, 0);
     }
     case 'loop': {
       const round = loopRound(w, n, set);
-      const body = { span: add(round.head, round.tail), set: round.set };
+      const body = inTurn(add(round.head, round.tail), round.set, round.over);
       // In a relay link that made no clip, the judge it reports to is not asked: the loop ends after one round, unchecked.
       if (w.link?.blind && exitPoints(n).length) return body;
       // A critic or check loop asks "Use the best version so far?" at its cap (No buys more rounds), and a scored one
@@ -448,13 +501,13 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
       const head = n.gate.metric === 'human' ? add(round.head, minutes('confirm')) : round.head;
       // The round that ends the loop (the first at the low end, the cap's at the high end) stops before the tail.
       const span = add(times(head, rounds), times(round.tail, count(rounds.low - 1, rounds.high - 1)), atCap(w, n.gate));
-      return { span, set: body.set };
+      return inTurn(span, body.set, round.over);
     }
     case 'optional': {
       // The trigger is asked as a yes/no question either way; the body runs only on a yes.
       const body = walkNode(w, n.body, set);
       w.questions?.set(n.id, { asks: 'optional', span: body.span });
-      return { span: add(minutes('confirm'), onlyHigh(body.span)), set: count(Math.min(set.low, body.set.low), Math.max(set.high, body.set.high)) };
+      return { span: add(minutes('confirm'), onlyHigh(body.span)), set: count(Math.min(set.low, body.set.low), Math.max(set.high, body.set.high)), hold: body.hold, over: body.over };
     }
     case 'route': {
       const branches = n.branches.map((b) => walkNode(w, b.body, set));
@@ -463,10 +516,15 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
       return {
         span: add(ask, either(branches.map((b) => b.span))),
         set: count(Math.min(...branches.map((b) => b.set.low)), Math.max(...branches.map((b) => b.set.high))),
+        hold: Math.max(...branches.map((b) => b.hold)),
+        over: Math.max(...branches.map((b) => b.over)),
       };
     }
-    case 'audit':
-      return { span: add(...n.lenses.map((l) => walkNode(w, l.body, set).span)), set };
+    case 'audit': {
+      const lenses = n.lenses.map((l) => walkNode(w, l.body, set));
+      const sum = (f: (l: Walked) => number) => lenses.reduce((a, l) => a + f(l), 0);
+      return { span: add(...lenses.map((l) => l.span)), set, hold: sum((l) => l.hold), over: sum((l) => l.over) };
+    }
     case 'gate': {
       const body = walkNode(w, n.body, set);
       const retries = n.retry?.times ?? 0;
@@ -481,11 +539,14 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
         w.questions.set(n.id, q);
         w.gates.push(q);
       }
-      return { span: add(body.span, retry), set: body.set };
+      // A retry re-runs its stages one after another, so it holds no more over than the most of theirs.
+      const rerun = n.retry && w.order && w.stage ? w.order.slice(Math.max(0, w.order.indexOf(n.retry.stage)), w.order.indexOf(w.stage) + 1) : [];
+      return inTurn(add(body.span, retry), body.set, Math.max(body.over, ...rerun.map((s) => w.stageOver?.get(s) ?? 0)));
     }
     case 'relay': {
       const links = count(Math.min(STORYBOARD_SHOTS.low, n.maxLinks), n.maxLinks);
-      return { span: times(walkNode({ ...w, link: { blind: false } }, n.body, set).span, links), set };
+      const link = walkNode({ ...w, link: { blind: false } }, n.body, set);
+      return inTurn(times(link.span, links), set, link.over);
     }
   }
 }
@@ -506,22 +567,28 @@ function follow(w: Walk, marks: readonly Mark[], spans: readonly Span[]): void {
   for (const m of marks) for (const q of w.gates.slice(m.from, m.to)) q.span = add(q.span, ...spans.slice(m.at));
 }
 
-function walkStages(w: Walk, recipe: Recipe): { total: Span; byStage: Map<Stage['stage'], Span> } {
+function walkStages(w: Walk, recipe: Recipe): { total: Span; byStage: Map<Stage['stage'], Span>; overByStage: Map<Stage['stage'], number>; hold: number } {
   const byStage = new Map<Stage['stage'], Span>();
+  const overByStage = new Map<Stage['stage'], number>();
   let set = count(1, 1);
   const spans: Span[] = [];
   const marks: Mark[] = [];
   const order = recipe.stages.map((s) => s.stage);
+  let spent = 0;
+  let hold = 0;
   for (const s of recipe.stages) {
     const from = w.gates?.length ?? 0;
     const r = walkNode({ ...w, order, stage: s.stage }, s.body, set);
     byStage.set(s.stage, r.span);
+    overByStage.set(s.stage, r.over);
+    hold = Math.max(hold, spent + r.hold);
+    spent += r.span.high.usd;
     spans.push(r.span);
     set = r.set;
     marks.push({ from, to: w.gates?.length ?? 0, at: spans.length });
   }
   follow(w, marks, spans);
-  return { total: add(...spans), byStage };
+  return { total: add(...spans), byStage, overByStage, hold };
 }
 
 function price(rows: readonly PriceRow[], provider: ModelProfile['tiers']['big']['provider'], model: string, at: Date): PriceRow {
@@ -575,8 +642,8 @@ function walkOf(recipe: Recipe, ctx: PricingContext): Walk {
 export function estimateRecipe(recipe: Recipe, ctx: PricingContext): CostEstimate {
   const w = walkOf(recipe, ctx);
   const base = walkStages(w, recipe);
-  const { total } = walkStages({ ...w, stageBase: base.byStage }, recipe);
-  return estimateOf(total);
+  const { total, hold } = walkStages({ ...w, stageBase: base.byStage, stageOver: base.overByStage }, recipe);
+  return { ...estimateOf(total), holdUsd: ceilCents(Math.max(hold, total.high.usd)) };
 }
 
 /**
