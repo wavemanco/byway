@@ -23,6 +23,8 @@ import { ANSWER_MS, request, upgrade } from './fixtures/http.ts';
 import { REPO } from './guards/scan.ts';
 
 const WEB = path.join(REPO, 'apps', 'web');
+/** How long next dev may take to compile a route on its first request, as dev-web.ts's own start may (150 s, below). */
+const COMPILE_MS = 150_000;
 
 const freePort = () =>
   new Promise<number>((resolve, reject) => {
@@ -157,10 +159,12 @@ describe('pnpm dev’s web server, with the real next dev', { timeout: 3 * ANSWE
     expect((await upgrade(port, { Host: `127.0.0.1:${port}`, Origin: `http://127.0.0.1:${port}`, 'Sec-Fetch-Site': 'same-origin' })).status).toMatch(/ 101 /);
   });
 
+  // The one request here that next dev itself answers, so its first answer compiles a route: under the full suite's load
+  // that passed ANSWER_MS (the gate of 2026-10-30), so it waits as long as a compile can take, a hang guard only.
   it('has no image optimiser: /_next/image answers byway’s own page with a 404 (next.config.ts images.unoptimized)', async () => {
-    const res = await request(port, '/_next/image?url=%2Ficon.svg&w=64&q=75', { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'same-origin' });
+    const res = await request(port, '/_next/image?url=%2Ficon.svg&w=64&q=75', { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'same-origin' }, 'GET', COMPILE_MS);
     expect(res.status, res.body).toBe(404);
-  });
+  }, COMPILE_MS + ANSWER_MS);
 
   it('listens on the guarded port only: no internal next dev port, no other listener in its process tree', () => {
     const found = listening(child!.pid!);
