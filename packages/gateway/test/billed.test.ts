@@ -192,6 +192,65 @@ describe('a billed clip is ledgered even when keeping it fails (ENG-3, as video(
   });
 });
 
+// The owner's choice of 2026-10-30: "Use the assumed rule but mention that count was missed."
+describe('an answer that comes back with no token counts is settled at byway’s figures and marked, never as free (B-147)', () => {
+  const png = Buffer.from(encodePng(2, 2, new Uint8Array(12).fill(120))).toString('base64');
+  const marked = (kind: string) => [expect.objectContaining({ kind, priceBasis: 'assumed', usageMissing: true })];
+
+  it('OpenAI: an image with no usage', async () => {
+    const { client } = fakeOpenAI([], [{ data: [{ b64_json: png }], output_format: 'png' }]);
+    const out = await gateway({ clients: { openai: client } }).image(imageReq({ profileId: 'best' }));
+    expect(out.usageMissing).toBe(true);
+    expect(out.costUsd).toBeGreaterThan(0);
+    expect(ledgerLines()).toEqual(marked('image'));
+  });
+
+  it('Google: an image with no usageMetadata', async () => {
+    const { client } = fakeGoogle([{ modelVersion: 'gemini-nano-banana-2.1', candidates: [{ finishReason: 'STOP', content: { parts: [{ inlineData: { data: png, mimeType: 'image/png' } }] } }] }]);
+    const out = await gateway({ clients: { google: client } }).image(imageReq());
+    expect(out.usageMissing).toBe(true);
+    expect(ledgerLines()).toEqual(marked('image'));
+    // More than its per-image price alone: its tokens are counted at the planning figures too.
+    expect(ledgerLines()[0]?.usage).toMatchObject({ units: 1 });
+    expect((ledgerLines()[0]?.usage as { outputTokens: number }).outputTokens).toBeGreaterThan(0);
+  });
+
+  it('Google: a text answer with no usageMetadata', async () => {
+    const { client } = fakeGoogle([{ modelVersion: 'gemini-3.8-flash', candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'Done.' }] } }] }]);
+    const out = await gateway({ clients: { google: client } }).complete(completion({ profileId: 'google' }));
+    expect(out.usageMissing).toBe(true);
+    expect(out.costUsd).toBeGreaterThan(0);
+    expect(ledgerLines()).toEqual(marked('completion'));
+  });
+
+  it('Google: an image answer with no counts and no usable image, text only or of a type byway cannot use (the check)', async () => {
+    const textOnly = fakeGoogle([{ modelVersion: 'gemini-nano-banana-2.1', candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'A loaf, described.' }] } }] }]);
+    expect(await gateway({ clients: { google: textOnly.client } }).image(imageReq()).catch((e: unknown) => e)).toMatchObject({ code: 'refused', settled: { usageMissing: true } });
+    const gif = fakeGoogle([{ modelVersion: 'gemini-nano-banana-2.1', candidates: [{ finishReason: 'STOP', content: { parts: [{ inlineData: { data: png, mimeType: 'image/gif' } }] } }], usageMetadata: {} }]);
+    await gateway({ clients: { google: gif.client } }).image(imageReq()).catch(() => undefined);
+    const [a, b] = ledgerLines();
+    expect([a, b]).toEqual([expect.objectContaining({ priceBasis: 'assumed', usageMissing: true }), expect.objectContaining({ priceBasis: 'assumed', usageMissing: true })]);
+    // Costed at byway's figures, not at nothing and not at the per-image price alone.
+    expect(a?.costUsd as number).toBeGreaterThan(0);
+    expect(b?.costUsd as number).toBeGreaterThan(0.0336);
+  });
+
+  it('OpenAI: a declined answer whose usage never came is said with the retry that answered', async () => {
+    const openai = fakeOpenAI([{ model: 'gpt-6-astra', choices: [{ finish_reason: 'stop', message: { content: null, refusal: 'No.' } }] }]);
+    const out = await gateway({ clients: { openai: openai.client } }).complete(completion({ profileId: 'openai' }));
+    expect(out.declined).toMatchObject({ retry: 'answered', usageMissing: true });
+    expect(out.usageMissing).toBe(true);
+    expect(ledgerLines()[0]).toMatchObject({ declined: expect.anything(), usageMissing: true });
+  });
+
+  it('an answer with its counts is not marked', async () => {
+    const { client } = fakeOpenAI([], [{ data: [{ b64_json: png }], output_format: 'png', usage: { input_tokens: 20, output_tokens: 400 } }]);
+    const out = await gateway({ clients: { openai: client } }).image(imageReq({ profileId: 'best' }));
+    expect(out.usageMissing).toBeUndefined();
+    expect(ledgerLines()[0]).not.toHaveProperty('usageMissing');
+  });
+});
+
 describe('an image response with no image is a refusal, not a fake 502 (ENG-5)', () => {
   it('Google: a text-only STOP answer is ledgered once and refused, with no retry', async () => {
     const { client, calls } = fakeGoogle([

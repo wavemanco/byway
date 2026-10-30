@@ -49,7 +49,7 @@ describe('Settings: calls recorded on an assumption (F04, ADR-0091, ADR-0095 dec
     expect(assumedPricingNote(undefined)).toBeNull();
     expect(assumedPricingNote({ calls: 0, usd: 0 })).toBeNull();
     expect(assumedPricingNote({ calls: 1, usd: 0.028 })).toBe(
-      '1 call was counted on an assumption ($0.03): the provider named a model byway has no price for, named no model, or reported usage or a cost byway could not use. Your provider’s bill may differ.',
+      '1 call was counted on an assumption ($0.03): the provider named a model byway has no price for, named no model, gave no token counts, or reported usage or a cost byway could not use. Your provider’s bill may differ.',
     );
     expect(assumedPricingNote({ calls: 3, usd: 1.2 })).toMatch(/^3 calls were counted on an assumption \(\$1\.20 in all\): /);
   });

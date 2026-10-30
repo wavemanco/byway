@@ -118,6 +118,8 @@ export interface DeclinedAttempt {
   reason?: string;
   /** What byway counts for it as "may have been billed" (DeclineRecord.uncertainUsd), when anything. */
   uncertainUsd?: number;
+  /** The declined answer came with no token counts, so its cost is byway's figure (B-147). */
+  usageMissing?: true;
 }
 
 /**
@@ -172,6 +174,8 @@ export interface DeclineRecord {
   retryUncertainUsd?: number;
   /** Why the retry was not made, or how it failed, in words. */
   problem?: string;
+  /** The declined attempt's answer came with no token counts, so its cost is byway's figure (B-147). */
+  usageMissing?: true;
 }
 
 /** Which prompt template produced a call (from RenderedPrompt), recorded in the ledger for provenance (CR14). */
@@ -218,6 +222,12 @@ export interface CompletionResult {
   ledgerEntryId: string;
   /** Set when the model declined first and byway's one retry on the same model answered (ADR-0102). */
   declined?: DeclineRecord;
+  /**
+   * Set when the provider's answer gave no token counts: the call was settled by the gateway's rule for a count it
+   * cannot read (its planning figures, or a completion's whole output allowance) and its ledger entry is marked, so its
+   * cost is byway's figure and the provider's bill may differ (B-147).
+   */
+  usageMissing?: true;
 }
 
 export interface ImageRequest extends SpendContext {
@@ -238,6 +248,12 @@ export interface ImageResult {
   ledgerEntryId: string;
   /** Set when the image model declined first and byway's one retry on the same model made the image (ADR-0102). */
   declined?: DeclineRecord;
+  /**
+   * Set when the provider's answer gave no token counts: the call was settled by the gateway's rule for a count it
+   * cannot read (its planning figures, or a completion's whole output allowance) and its ledger entry is marked, so its
+   * cost is byway's figure and the provider's bill may differ (B-147).
+   */
+  usageMissing?: true;
 }
 
 export interface VideoRequest extends SpendContext {
@@ -340,6 +356,11 @@ export interface LedgerEntry {
    */
   priceBasis?: 'assumed';
   /**
+   * True when the provider's answer gave no token counts at all, so `usage` holds byway's figures and the entry is
+   * priced on that assumption (priceBasis 'assumed'; B-147). Absent otherwise. Covered by the hash chain.
+   */
+  usageMissing?: true;
+  /**
    * The spend-book operation this entry records (ADR-0095), so the book and the audit file reconcile one-to-one: an entry
    * written twice, or found again after a restart, is recognised. Absent on entries from before the book. Covered by the
    * hash chain.
@@ -427,12 +448,12 @@ export class GatewayError extends Error {
    * Set when the call was settled and ledgered before this error (the provider answered and billed it, and byway then
    * could not use the answer): its ledger entry and what it cost, so whoever counts the call's cost has it.
    */
-  settled?: { ledgerEntryId: string; costUsd: number };
+  settled?: { ledgerEntryId: string; costUsd: number; usageMissing?: true };
   constructor(
     code: GatewayErrorCode,
     message: string,
     retryable = false,
-    opts: { billed?: boolean; settledEarlier?: boolean; declined?: DeclineRecord; settled?: { ledgerEntryId: string; costUsd: number } } = {},
+    opts: { billed?: boolean; settledEarlier?: boolean; declined?: DeclineRecord; settled?: { ledgerEntryId: string; costUsd: number; usageMissing?: true } } = {},
   ) {
     super(message);
     this.code = code;

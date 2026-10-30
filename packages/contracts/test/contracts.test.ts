@@ -36,6 +36,12 @@ describe('ledgerEntryProblem (ADR-0095 decision 6)', () => {
     expect(ledgerEntryProblem(entry({ stepId: '' }))).toBe('its "stepId" is empty or not text');
     expect(ledgerEntryProblem(entry({ runId: 7 }))).toBe('its "runId" is empty or not text');
   });
+
+  it('accepts an entry marked as having come back with no token counts, and refuses any other mark (B-147)', () => {
+    expect(ledgerEntryProblem(entry({ priceBasis: 'assumed', usageMissing: true }))).toBeUndefined();
+    expect(ledgerEntryProblem(entry({ usageMissing: false }))).toBe('its "usageMissing" is not true');
+    expect(ledgerEntryProblem(entry({ usageMissing: 'yes' }))).toBe('its "usageMissing" is not true');
+  });
 });
 
 describe('contracts', () => {

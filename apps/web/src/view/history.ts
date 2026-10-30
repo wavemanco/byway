@@ -71,13 +71,13 @@ export function budgetProblem(budgetUsd: number, spend: Pick<WorkspaceSpend, 're
 
 /**
  * Settings' note on calls the gateway recorded on an assumption (SpendSummary.assumedPricing, LedgerEntry.priceBasis
- * 'assumed'; F04, ADR-0095 decision 7): the provider named a model byway has no price for, named no model, or reported
- * usage or a cost byway could not use. Null when there are none, so the note appears only when there is something to know.
+ * 'assumed'; F04, ADR-0095 decision 7): the provider named a model byway has no price for, named no model, gave no token
+ * counts (B-147), or reported usage or a cost byway could not use. Null when there are none, so the note appears only when there is something to know.
  */
 export function assumedPricingNote(assumed: { calls: number; usd: number } | undefined): string | null {
   if (!assumed || assumed.calls <= 0) return null;
   const one = assumed.calls === 1;
-  return `${assumed.calls} ${one ? 'call was' : 'calls were'} counted on an assumption (${formatUsd(assumed.usd)}${one ? '' : ' in all'}): the provider named a model byway has no price for, named no model, or reported usage or a cost byway could not use. Your provider’s bill may differ.`;
+  return `${assumed.calls} ${one ? 'call was' : 'calls were'} counted on an assumption (${formatUsd(assumed.usd)}${one ? '' : ' in all'}): the provider named a model byway has no price for, named no model, gave no token counts, or reported usage or a cost byway could not use. Your provider’s bill may differ.`;
 }
 
 /** What the spend book did with a line of the ledger that is not an entry (LedgerAudit.brokenLine), in words. */

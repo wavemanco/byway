@@ -355,6 +355,8 @@ export class ModelGateway implements Gateway {
           // Provenance (spec §3.3): the template behind the call, inside the hash chain like every other field.
           ...(prompt ? { prompt } : {}),
           ...(assumed || replaced ? { priceBasis: 'assumed' as const } : {}),
+          // The answer came with no token counts, so it was settled by the rule for a count it cannot read (B-147).
+          ...(out.usageMissing ? { usageMissing: true as const } : {}),
           // The ledger shows the decline and the retry (ADR-0102), inside the hash chain.
           ...(declined ? { declined } : {}),
           ...(retryOf !== undefined ? { retryOf } : {}),
@@ -363,9 +365,9 @@ export class ModelGateway implements Gateway {
         { servedModel: out.servedModel, usage: out.usage, ...(out.refusal ? { refusal: out.refusal } : {}), wire: out.responseBody },
         redact,
       );
-      if (declined) return { declined, entryId: entry.id, costUsd: entry.costUsd, ...retainedOf(op) };
+      if (declined) return { declined, entryId: entry.id, costUsd: entry.costUsd, ...retainedOf(op), ...(out.usageMissing ? { usageMissing: true as const } : {}) };
       // From here the call is settled and ledgered: a failure says so, with its entry and cost (GatewayError.settled).
-      const ledgered = { ledgerEntryId: entry.id, costUsd: entry.costUsd };
+      const ledgered = { ledgerEntryId: entry.id, costUsd: entry.costUsd, ...(out.usageMissing ? { usageMissing: true as const } : {}) };
       if (out.refusal) throw new GatewayError('refused', redact(`${ref.provider} ${out.refusal}`), false, { settled: ledgered });
       // The answer crosses into byway here: one holding a key is never handed on (ADR-0088). The call is already
       // ledgered with its evidence redacted, and it is not retried, because a retry would pay again.
@@ -383,6 +385,7 @@ export class ModelGateway implements Gateway {
           usage: { inputTokens: out.usage.inputTokens, outputTokens: out.usage.outputTokens },
           costUsd: entry.costUsd,
           ledgerEntryId: entry.id,
+          ...(out.usageMissing ? { usageMissing: true as const } : {}),
         },
       };
     } finally {
@@ -488,6 +491,7 @@ export class ModelGateway implements Gateway {
           costUsd,
           latencyMs: Date.now() - started,
           ...(settled.assumed || usage.replaced ? { priceBasis: 'assumed' as const } : {}),
+          ...(out.usageMissing ? { usageMissing: true as const } : {}),
           ...(declined ? { declined } : {}),
           ...(retryOf !== undefined ? { retryOf } : {}),
         },
@@ -496,12 +500,12 @@ export class ModelGateway implements Gateway {
         redact,
       );
       // From here the call is settled and ledgered: a failure says so, with its entry and cost (GatewayError.settled).
-      const ledgered = { ledgerEntryId: entry.id, costUsd: entry.costUsd };
+      const ledgered = { ledgerEntryId: entry.id, costUsd: entry.costUsd, ...(out.usageMissing ? { usageMissing: true as const } : {}) };
       if (kept?.error !== undefined) throw billedFailure(redact, `${ref.provider} made the image and billed it, but it could not be stored`, kept.error, ledgered);
-      if (declined) return { declined, entryId: entry.id, costUsd: entry.costUsd, ...retainedOf(op) };
+      if (declined) return { declined, entryId: entry.id, costUsd: entry.costUsd, ...retainedOf(op), ...(out.usageMissing ? { usageMissing: true as const } : {}) };
       // An answer with no usable image that is not a decline: refused, not asked again here (ENG-5); the asset step decides.
       if (out.refusal || !stored) throw new GatewayError('refused', redact(`${ref.provider} ${out.refusal ?? 'returned no image'}`), false, { settled: ledgered });
-      return { answer: { artifactId: stored.id, mediaType: out.mediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd: entry.costUsd, ledgerEntryId: entry.id } };
+      return { answer: { artifactId: stored.id, mediaType: out.mediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd: entry.costUsd, ledgerEntryId: entry.id, ...(out.usageMissing ? { usageMissing: true as const } : {}) } };
     } finally {
       await op.end();
     }
@@ -552,6 +556,7 @@ export class ModelGateway implements Gateway {
       ledgerEntryId: first.entryId,
       costUsd: first.costUsd,
       ...(first.uncertainUsd !== undefined ? { uncertainUsd: first.uncertainUsd } : {}),
+      ...(first.usageMissing ? { usageMissing: true as const } : {}),
     };
     // A retry billed that byway could not keep (its media, its request and response, or its cost could not be stored or
     // recorded), or would not use (its answer held one of the person's keys, ADR-0088), is told in that failure's own
@@ -608,7 +613,9 @@ export class ModelGateway implements Gateway {
     // retained before it was sent again, and (above) its estimate when it ended unsettled (PaidCall.uncertainUsd).
     if (!('answer' in second)) throw fail({ ...base, retry: 'declined', retryLedgerEntryId: second.entryId, retryCostUsd: second.costUsd, ...retryMaybe(op) });
     const declined: DeclineRecord = { ...base, retry: 'answered', retryLedgerEntryId: second.answer.ledgerEntryId, retryCostUsd: second.answer.costUsd, ...retryMaybe(op) };
-    return { ...second.answer, costUsd: roundUsd(first.costUsd + second.answer.costUsd), declined };
+    // The answer is the retry's; a declined first attempt with no token counts is said with it (B-147).
+    const missing = first.usageMissing || (second.answer as { usageMissing?: true }).usageMissing ? { usageMissing: true as const } : {};
+    return { ...second.answer, costUsd: roundUsd(first.costUsd + second.answer.costUsd), declined, ...missing };
   }
 
   /**
@@ -1245,6 +1252,8 @@ interface Declined {
   entryId: string;
   costUsd: number;
   uncertainUsd?: number;
+  /** The declined answer came with no token counts (B-147). */
+  usageMissing?: true;
 }
 
 /** What the book retained for a settled call's sends that may have been billed, as a Declined names it (none: absent). */
@@ -1258,7 +1267,7 @@ type Attempt<R> = { answer: R } | Declined;
 
 /** A decline an earlier attempt kept (SpendContext.operation.declinedEarlier), as askOnceMore takes it. */
 function declinedFrom(d: DeclinedAttempt): Declined {
-  return { declined: d.reason !== undefined ? { reason: d.reason } : {}, entryId: d.ledgerEntryId, costUsd: d.costUsd, ...(d.uncertainUsd !== undefined && d.uncertainUsd > 0 ? { uncertainUsd: d.uncertainUsd } : {}) };
+  return { declined: d.reason !== undefined ? { reason: d.reason } : {}, entryId: d.ledgerEntryId, costUsd: d.costUsd, ...(d.uncertainUsd !== undefined && d.uncertainUsd > 0 ? { uncertainUsd: d.uncertainUsd } : {}), ...(d.usageMissing ? { usageMissing: true as const } : {}) };
 }
 
 /**
@@ -1273,6 +1282,7 @@ async function keepDecline(caller: SpendContext['operation'], first: Declined): 
       costUsd: first.costUsd,
       ...(first.declined.reason !== undefined ? { reason: first.declined.reason } : {}),
       ...(first.uncertainUsd !== undefined ? { uncertainUsd: first.uncertainUsd } : {}),
+      ...(first.usageMissing ? { usageMissing: true as const } : {}),
     });
     return true;
   } catch {

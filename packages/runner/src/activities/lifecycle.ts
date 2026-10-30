@@ -8,7 +8,7 @@ import { labelled } from '@byway/prompts/pure';
 import { labels } from '../labels.ts';
 import { parseChoice } from '../parse.ts';
 import { ENDED_STATUSES as ENDED, type BudgetRaiseInput, type FailRunInput, type FinishRunInput, type RerankInput, type RerankResult, type SkipInput, type WorkflowEvent } from '../types.ts';
-import { askModel } from './call.ts';
+import { askModel, usageMissingNote } from './call.ts';
 import type { RunnerDeps } from './deps.ts';
 import { at, emit } from './events.ts';
 import { ArtifactReader, surfaceGroups, type ImageGroup } from './prompting.ts';
@@ -86,7 +86,7 @@ export async function rerank(deps: RunnerDeps, input: RerankInput): Promise<Rera
     maxOutputTokens: 4_000,
     parse: (text) => parseChoice(text, shown),
   });
-  await stepFinished(deps, run, call, { costUsd: answer.costUsd, outputArtifactIds: [input.snapshots[shown.indexOf(answer.value)]!.artifactId] }, true);
+  await stepFinished(deps, run, call, { costUsd: answer.costUsd, ...(answer.usageMissing ? { note: usageMissingNote(answer.usageMissing) } : {}), outputArtifactIds: [input.snapshots[shown.indexOf(answer.value)]!.artifactId] }, true);
   return { costUsd: answer.costUsd, index: shown.indexOf(answer.value) };
 }
 

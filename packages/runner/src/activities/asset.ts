@@ -36,7 +36,7 @@ import { parseHtml, parseMarkdown, parseOptions, parseStoryboard, serializeJson,
 import { imagesSlot, labelled, labelOf } from '@byway/prompts/pure';
 import { parseBriefs } from '../parse.ts';
 import type { AssetInput, AssetResult } from '../types.ts';
-import { askModel } from './call.ts';
+import { askModel, usageMissingNote } from './call.ts';
 import { mediaStatus } from './availability.ts';
 import type { RunnerDeps } from './deps.ts';
 import { ContractMissed, StepError } from './failures.ts';
@@ -156,13 +156,16 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   });
   const slots = plan!;
   let costUsd = briefs.costUsd;
+  // Calls of this step that came back with no token counts, said in its note (B-147).
+  let usageMissing = briefs.usageMissing ?? 0;
+  const said = (note: string | undefined) => (usageMissing ? [note, usageMissingNote(usageMissing)].filter(Boolean).join(' ') : note);
   if (!briefs.value.briefs.length) {
     // Nothing to make: by the prompt's own choice (its minimum is 0); because the step makes no images (a slots knob
     // below 1, so every brief was left out); or because no usable brief came even when asked again.
     const none = slots.kind === 'free' && slots.max < 1;
     const chosen = briefs.shortfall === undefined && !none;
     const note = chosen ? NO_IMAGE_CHOSEN_NOTE : [none ? NO_SLOTS_NOTE : NO_BRIEF_NOTE, ...leftOutSentences(slots, briefs.value)].join(' ');
-    await stepFinished(deps, run, call, { costUsd, ...(chosen ? {} : { skipped: true }), note }, true);
+    await stepFinished(deps, run, call, { costUsd, ...(chosen ? {} : { skipped: true }), note: said(note)! }, true);
     return chosen ? { costUsd } : { costUsd, skipped: true };
   }
 
@@ -174,15 +177,20 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const waited: { slot: string; words: string }[] = [];
   const outputs: string[] = [];
   for (const brief of briefs.value.briefs) {
-    const image = await makeImage(deps, input, brief, slots.kind === 'each' && brief.slot === slots.first ? Math.max(tries, 2) : tries).catch((e: unknown) => {
+    // What this slot's refused attempts were billed, which another try does not undo (B-147's check).
+    const refused = { costUsd: 0, usageMissing: 0 };
+    const image = await makeImage(deps, input, brief, slots.kind === 'each' && brief.slot === slots.first ? Math.max(tries, 2) : tries, refused).catch((e: unknown) => {
       throw (e instanceof GatewayError && e.billed === true) || e instanceof PaidNotKept ? billedStop(e, slots, brief.slot, made, what) : e;
     });
+    costUsd += refused.costUsd;
+    usageMissing += refused.usageMissing;
     if (!image || 'declined' in image || 'waited' in image) {
       failed.push(brief.slot);
       if (image && 'declined' in image) {
         // What each attempt of a declined image cost (a retry billed with no usable image included) is this step's cost too.
         declined.push({ slot: brief.slot, record: image.declined });
         costUsd += image.declined.costUsd + (image.declined.retryCostUsd ?? 0);
+        if (image.declined.usageMissing) usageMissing++;
       }
       // An image whose wait ran out may have been billed: the spend book holds it at its estimate as waited, until the
       // person clears it in Settings, so it is not this step's cost; the note says what the gateway said of it.
@@ -190,11 +198,12 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
       continue;
     }
     costUsd += image.costUsd;
+    if (image.usageMissing) usageMissing++;
     made.push(image.made);
     outputs.push(image.made.artifactId);
   }
   if (!made.length) {
-    await stepFinished(deps, run, call, { costUsd, skipped: true, note: [NO_IMAGE_MADE_NOTE, ...declinedSentences(slots, declined), ...waitedSentences(slots, waited), ...leftOutSentences(slots, briefs.value)].join(' ') }, true);
+    await stepFinished(deps, run, call, { costUsd, skipped: true, note: said([NO_IMAGE_MADE_NOTE, ...declinedSentences(slots, declined), ...waitedSentences(slots, waited), ...leftOutSentences(slots, briefs.value)].join(' '))! }, true);
     return { costUsd, skipped: true };
   }
 
@@ -233,11 +242,13 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
         },
       });
       result.costUsd += integrate.costUsd;
+      usageMissing += integrate.usageMissing ?? 0;
       placed = integrate.value;
     } catch (e) {
       // No answer was usable: the work stays as it was, and every image is kept beside it.
       if (!(e instanceof ContractMissed)) throw e;
       result.costUsd += e.costUsd;
+      usageMissing += e.usageMissing;
       placed = { missing: made, restored: [] };
     }
     restored = placed.restored;
@@ -267,7 +278,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   // not when no image is in the work, as Trim then has none to cut), and what keepsVoice wrote back (ADR-0081), in one note.
   const placedNone = unplaced !== undefined && unplaced.text === undefined;
   const advice = briefs.value.advice && !placedNone ? adviceNote(briefs.value.advice) : undefined;
-  const note = [partialNote(slots, briefs.value, failed, anchorWanted && !anchor, declined, waited), unplaced ? unplacedNote(slots, unplaced) : undefined, advice, restoredNote(restored)].filter((n): n is string => !!n).join(' ') || undefined;
+  const note = said([partialNote(slots, briefs.value, failed, anchorWanted && !anchor, declined, waited), unplaced ? unplacedNote(slots, unplaced) : undefined, advice, restoredNote(restored)].filter((n): n is string => !!n).join(' ') || undefined);
   await stepFinished(deps, run, call, { costUsd: result.costUsd, ...(note ? { note } : {}), outputArtifactIds: outputs }, true);
   return result;
 }
@@ -299,7 +310,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
  * wait ran out, that it may have billed the work and where to wait longer, go in the step's note (waitedSentences). The
  * memo keeps that outcome as it keeps a decline (B-045), so the step run again gets it back and asks nothing.
  */
-async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, tries: number): Promise<{ made: MadeImage; costUsd: number } | { declined: DeclineRecord } | { waited: string } | undefined> {
+async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, tries: number, refused: { costUsd: number; usageMissing: number }): Promise<{ made: MadeImage; costUsd: number; usageMissing?: true } | { declined: DeclineRecord } | { waited: string } | undefined> {
   const { run, call, step } = input;
   const medium = run.medium;
   for (let attempt = 1; attempt <= tries; attempt++) {
@@ -307,9 +318,14 @@ async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, 
       const img = await deps.gateway.image({ workspaceId: run.workspaceId, runId: run.runId, stepId: step.id, purpose: `asset:${medium}`, profileId: run.profileId, prompt: brief.prompt, size: brief.size });
       const alt = brief.alt || `Image for ${brief.slot}`;
       await announce(deps, run.runId, call, img.artifactId, img.mediaType, { label: `Image: ${oneLine(alt).slice(0, 80)}`, name: `image/${brief.slot}`, ...(medium === 'media' ? { shot: Number(brief.slot) } : {}) });
-      return { made: { slot: brief.slot, alt, artifactId: img.artifactId }, costUsd: img.costUsd };
+      return { made: { slot: brief.slot, alt, artifactId: img.artifactId }, costUsd: img.costUsd, ...(img.usageMissing ? { usageMissing: true as const } : {}) };
     } catch (e) {
       if (!(e instanceof GatewayError) || STOPS_THE_STEP.has(e.code) || e.billed === true || isHeldKeyError(e)) throw e;
+      // An answer with no usable image was settled and ledgered before it was refused: billed, and this step's cost.
+      if (e.settled) {
+        refused.costUsd += e.settled.costUsd;
+        if (e.settled.usageMissing) refused.usageMissing++;
+      }
       if (e.declined) return { declined: e.declined };
       if (waitedOf(e)) return { waited: e.message };
     }

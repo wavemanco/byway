@@ -70,6 +70,10 @@ function declineOf(res: GoogleResponseLike): { reason: string } | undefined {
   return reason && DECLINED.has(reason) ? { reason } : undefined;
 }
 
+/** Whether an answer reported any token count: an absent usageMetadata, or one with no count in it, reported none (B-147). */
+const hasCounts = (u: GoogleResponseLike['usageMetadata']): boolean =>
+  u != null && (u.promptTokenCount !== undefined || u.candidatesTokenCount !== undefined || u.thoughtsTokenCount !== undefined || u.candidatesTokensDetails !== undefined);
+
 function refusalOf(res: GoogleResponseLike): string | undefined {
   const declined = declineOf(res);
   return declined ? `declined (${declined.reason})` : undefined;
@@ -81,11 +85,17 @@ export function parseGoogleResponse(res: GoogleResponseLike, requestedModel: str
   const u = res.usageMetadata ?? {};
   const refusal = refusalOf(res);
   const declined = declineOf(res);
+  // An answer with no usageMetadata was billed at a cost byway cannot read: its counts are unknown, so the gateway
+  // settles it by its rule for a count it cannot read, marked (B-147). A refusal or decline keeps its reading.
+  const missing = !hasCounts(res.usageMetadata) && !refusal && !declined;
   return {
     text,
     servedModel: res.modelVersion ?? requestedModel,
     // Gemini bills thinking tokens as output ("output price including thinking tokens").
-    usage: { inputTokens: u.promptTokenCount ?? 0, outputTokens: (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0), cacheReadTokens: u.cachedContentTokenCount ?? 0 },
+    usage: missing
+      ? { inputTokens: Number.NaN, outputTokens: Number.NaN }
+      : { inputTokens: u.promptTokenCount ?? 0, outputTokens: (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0), cacheReadTokens: u.cachedContentTokenCount ?? 0 },
+    ...(missing ? { usageMissing: true as const } : {}),
     ...(refusal ? { refusal } : {}),
     ...(declined ? { declined } : {}),
     // MAX_TOKENS: the answer hit maxOutputTokens (thinking tokens count toward it).
@@ -150,10 +160,16 @@ export function parseGoogleImage(res: GoogleResponseLike, requestedModel: string
     }
   }
   const u = res.usageMetadata ?? {};
+  // An answer with no token count that is not a decline (an image, text only, or an image byway cannot use) was billed
+  // at a cost byway cannot read: its counts are unknown, so the gateway settles it at its planning figures, marked (B-147).
+  const missing = !hasCounts(res.usageMetadata) && !declineOf(res);
   // outputTokens: the text and thinking tokens, billed on top of the image (units), which is priced per image.
-  const usage = { inputTokens: u.promptTokenCount ?? 0, outputTokens: textAndThinkingTokens(u), units: inline?.data ? 1 : 0 };
+  const usage = missing
+    ? { inputTokens: Number.NaN, outputTokens: Number.NaN, units: inline?.data ? 1 : 0 }
+    : { inputTokens: u.promptTokenCount ?? 0, outputTokens: textAndThinkingTokens(u), units: inline?.data ? 1 : 0 };
+  const marked = missing ? { usageMissing: true as const } : {};
   const servedModel = res.modelVersion ?? requestedModel;
-  const noImage = (reason: string) => ({ bytes: new Uint8Array(), mediaType: 'image/png' as const, servedModel, usage, refusal: reason, responseBody: body });
+  const noImage = (reason: string) => ({ bytes: new Uint8Array(), mediaType: 'image/png' as const, servedModel, usage, refusal: reason, ...marked, responseBody: body });
   if (!inline?.data) {
     // A safety stop or a blocked prompt is a decline (ADR-0102); a text-only answer is only an answer with no image.
     const declined = declineOf(res);
@@ -164,7 +180,7 @@ export function parseGoogleImage(res: GoogleResponseLike, requestedModel: string
   }
   const mediaType = (inline.mimeType ?? 'image/png') as MediaType;
   if (!MEDIA_TYPES.has(mediaType)) return noImage(`returned an image of type ${inline.mimeType}, which byway cannot use (PNG, JPEG or WebP only)`);
-  return { bytes: Buffer.from(inline.data, 'base64'), mediaType, servedModel, usage, responseBody: body };
+  return { bytes: Buffer.from(inline.data, 'base64'), mediaType, servedModel, usage, ...marked, responseBody: body };
 }
 
 /**
