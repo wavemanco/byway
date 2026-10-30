@@ -42,7 +42,7 @@ import type { RunnerDeps } from './deps.ts';
 import { ContractMissed, StepError } from './failures.ts';
 import { PaidNotKept } from './memo.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
-import { checkBriefs, eachPlan, freePlan, slotName, type SlotBrief, type SlotBriefs, type SlotPlan } from './slot-plan.ts';
+import { checkBriefs, eachPlan, freePlan, MOOD_BOARDS_MAX, slotName, type SlotBrief, type SlotBriefs, type SlotPlan } from './slot-plan.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
 import { keptVoice } from './held-voice.ts';
 import { announce, checkedWriter, restoredNote, runSeeds, storeText } from './writes.ts';
@@ -60,6 +60,8 @@ export const NO_BRIEF_NOTE = 'The AI wrote no usable image brief, even when aske
 export const NO_IMAGE_CHOSEN_NOTE = 'The AI chose not to illustrate this piece, which its instructions allow, so no image was made; the work is unchanged.';
 /** The step makes no images (a slots knob below 1): not the AI's choice, and every brief it wrote is left out and named. */
 export const NO_SLOTS_NOTE = 'This step makes no images, so none was made; the work passes through unchanged.';
+/** Mood boards follow the chosen options (B-049): an option map with none marked gets none. */
+export const NO_CHOSEN_NOTE = 'No option in the option map is marked as chosen, so no mood board was made; the work passes through unchanged.';
 
 /**
  * A stop: a sentence end in any script (Unicode's Sentence_Terminal), the ellipsis, the Greek question mark or the
@@ -129,11 +131,13 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const tries = typeof knobs.triesPerSlot === 'number' ? Math.max(1, knobs.triesPerSlot) : 1;
   // On media and options the work decides the slots, read before anything is asked or bought.
   const each = eachPlan(medium, current, what);
+  // Mood boards follow the chosen options: with none marked, nothing is asked or bought (B-049).
+  if (each?.kind === 'each' && each.medium === 'options' && !each.expected.length) return skip(NO_CHOSEN_NOTE);
 
   // 1. Briefs, held to the plan: on prose and web pages, to the count the prompt declares.
   const built = await buildPrompt(reader, { medium, problemId: run.problemId, step, ports });
   built.slots.artifact = current;
-  if (medium === 'options') built.slots.options = optionLabels(current);
+  if (medium === 'options') built.slots.options = optionLabels(current, each);
   const promptId = step.prompt && deps.prompts.has(step.prompt) ? step.prompt : 'helper.asset.briefs';
   let plan: SlotPlan | undefined = each;
   const briefs = await askModel<SlotBriefs>(deps, reader, {
@@ -164,7 +168,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     // below 1, so every brief was left out); or because no usable brief came even when asked again.
     const none = slots.kind === 'free' && slots.max < 1;
     const chosen = briefs.shortfall === undefined && !none;
-    const note = chosen ? NO_IMAGE_CHOSEN_NOTE : [none ? NO_SLOTS_NOTE : NO_BRIEF_NOTE, ...leftOutSentences(slots, briefs.value)].join(' ');
+    const note = chosen ? NO_IMAGE_CHOSEN_NOTE : [none ? NO_SLOTS_NOTE : NO_BRIEF_NOTE, ...leftOutSentences(slots, briefs.value), overSentence(slots)].filter(Boolean).join(' ');
     await stepFinished(deps, run, call, { costUsd, ...(chosen ? {} : { skipped: true }), note: said(note)! }, true);
     return chosen ? { costUsd } : { costUsd, skipped: true };
   }
@@ -203,7 +207,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     outputs.push(image.made.artifactId);
   }
   if (!made.length) {
-    await stepFinished(deps, run, call, { costUsd, skipped: true, note: said([NO_IMAGE_MADE_NOTE, ...declinedSentences(slots, declined), ...waitedSentences(slots, waited), ...leftOutSentences(slots, briefs.value)].join(' '))! }, true);
+    await stepFinished(deps, run, call, { costUsd, skipped: true, note: said([NO_IMAGE_MADE_NOTE, ...declinedSentences(slots, declined), ...waitedSentences(slots, waited), ...leftOutSentences(slots, briefs.value), overSentence(slots)].filter(Boolean).join(' '))! }, true);
     return { costUsd, skipped: true };
   }
 
@@ -278,7 +282,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   // not when no image is in the work, as Trim then has none to cut), and what keepsVoice wrote back (ADR-0081), in one note.
   const placedNone = unplaced !== undefined && unplaced.text === undefined;
   const advice = briefs.value.advice && !placedNone ? adviceNote(briefs.value.advice) : undefined;
-  const note = said([partialNote(slots, briefs.value, failed, anchorWanted && !anchor, declined, waited), unplaced ? unplacedNote(slots, unplaced) : undefined, advice, restoredNote(restored)].filter((n): n is string => !!n).join(' ') || undefined);
+  const note = said([partialNote(slots, briefs.value, failed, anchorWanted && !anchor, declined, waited), overSentence(slots), unplaced ? unplacedNote(slots, unplaced) : undefined, advice, restoredNote(restored)].filter((n): n is string => !!n).join(' ') || undefined);
   await stepFinished(deps, run, call, { costUsd: result.costUsd, ...(note ? { note } : {}), outputArtifactIds: outputs }, true);
   return result;
 }
@@ -433,7 +437,7 @@ function leftOutSentence(plan: Extract<SlotPlan, { kind: 'each' }>, unknown: str
   const names = [...new Set(unknown)];
   const quoted = list(names.map((u) => `“${u}”`));
   const several = names.length > 1;
-  const which = plan.medium === 'media' ? `the storyboard has no ${several ? 'shots' : 'shot'} for` : several ? 'are not among the options' : 'is not one of the options';
+  const which = plan.medium === 'media' ? `the storyboard has no ${several ? 'shots' : 'shot'} for` : several ? 'are not among the chosen options' : 'is not one of the chosen options';
   return unknown.length > 1 ? `Briefs for ${quoted}, which ${which}, were left out.` : `The brief for ${quoted}, which ${which}, was left out.`;
 }
 
@@ -449,10 +453,21 @@ function droppedSentence(plan: Extract<SlotPlan, { kind: 'free' }>, dropped: str
   return dropped.length > 1 ? `${most}, so the briefs for ${quoted} were left out.` : `${most}, so the brief for ${quoted} was left out.`;
 }
 
-/** The options slot of an options brief: each option's label and title, as "### A" headings. */
-function optionLabels(artifact: string): string {
+/** The options slot of an options brief: the options the step makes images for, the chosen ones (eachPlan), each under its "### A" label in the option map. */
+function optionLabels(artifact: string, plan: SlotPlan | undefined): string {
   const r = parseOptions(artifact);
-  return r.ok ? labelled(r.value.options.map((o) => `${o.title}: ${o.pitch}`)) : textView('options', artifact);
+  if (!r.ok) return textView('options', artifact);
+  const wanted = plan?.kind === 'each' ? new Set(plan.expected) : undefined;
+  return r.value.options
+    .flatMap((o, i) => (!wanted || wanted.has(labelOf(i)) ? [`### ${labelOf(i)}\n${o.title}: ${o.pitch}`] : []))
+    .join('\n\n');
+}
+
+/** The chosen options a plan left without a mood board, beyond the most it makes (MOOD_BOARDS_MAX, B-049). */
+function overSentence(plan: SlotPlan): string | undefined {
+  if (plan.kind !== 'each' || !plan.over?.length) return undefined;
+  const names = list(plan.over.map((id) => slotName(plan, id)));
+  return `Mood boards are made for at most ${MOOD_BOARDS_MAX} chosen options, so ${names} ${plan.over.length > 1 ? 'have' : 'has'} none.`;
 }
 
 /** Attach each image to its option (by label) or shot (by number), by the slot's one identity; nothing else changes. */

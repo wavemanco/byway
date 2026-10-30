@@ -6,7 +6,7 @@ import { recipeForRun, unusedAnswersOf } from '../../../../src/server/api.ts';
 import { getDeps } from '../../../../src/server/deps.ts';
 import { artifactInfo } from '../../../../src/server/run-data.ts';
 import { parseStoryboard, storyboardArtifacts } from '../../../../src/view/result.ts';
-import { howItWasMade, resultImages } from '../../../../src/view/run.ts';
+import { boardedOptions, howItWasMade, resultImages } from '../../../../src/view/run.ts';
 import { buildTimeline } from '../../../../src/view/timeline.ts';
 
 export async function generateMetadata({ params }: PageProps<'/runs/[id]/result'>): Promise<Metadata> {
@@ -50,6 +50,8 @@ export default async function ResultPage({ params }: PageProps<'/runs/[id]/resul
   const text = mediaType === 'text/html' || mediaType.startsWith('image/') ? null : held;
   // What Custom imagery made that the deliverable does not hold is shown beside it (UX-8, B-047).
   const images = resultImages(run.medium, timeline, held);
+  // An options run that made mood boards downloads the option map with them (B-014).
+  const exportId = boardedOptions(run.medium, timeline);
   // A storyboard shows frames and clips; each is shown by its media type (a real clip plays, a placeholder is an image).
   const board = run.medium === 'media' && text !== null ? parseStoryboard(text) : null;
   const media = board ? await artifactInfo(services, storyboardArtifacts(board)) : {};
@@ -59,6 +61,7 @@ export default async function ResultPage({ params }: PageProps<'/runs/[id]/resul
       <ResultView
         run={run}
         artifactId={run.outputArtifactId}
+        {...(exportId ? { exportArtifactId: exportId } : {})}
         mediaType={mediaType}
         text={text}
         made={made}

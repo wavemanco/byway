@@ -20,6 +20,8 @@ import { integrateImages, renderPage, revisePage } from './web-page.ts';
 
 export interface MockContext {
   purpose: string;
+  /** The template behind the call, when it has one (CompletionRequest.prompt). */
+  promptId?: string;
   /** The role or helper part of the purpose: `build`, `critic`, `asset.briefs`, `advisor.intake`… */
   role: string;
   /** The medium part of the purpose; undefined for advisor helpers. */
@@ -115,8 +117,16 @@ const artifact: Responder = (ctx) => {
       return fence('markdown', (revision === undefined ? doc : markProse(doc, revision)).trimEnd());
     }
     // Structured artifacts come back as given on revising turns: the demo cannot apply edits to them faithfully.
-    case 'options':
-      return json((revising && existingJson(ctx.prompt, 'options')) || renderOptions(ctx.seed, subject));
+    case 'options': {
+      const given = (revising && existingJson(ctx.prompt, 'options')) as ReturnType<typeof renderOptions> | undefined;
+      // C2's option map as its prompt asks (B-015, B-049): the first two options chosen, each "Chosen." and flagged, the
+      // rest "Not chosen." and not flagged, so the mood boards the demo makes follow the choice.
+      if (ctx.promptId === 'product.c2.option-map') {
+        const options = (given || renderOptions(ctx.seed, subject)).options;
+        return json({ options: options.map((o, i) => (i < 2 ? { ...o, rationale: `Chosen. ${o.rationale}`, chosen: true } : { ...o, rationale: `Not chosen. ${o.rationale}`, chosen: false })) });
+      }
+      return json(given || renderOptions(ctx.seed, subject));
+    }
     case 'media':
       return json((revising && existingJson(ctx.prompt, 'storyboard')) || renderStoryboard(ctx.seed, subject));
     case 'code-diff': {

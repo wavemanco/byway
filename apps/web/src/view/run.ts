@@ -148,6 +148,19 @@ export function sideImages(stages: TimelineStage[]): SideImage[] {
 }
 
 /**
+ * What an options run's download is when Custom imagery made mood boards (B-014): the option map with each chosen
+ * option's board beside it, as that step kept it (the deliverable itself never holds them, 03 C2), which the export
+ * carries inline (export.ts withMoodBoards). Undefined otherwise, and the deliverable is downloaded as it is.
+ */
+export function boardedOptions(medium: RunRecord['medium'], stages: TimelineStage[]): string | undefined {
+  if (medium !== 'options') return undefined;
+  // Only when nothing rewrote the work after it (a composed recipe may put VOICE after the boards): else the deliverable,
+  // in the person's words, is downloaded as it is.
+  const last = stages.flatMap((stage) => stage.steps.flatMap((s) => s.artifacts.filter((a) => outputKind(a.mediaType) === 'data').map((a) => ({ a, asset: s.block === 'ASSET' })))).at(-1);
+  return last?.asset ? last.a.artifactId : undefined;
+}
+
+/**
  * The images the Result screen shows beside the deliverable: for an options list, every one (it cannot hold them, UX-8);
  * for any other medium, those Custom imagery made that the deliverable does not hold, as a prose piece or a page keeps
  * the images its placing answer left out, or every one when that answer could not be used (ADR-0112; B-047). Before,

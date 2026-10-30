@@ -24,7 +24,7 @@ import type { UnusedAnswerNote } from '../view/rundata.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
 import { unusedAnswerNotes } from '../view/unused.ts';
 import { artifactHeaders, isArtifactId, mediaServing, pageScriptsGranted } from './artifacts.ts';
-import { exportsInline, selfContained } from './export.ts';
+import { exportsInline, selfContained, withMoodBoards } from './export.ts';
 import { firstRecommendation, sharedCall } from './first-recommendation.ts';
 import type { HeldKeyIn } from './http.ts';
 import { modelProblem } from './model-errors.ts';
@@ -535,6 +535,11 @@ export async function artifactResponse(
   // A downloaded page or Markdown file carries its images inline, so it works away from byway (EXP-1).
   if (requested !== undefined && exportsInline(record.mediaType)) {
     const text = await selfContained(new TextDecoder().decode(bytes), services.store.artifacts);
+    return new Response(text, { status: 200, headers: artifactHeaders(record.mediaType, origin, download, scripts) });
+  }
+  // A downloaded option map carries its mood boards inline (B-014).
+  if (requested !== undefined && (record.mediaType.split(';')[0]?.trim().toLowerCase() ?? '') === 'application/json') {
+    const text = await withMoodBoards(new TextDecoder().decode(bytes), services.store.artifacts);
     return new Response(text, { status: 200, headers: artifactHeaders(record.mediaType, origin, download, scripts) });
   }
   return new Response(new Uint8Array(bytes), { status: 200, headers: artifactHeaders(record.mediaType, origin, download, scripts) });

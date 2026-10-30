@@ -21,6 +21,8 @@ import { PageResult } from './PageResult.tsx';
 interface Props {
   run: RunRecord;
   artifactId: string;
+  /** What the download is when it is not the deliverable: an option map with its mood boards (boardedOptions, B-014). */
+  exportArtifactId?: string;
   mediaType: string;
   /** The deliverable's text, for every medium except pages. */
   text: string | null;
@@ -42,7 +44,7 @@ function SideImages({ images, options }: { images: SideImage[]; options: boolean
   return (
     <section className="side-images" aria-labelledby="side-images-title">
       <h2 id="side-images-title">{step}</h2>
-      <p className="muted">{options ? 'Rough images made in this run. They are not part of the options above.' : 'Images made in this run that are not in the result above. They are kept beside it, and the export leaves them out.'}</p>
+      <p className="muted">{options ? 'Rough images made in this run. They are not part of the options above; the download carries each beside its option.' : 'Images made in this run that are not in the result above. They are kept beside it, and the export leaves them out.'}</p>
       <ul className="side-images-grid">
         {images.map((img, i) => {
           const name = img.label ?? `Image ${i + 1}`;
@@ -86,7 +88,7 @@ function finishedPhrase(when: string): string {
 }
 
 /** The deliverable, its export, and "How this was made": the steps, who did each, and the cost. */
-export function ResultView({ run, artifactId, mediaType, text, made, media, presentation, label, images = [] }: Props) {
+export function ResultView({ run, artifactId, exportArtifactId, mediaType, text, made, media, presentation, label, images = [] }: Props) {
   const technical = useTechnicalNames();
   const aiSteps = made.byWho.ai;
   return (
@@ -103,7 +105,7 @@ export function ResultView({ run, artifactId, mediaType, text, made, media, pres
           </p>
         </div>
         <div className="result-actions">
-          <a className="button button-primary" href={artifactUrl(artifactId, run.title)} download>
+          <a className="button button-primary" href={artifactUrl(exportArtifactId ?? artifactId, run.title)} download>
             {exportLabel(mediaType)}
           </a>
           {text !== null ? <CopyButton text={text} {...(mediaType === 'text/markdown' ? { exportUrl: artifactUrl(artifactId, run.title) } : {})} /> : null}
