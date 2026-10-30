@@ -10,7 +10,7 @@ import { answerUnusedAfter, personCritique, placements, unappliedCritiques, unus
 import type { RunView } from '@byway/contracts';
 import { checkEvents } from './helpers/events.ts';
 import { AUTHOR_DRAFT, createHarness, type Answer, type Harness } from './helpers/harness.ts';
-import { routedTrim, twoTrims } from './helpers/recipes.ts';
+import { reseededTrim, routedTrim, twoTrims } from './helpers/recipes.ts';
 
 let h: Harness;
 beforeAll(async () => {
@@ -42,6 +42,29 @@ describe('an answer the candidates applied, then a pick that took them all witho
     expect(view.events.some((e) => e.stepId === 'pick')).toBe(false);
     expect(unused(twoTrims, view)).toEqual([]);
   }, 60_000);
+});
+
+// The owner's choice of 2026-10-29 on F01 (f): the walk reads C1's seed as writing its direction on every run, so on a
+// run whose seed wrote none (it stored the work alone) the notice cannot tell, and must not say "unused".
+describe('a seed on C1\'s prompt ran after the answer', () => {
+  const trim = { id: 'cp-trim', stepId: 'trim', kind: 'directive', prompt: 'What should go?', status: 'resolved', resolution: { text: '- Remove the second call to action.' } };
+  const ran = (outputArtifactIds: string[]) => [
+    { seq: 1, type: 'checkpoint-resolved', stepId: 'trim', data: { checkpointId: 'cp-trim' } },
+    { seq: 2, type: 'step-finished', stepId: 'trim', data: { costUsd: 0 } },
+    { seq: 3, type: 'step-started', stepId: 'own-revise', data: {} },
+    { seq: 4, type: 'step-finished', stepId: 'own-revise', data: { costUsd: 0 } },
+    { seq: 5, type: 'step-started', stepId: 'reseed', data: {} },
+    { seq: 6, type: 'step-finished', stepId: 'reseed', data: { costUsd: 0.01, outputArtifactIds } },
+  ];
+
+  it('names the answer when the seed wrote its direction, as the walk reads it', () => {
+    expect(answerUnusedAfter(reseededTrim, 'trim', new Set(['own-revise', 'reseed']))).toBe(true);
+    expect(unusedAnswers(reseededTrim, ran(['sha256:work', 'sha256:direction']), [trim])).toEqual([{ checkpointId: 'cp-trim', stepId: 'trim', question: 'What should go?' }]);
+  });
+
+  it('says nothing when the seed wrote no direction', () => {
+    expect(unusedAnswers(reseededTrim, ran(['sha256:work']), [trim])).toEqual([]);
+  });
 });
 
 describe('an answer applied only on a route branch the run did not take', () => {

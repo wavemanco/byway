@@ -87,6 +87,27 @@ export const routedTrim = recipe(
   ),
 );
 
+/** routedTrim whose own branch then seeds a fresh draft on C1's seed prompt, which asks for its direction first. */
+export const reseededTrim = recipe(
+  'reseeded-trim',
+  'web-page',
+  seq(
+    build('draft'),
+    render('render'),
+    step({ id: 'trim', role: 'cut', block: 'CUT', actor: 'human', consumes: ['view'], produces: ['critique'] }),
+    route('who', 'who applies your list', [
+      { name: 'ai', body: applyCut },
+      {
+        name: 'own',
+        body: seq(
+          step({ id: 'own-revise', role: 'build', actor: 'human', consumes: ['artifact'], produces: ['artifact'], writes: true }),
+          step({ id: 'reseed', role: 'seed', block: 'SEED', actor: 'model', tier: 'mid', prompt: 'article.SEED', consumes: ['intent'], produces: ['artifact'], writes: true, knobs: { source: 'shell-string', structuralAxis: true } }),
+        ),
+      },
+    ]),
+  ),
+);
+
 /** A person's list applied by two AI candidates, then a pick of 2 from 2 that takes both with no event of its own. */
 export const twoTrims = recipe(
   'two-trims',
