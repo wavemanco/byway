@@ -365,9 +365,9 @@ describe('estimate in demo mode (Gateway.demo: every call goes to the mock)', ()
 
 /**
  * B-152 (the ponytail audit's RECIPES-5): the estimate's call counts held to what the interpreter runs, case by case;
- * the runner's configurations harness holds whole runs to them (runner/test/e2e/estimate-bound.ts). Where the estimate
- * is known to differ, the case says what the interpreter makes and is marked failing with the backlog row that holds
- * the difference, which awaits the owner's choice; the day its fix lands the case fails here and is made a plain one.
+ * the runner's configurations harness holds whole runs to them (runner/test/e2e/estimate-bound.ts). The differences
+ * the audit found (B-149, B-150, B-151, B-153, B-154) landed on 2026-10-30, at the owner's "Now, before live runs", and
+ * their cases are plain ones; a difference found later is marked failing with its backlog row until its fix lands.
  */
 describe('the call counts the interpreter makes (B-152)', () => {
   const at = new Date('2026-10-07T12:00:00Z');
@@ -385,28 +385,44 @@ describe('the call counts the interpreter makes (B-152)', () => {
     expect(calls(recipe(seq(draft, view, oneShotGate('gate', critic({ mode: 'OK' }), pass))))).toEqual({ low: 2, high: 2 });
   });
 
-  it.fails('a GREAT critic with `shuffles` 2 makes two calls over the lineup (planCritic; known difference: B-149)', () => {
+  it('a GREAT critic with `shuffles` 2 makes two calls over the lineup (planCritic; B-149)', () => {
     expect(calls(recipe(seq(draft, view, critic({ mode: 'GREAT', refs: 4, shuffles: 2 }))))).toEqual({ low: 2, high: 3 });
   });
 
-  it.fails('a GREAT critic with no refs knob, or refs 0, reads up to ten references (MAX_REFS; known difference: B-149)', () => {
+  it('a GREAT critic with no refs knob, or refs 0, reads up to ten references (MAX_REFS; B-149)', () => {
     const priced = (knobs: Record<string, unknown>) => estimateRecipe(recipe(seq(draft, view, critic(knobs))), ctx).highUsd;
     expect(priced({ mode: 'GREAT' })).toBe(priced({ mode: 'GREAT', refs: 10 }));
     expect(priced({ mode: 'GREAT', refs: 0 })).toBe(priced({ mode: 'GREAT', refs: 10 }));
   });
 
-  it.fails('a gate whose retry names an earlier stage re-runs every stage from it through its own (known difference: B-150)', () => {
+  it('a gate whose retry names an earlier stage re-runs every stage from it through its own (B-150)', () => {
     // D1 builds; D2 revises and gates, retrying D1 once: at worst build, revise, critic, then build, revise, critic.
     expect(calls(recipe(draft, seq(revise, view, oneShotGate('gate', critic({ mode: 'OK' }), pass, { stage: 'D1', times: 1 }))))).toEqual({ low: 3, high: 6 });
   });
 
-  it.fails("a critic loop's fix runs only when its verdict does not end the loop (known difference: B-151)", () => {
+  it('a gate in a stage another gate re-runs can ask "Use it anyway?" again (the check of B-150)', () => {
+    // D1 gates once with no retry; D2's gate retries D1: at worst D1's question twice and D2's once. The re-run counts D2's
+    // own question with its stage too, so the high end is one question over, on the safe side, as B-150 accepted.
+    const r = recipe(seq(draft, view, oneShotGate('first', critic({ mode: 'OK' }), pass)), seq(revise, view, oneShotGate('second', critic({ mode: 'OK' }), pass, { stage: 'D1', times: 1 })));
+    expect(estimateRecipe(r, ctx).humanMinutes).toEqual({ low: 0, high: 4 * HUMAN_MINUTES.confirm[1] });
+  });
+
+  it("a critic loop's fix runs only when its verdict does not end the loop (B-151)", () => {
     // Under rankGate(3, 3, 1): at least the build and one passing critique; at most three critiques, two fixes and the re-rank.
     const gate = { ...pass, holder: 'worker', probe: 1, max: 3, plateau: { minGain: 1, window: 2 }, onCap: 'human', onNoConverge: 'recalibrate-human' } as const;
     expect(calls(recipe(seq(draft, loop('critic-loop', seq(view, critic({ mode: 'OK' }), revise), gate))))).toEqual({ low: 2, high: 7 });
   });
 
-  it.fails('an ASSET step makes no call when the profile cannot make images (asset.ts; known difference: B-154)', () => {
+  it('an ASSET step makes no call when the profile cannot make images (asset.ts; B-154)', () => {
     expect(calls(c3, { images: false }).high).toBe(calls(c3).high - 2);
+  });
+
+  it('a model step with no tier is priced at the tier the runner calls: big for a critic or judge, mid for the rest (modelStep; B-153)', () => {
+    const cut = (tier?: 'big' | 'mid') => step({ id: 'cut', role: 'cut', actor: 'model', ...(tier ? { tier } : {}), prompt: 'product.c7.scope-cut', consumes: ['artifact'], produces: ['critique'] });
+    const priced = (s: Step) => estimateRecipe(recipe(seq(draft, s)), ctx).highUsd;
+    expect(priced(cut())).toBe(priced(cut('mid')));
+    expect(priced(cut())).toBeLessThan(priced(cut('big')));
+    const { tier: _tier, ...untiered } = critic({ mode: 'OK' });
+    expect(priced(untiered as Step)).toBe(priced(critic({ mode: 'OK' })));
   });
 });

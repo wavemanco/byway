@@ -17,6 +17,7 @@ export { COMPOSED_SUMMARY, isComposed, labelFor, STUDY_REGISTRY, UNTESTED_SUMMAR
 export {
   ARTIFACT_TOKENS,
   CLIP_SECONDS,
+  criticPlanBound,
   estimateQuestions,
   estimateRecipe,
   HUMAN_MINUTES,

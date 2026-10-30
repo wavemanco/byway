@@ -1,12 +1,12 @@
 import type { CostEstimate, Medium, ModelProfile, ProblemBrief, Tier } from '@byway/contracts';
 import { FAL_VIDEO_EXTRAS, PRICES, falVideoSeconds, priceFor, textTokens, tokenCost, type PriceRow } from '@byway/gateway';
-import { problemSlot } from '@byway/prompts/pure';
+import { GREAT_MIN_REFERENCES, problemSlot } from '@byway/prompts/pure';
 import { MEDIUM_FORMAT } from '@byway/protocol';
-import { asksSwaps, audioAsset, exitPoints, loopRounds, promptShows, type Gate, type Node, type Recipe, type Stage, type Step } from '@byway/recipe';
+import { asksSwaps, audioAsset, exitPoints, loopRounds, promptShows, type Gate, type Loop, type Node, type Recipe, type Seq, type Stage, type Step } from '@byway/recipe';
 import { AdvisorError } from './errors.ts';
 
 /**
- * Cost estimates (product spec §4 "Estimates"): a structural walk of the recipe — replicate counts, loop probe..max
+ * Cost estimates (product spec §4 "Estimates"): a structural walk of the recipe — replicate counts, loop 1..max
  * ranges, steps per stage, optional and route branches, images, relay clips and human checkpoints — priced with the
  * profile's models at the gateway's dated price table. The result is a low–high range, because the run decides how
  * many rounds a loop takes, whether an optional step runs and which branch a route takes.
@@ -57,7 +57,7 @@ export interface PricingContext {
  * - readers of the work (critic, check, cut, tells, vision, dedupe, overlap) read its view and answer briefly; the TELLS
  *   sweep also reads a tell catalog of about 2,500 tokens;
  * - judges read every candidate's view; a GREAT critic reads the references too (low: none, ADR-0071's OK fallback;
- *   high: its `refs` knob);
+ *   high: its `refs` knob, at least 3, else up to 10), once per lineup order its `shuffles` knob asks for;
  * - relay links answer a short clip prompt; ASSET first asks for image briefs.
  */
 export const PROMPT_TOKENS = 1500;
@@ -135,9 +135,6 @@ export const HUMAN_MINUTES = {
   select: [1, 3],
 } as const satisfies Record<string, readonly [number, number]>;
 
-/** Roles that judge rather than make: big tier unless the step says otherwise (default rule 5). */
-const JUDGING_ROLES = new Set(['critic', 'judge', 'check', 'cut', 'tells-sweep', 'tells-compare', 'select', 'overlap']);
-
 // ---- Tallies ----------------------------------------------------------------------------------------------------
 
 interface Tally {
@@ -205,6 +202,9 @@ interface Walk {
   workTokens?: number;
   /** Stage spans without gate retries, for a one-shot gate's "re-run stage Dk". */
   stageBase?: Map<Stage['stage'], Span>;
+  /** The recipe's stages in order, and the one being walked: a retry re-runs the stages from its target through this. */
+  order?: readonly Stage['stage'][];
+  stage?: Stage['stage'];
   /** When set, what each question that commits money commits to, by the node's id (estimateQuestions). */
   questions?: Map<string, Question>;
   /** With `questions`: each gate's "Use it anyway?", to which the walk adds what follows the gate as it reaches it. */
@@ -265,16 +265,30 @@ function clip(w: Walk): Span {
 /** Whether a relay link makes its clip: a usable video model, and a frame to start from, which only an image model makes. */
 const makesClips = (w: Walk): boolean => w.priced.video !== undefined && w.priced.image !== undefined;
 
-const tierOf = (s: Step): Tier => s.tier ?? (JUDGING_ROLES.has(s.role) ? 'big' : 'mid');
+/** The tier a model step runs at: its own, else big for a critic or judge and mid for the rest (the runner's modelStep). */
+const tierOf = (s: Step): Tier => s.tier ?? (s.role === 'critic' || s.role === 'judge' ? 'big' : 'mid');
 const knobNumber = (s: Step, name: string): number | undefined => {
   const v = s.knobs?.[name];
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 };
 
-/** References a critic reads besides ours: none at the low end (ADR-0071's OK fallback), its `refs` knob at the high end. */
-function criticReaders(s: Step): Count {
-  const refs = knobNumber(s, 'refs') ?? (s.knobs?.mode === 'GREAT' ? 4 : 0);
-  return count(1, 1 + refs);
+/** The most references a GREAT critic takes: the runner's MAX_REFS (critic.ts), held to it by criticPlanBound's test. */
+const CRITIC_MAX_REFS = 10;
+
+/**
+ * The most a critic's calls can be, as the runner's planCritic plans them with references to spare: the lineup orders a
+ * GREAT critic ranks over (its `shuffles` knob, 1 to 4, one call each) and the references it reads (its `refs` knob, at
+ * least 3, else up to 10). In OK mode, one call and no references. The runner's critic test holds the two together.
+ */
+export function criticPlanBound(knobs: Step['knobs']): { calls: number; refs: number } {
+  if (knobs?.mode !== 'GREAT') return { calls: 1, refs: 0 };
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+  const want = num(knobs.refs) ?? 0;
+  const shuffles = num(knobs.shuffles);
+  return {
+    calls: shuffles !== undefined && shuffles > 1 ? Math.min(4, Math.floor(shuffles)) : 1,
+    refs: Math.max(GREAT_MIN_REFERENCES, Math.floor(Math.min(want > 0 ? want : CRITIC_MAX_REFS, CRITIC_MAX_REFS))),
+  };
 }
 
 function stepSpan(w: Walk, s: Step, set: Count): Span {
@@ -283,8 +297,12 @@ function stepSpan(w: Walk, s: Step, set: Count): Span {
     // A judge of a link's view that shows no clip is not asked (interpreter.ts unobservable).
     if (w.link?.blind && (s.role === 'check' || s.role === 'critic')) return NONE;
     switch (s.role) {
-      case 'critic':
-        return completion(w, 'critic', tierOf(s), criticReaders(s), s, s.knobs?.family === 'other' ? w.priced.otherFamily : undefined);
+      case 'critic': {
+        // The low end is ADR-0071's OK fallback: one call over ours alone.
+        const plan = criticPlanBound(s.knobs);
+        const one = completion(w, 'critic', tierOf(s), count(1, 1 + plan.refs), s, s.knobs?.family === 'other' ? w.priced.otherFamily : undefined);
+        return { low: one.low, high: scaleTally(one.high, plan.calls) };
+      }
       case 'judge':
       case 'select':
       case 'dedupe':
@@ -296,10 +314,12 @@ function stepSpan(w: Walk, s: Step, set: Count): Span {
       case 'asset': {
         // A step that turns the locked script into audio has no v1 executor (ADR-0069): it finishes skipped.
         if (audioAsset(s)) return NONE;
+        // With no image model the runner skips the whole step, its briefs and integrate calls included (asset.ts).
+        if (!w.priced.image) return NONE;
         const slots = knobNumber(s, 'slots') ?? DEFAULT_SLOTS;
         const n = medium === 'media' ? count(STORYBOARD_SHOTS.low, STORYBOARD_SHOTS.high) : count(1, slots);
         const integrate = medium === 'web-page' || medium === 'prose' ? completion(w, 'asset.integrate', 'mid', count(1, 1), undefined) : NONE;
-        return add(completion(w, 'asset.briefs', tierOf(s), count(1, 1), s), w.priced.image ? images(w, n) : NONE, integrate);
+        return add(completion(w, 'asset.briefs', tierOf(s), count(1, 1), s), images(w, n), integrate);
       }
       default:
         return completion(w, s.role, tierOf(s), count(1, 1), s);
@@ -345,26 +365,56 @@ interface Walked {
   set: Count;
 }
 
+/** A seq's spans in order, and after each child how many of them it and those before it gave. */
+function walkSeq(w: Walk, n: Seq, set: Count): { spans: Span[]; ends: number[]; set: Count } {
+  let cur = set;
+  const spans: Span[] = [];
+  const marks: Mark[] = [];
+  n.steps.forEach((c, i) => {
+    const from = w.gates?.length ?? 0;
+    const r = walkNode(w, c, cur);
+    spans.push(r.span);
+    cur = r.set;
+    // A cliché sweep whose finds feed a swap step: you choose which to swap before it runs (convention C2), exactly
+    // where the interpreter asks (asksSwaps reads the steps after it in this seq).
+    if (asksSwaps(c, n.steps.slice(i + 1))) spans.push(minutes('select'));
+    marks.push({ from, to: w.gates?.length ?? 0, at: spans.length });
+  });
+  follow(w, marks, spans);
+  return { spans, ends: marks.map((m) => m.at), set: cur };
+}
+
+/**
+ * A critic or check loop's round, split after its last child that is or holds an exit point: the gate is applied right
+ * after the critic or check, so the round that ends the loop runs the head and not the tail (the fix after it).
+ */
+function loopRound(w: Walk, n: Loop, set: Count): { head: Span; tail: Span; set: Count } {
+  if (n.gate.metric !== 'human' && n.body.op === 'seq') {
+    const r = walkSeq(w, n.body, set);
+    const k = n.body.steps.findLastIndex((c) => exitPoints({ ...n, body: c }).length > 0);
+    const cut = k < 0 ? r.spans.length : r.ends[k]!;
+    return { head: add(...r.spans.slice(0, cut)), tail: add(...r.spans.slice(cut)), set: r.set };
+  }
+  const body = walkNode(w, n.body, set);
+  return { head: body.span, tail: NONE, set: body.set };
+}
+
+/** A retry re-runs the stages from its target through the gate's own (interpreter.ts runStages; limits.ts counts the same). */
+function retried(w: Walk, target: Stage['stage']): Span | undefined {
+  if (!w.stageBase || !w.order || !w.stage) return undefined;
+  const from = w.order.indexOf(target);
+  const to = w.order.indexOf(w.stage);
+  if (from < 0 || from > to) return undefined;
+  return add(...w.order.slice(from, to + 1).map((s) => w.stageBase!.get(s) ?? NONE));
+}
+
 function walkNode(w: Walk, n: Node, set: Count): Walked {
   switch (n.op) {
     case 'step':
       return { span: stepSpan(w, n, set), set: n.role === 'dedupe' ? count(Math.ceil(set.low / 2), set.high) : set };
     case 'seq': {
-      let cur = set;
-      const spans: Span[] = [];
-      const marks: Mark[] = [];
-      n.steps.forEach((c, i) => {
-        const from = w.gates?.length ?? 0;
-        const r = walkNode(w, c, cur);
-        spans.push(r.span);
-        cur = r.set;
-        // A cliché sweep whose finds feed a swap step: you choose which to swap before it runs (convention C2), exactly
-        // where the interpreter asks (asksSwaps reads the steps after it in this seq).
-        if (asksSwaps(c, n.steps.slice(i + 1))) spans.push(minutes('select'));
-        marks.push({ from, to: w.gates?.length ?? 0, at: spans.length });
-      });
-      follow(w, marks, spans);
-      return { span: add(...spans), set: cur };
+      const r = walkSeq(w, n, set);
+      return { span: add(...r.spans), set: r.set };
     }
     case 'replicate': {
       const reps = count(n.n, n.n);
@@ -379,7 +429,8 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
       return { span: NONE, set: after };
     }
     case 'loop': {
-      const body = walkNode(w, n.body, set);
+      const round = loopRound(w, n, set);
+      const body = { span: add(round.head, round.tail), set: round.set };
       // In a relay link that made no clip, the judge it reports to is not asked: the loop ends after one round, unchecked.
       if (w.link?.blind && exitPoints(n).length) return body;
       // A critic or check loop asks "Use the best version so far?" at its cap (No buys more rounds), and a scored one
@@ -388,13 +439,16 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
       if (n.gate.metric !== 'human' && (n.gate.onCap === 'human' || (scored && n.gate.onNoConverge === 'recalibrate-human'))) w.questions?.set(n.id, { asks: 'cap', span: body.span });
       // The planned rounds. At the cap a person may allow as many again, once (ADR-0073, ADR-0093): their choice, made
       // when they are asked, so the estimate does not count it.
+      // A loop can end at its first round (a passing score, "No defects.", your "ready"), so the low end is one round.
       const planned = loopRounds(n.gate).planned;
-      const rounds = count(Math.min(n.gate.probe, planned), planned);
+      const rounds = count(Math.min(1, planned), planned);
       // A loop a person ends asks one question a round: "Is this ready?", and at the last round the cap's question.
       // No to either runs another round of the body.
       if (n.gate.metric === 'human') w.questions?.set(n.id, { asks: 'round', span: body.span });
-      const perRound = n.gate.metric === 'human' ? add(body.span, minutes('confirm')) : body.span;
-      return { span: add(times(perRound, rounds), atCap(w, n.gate)), set: body.set };
+      const head = n.gate.metric === 'human' ? add(round.head, minutes('confirm')) : round.head;
+      // The round that ends the loop (the first at the low end, the cap's at the high end) stops before the tail.
+      const span = add(times(head, rounds), times(round.tail, count(rounds.low - 1, rounds.high - 1)), atCap(w, n.gate));
+      return { span, set: body.set };
     }
     case 'optional': {
       // The trigger is asked as a yes/no question either way; the body runs only on a yes.
@@ -416,9 +470,11 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
     case 'gate': {
       const body = walkNode(w, n.body, set);
       const retries = n.retry?.times ?? 0;
-      const stage = n.retry ? w.stageBase?.get(n.retry.stage) : undefined;
-      // On a fail: re-run the named stage and the check, up to `times`; then a person decides.
-      const retry = onlyHigh(add(times(add(stage ?? NONE, body.span), count(retries, retries)), minutes('confirm')));
+      // On a fail: re-run the stages from the named one through this gate's, check included, up to `times`; then a
+      // person decides. The first walk, which finds the stage spans, leaves the re-runs out, so they are without
+      // retries, but keeps the question: a stage another gate re-runs can ask it again.
+      const again = n.retry && w.stageBase ? times(retried(w, n.retry.stage) ?? body.span, count(retries, retries)) : NONE;
+      const retry = onlyHigh(add(again, minutes('confirm')));
       // Then "Use it anyway?": Yes goes on with the run, so its figure is what follows the gate (follow adds it).
       if (w.questions && w.gates) {
         const q: Question = { asks: 'gate', span: NONE };
@@ -455,9 +511,10 @@ function walkStages(w: Walk, recipe: Recipe): { total: Span; byStage: Map<Stage[
   let set = count(1, 1);
   const spans: Span[] = [];
   const marks: Mark[] = [];
+  const order = recipe.stages.map((s) => s.stage);
   for (const s of recipe.stages) {
     const from = w.gates?.length ?? 0;
-    const r = walkNode(w, s.body, set);
+    const r = walkNode({ ...w, order, stage: s.stage }, s.body, set);
     byStage.set(s.stage, r.span);
     spans.push(r.span);
     set = r.set;
