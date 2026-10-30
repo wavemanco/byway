@@ -21,7 +21,7 @@ pricing go to the playbook and the backlog), ADR-0107 (an adversarial check, in 
 that touches money, keys and security, the engine and workflow, or stored data, before it is pushed, where any push
 counts, so a branch's CI starts only after its check; records, docs, tests-only and scripts-only changes run the gate and
 merge without one (both the owner's, 2026-10-23, in its Later notes of that day); each further fix round decided with the
-owner; proportion; the merge condition for a risky change), and ADR-0103 §3 with the README's CI section (`pnpm verify` before a merge, CI that reports and blocks nothing,
+owner; proportion; the merge condition for a risky change), and ADR-0103 §3 with the CI section of `docs/developers.md` (the README until 2026-10-30, ADR-0116) (`pnpm verify` before a merge, CI that reports and blocks nothing,
 and main's last run looked at first).
 
 ## Keys

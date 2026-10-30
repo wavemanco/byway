@@ -13,7 +13,8 @@
 import { describe, expect, it } from 'vitest';
 import { brokenLink, read, relativeLinks, section } from './docs.ts';
 
-const readme = read('README.md');
+// The technical README became docs/developers.md on 2026-10-30 (ADR-0116); its links resolve from docs/.
+const readme = read('docs/developers.md');
 const scripts = (JSON.parse(read('package.json')) as { scripts: Record<string, string> }).scripts;
 
 /** The commands in a section's first fenced code block, without their comments. */
@@ -51,15 +52,40 @@ describe('README: running the checks (R1)', () => {
 describe('README: decisions and links (R3)', () => {
   it('names no hand-maintained range for the product decisions, and links the index sections that list them', () => {
     const row = readme.split('\n').find((l) => l.startsWith('| [docs/adr/]')) ?? '';
+    expect(row).not.toBe('');
     expect(row).not.toMatch(/ADR-0064 to ADR-\d{4}/);
     const targets = relativeLinks(row).map((l) => l.target);
-    expect(targets).toContain('docs/adr/README.md#system');
-    expect(targets).toContain('docs/adr/README.md#product--program');
+    expect(targets).toContain('adr/README.md#system');
+    expect(targets).toContain('adr/README.md#product--program');
   });
 
   it('every relative link resolves to a file, and every anchor to a heading', () => {
     const links = relativeLinks(readme);
     expect(links.length).toBeGreaterThan(10);
+    expect(links.flatMap(({ target }) => brokenLink('docs/developers.md', target) ?? [])).toEqual([]);
+  });
+});
+
+// The README for people using byway (the owner, 2026-10-30), with the licence and the pull-request policy (ADR-0116).
+describe('README: for the people who use byway', () => {
+  const user = read('README.md');
+
+  it('every relative link resolves to a file, and every anchor to a heading', () => {
+    const links = relativeLinks(user);
+    expect(links.length).toBeGreaterThan(5);
     expect(links.flatMap(({ target }) => brokenLink('README.md', target) ?? [])).toEqual([]);
+  });
+
+  it('keeps the two sections byway\'s own messages send people to: "Back up and restore" and "Renderer"', () => {
+    expect(section(user, '## Back up and restore')).toMatch(/whole folder/);
+    expect(user).toMatch(/^## Renderer\b/m);
+    expect(user).toContain('sh scripts/linux/allow-chromium-sandbox.sh');
+  });
+
+  it('says the licence is MIT, as LICENSE and package.json do, and that pull requests come from contributors only', () => {
+    expect(read('LICENSE')).toMatch(/^MIT License\n/);
+    expect((JSON.parse(read('package.json')) as { license: string }).license).toBe('MIT');
+    expect(section(user, '## Licence')).toMatch(/\[MIT License\]\(LICENSE\)/);
+    expect(section(user, '## Contributing')).toMatch(/accepts pull requests only from its existing contributors/);
   });
 });
