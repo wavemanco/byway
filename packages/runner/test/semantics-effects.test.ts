@@ -307,5 +307,9 @@ describe('the notes a model step leaves beside the work (leavesNote)', () => {
     expect(await noted('seed', DIRECTED, { produces: ['artifact'] })).toBe(true);
     expect(await noted('seed', CARD, { produces: ['artifact'] })).toBe(false);
     expect(await noted('build', DIRECTED, { produces: ['artifact'] })).toBe(false);
+    // The unused-answer notice reads this from the run's events (@byway/recipe unusedAnswers, F01 (f)): a seed's finished
+    // step lists the work and its direction, or the work alone when it wrote none.
+    const seedOutputs = (await store.events(run.runId)).filter((e) => e.type === 'step-finished' && e.stepId?.startsWith('seed-')).map((e) => (e.data as { outputArtifactIds?: string[] }).outputArtifactIds?.length);
+    expect(seedOutputs).toEqual([2, 1]);
   });
 });

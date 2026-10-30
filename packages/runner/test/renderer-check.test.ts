@@ -274,7 +274,9 @@ describe('the start-up check (serve.ts prints it as the "renderer" line, and Set
     const missing = watched(() => MISSING);
     expect(await checkRenderer({ osSandbox: false }, { launch: missing.launch, host: linux })).toEqual({ osSandbox: false, ready: false, sandbox: 'unknown', message: launchFailure(MISSING).message });
     expect(missing.settings).toEqual([false]);
-  });
+    // Three real Chromium launches one after another, two of them waiting on a probe: under the full suite's load they
+    // passed the 60 s every other test gets (the gate of 2026-10-30), so this one gets a minute a launch.
+  }, 180_000);
 
   /**
    * The probe of the other setting has a bound of its own (W1, ADR-0105): once the test page is drawn, a probe that does

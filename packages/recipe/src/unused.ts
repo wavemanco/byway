@@ -19,7 +19,7 @@
  * Not in the workflow bundle: the interpreter imports none of it (the web app reads it from the run's events).
  */
 import type { Node, Recipe, Seq } from './schema.ts';
-import { answersReachingWork, personCritique, placements } from './semantics.ts';
+import { answersReachingWork, DIRECTION_FIRST_SEED_PROMPTS, personCritique, placements } from './semantics.ts';
 
 /** An event as the run's view holds it (RunEvent): only what this reads. */
 export interface RunTraceEvent {
@@ -107,6 +107,7 @@ export function answerUnusedAfter(recipe: Recipe, stepId: string, ranAfter: Read
 export function unusedAnswers(recipe: Recipe, events: readonly RunTraceEvent[], checkpoints: readonly RunTraceCheckpoint[]): UnusedAnswer[] {
   const critiques = new Set(placements(recipe).filter((p) => personCritique(p.step)).map((p) => p.step.id));
   if (!critiques.size) return [];
+  const directionFirst = new Set(placements(recipe).filter((p) => p.step.role === 'seed' && DIRECTION_FIRST_SEED_PROMPTS.has(p.step.prompt ?? '')).map((p) => p.step.id));
   const ordered = [...events].sort((a, b) => a.seq - b.seq);
   const at = (e: RunTraceEvent) => `${e.stepId}#${e.candidate ?? ''}`;
   const out: UnusedAnswer[] = [];
@@ -124,12 +125,18 @@ export function unusedAnswers(recipe: Recipe, events: readonly RunTraceEvent[], 
     // run, or a judge had nothing to see) or passed (nothing to apply, so no model was asked) took nothing in.
     const started = new Map<string, number>();
     const ranAfter = new Set<string>();
+    let undirected = false;
     for (const e of ordered) {
       if (!e.stepId) continue;
       if (e.type === 'step-started') started.set(at(e), e.seq);
-      else if (e.type === 'step-finished' && (started.get(at(e)) ?? e.seq) > sent.seq && e.data.skipped !== true && e.data.passed !== true) ranAfter.add(e.stepId);
+      else if (e.type === 'step-finished' && (started.get(at(e)) ?? e.seq) > sent.seq && e.data.skipped !== true && e.data.passed !== true) {
+        ranAfter.add(e.stepId);
+        // The walk reads such a seed as putting its direction in place of the notes before it (ADR-0098, F01 (f)); one
+        // that stored the work alone wrote none and kept them, so this run is not what the walk reads: say nothing.
+        if (directionFirst.has(e.stepId) && ((e.data.outputArtifactIds as unknown[] | undefined)?.length ?? 0) < 2) undirected = true;
+      }
     }
-    if (answerUnusedAfter(recipe, cp.stepId, ranAfter)) out.push({ checkpointId: cp.id, stepId: cp.stepId, ...(cp.candidate !== undefined ? { candidate: cp.candidate } : {}), question: cp.prompt });
+    if (!undirected && answerUnusedAfter(recipe, cp.stepId, ranAfter)) out.push({ checkpointId: cp.id, stepId: cp.stepId, ...(cp.candidate !== undefined ? { candidate: cp.candidate } : {}), question: cp.prompt });
   }
   return out;
 }
