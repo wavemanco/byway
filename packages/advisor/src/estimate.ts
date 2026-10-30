@@ -471,9 +471,10 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
       const body = walkNode(w, n.body, set);
       const retries = n.retry?.times ?? 0;
       // On a fail: re-run the stages from the named one through this gate's, check included, up to `times`; then a
-      // person decides. The first walk, which finds the stage spans, leaves this out, so they are without retries.
-      const again = n.retry ? (retried(w, n.retry.stage) ?? body.span) : NONE;
-      const retry = w.stageBase ? onlyHigh(add(times(again, count(retries, retries)), minutes('confirm'))) : NONE;
+      // person decides. The first walk, which finds the stage spans, leaves the re-runs out, so they are without
+      // retries, but keeps the question: a stage another gate re-runs can ask it again.
+      const again = n.retry && w.stageBase ? times(retried(w, n.retry.stage) ?? body.span, count(retries, retries)) : NONE;
+      const retry = onlyHigh(add(again, minutes('confirm')));
       // Then "Use it anyway?": Yes goes on with the run, so its figure is what follows the gate (follow adds it).
       if (w.questions && w.gates) {
         const q: Question = { asks: 'gate', span: NONE };

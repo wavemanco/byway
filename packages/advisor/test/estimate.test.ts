@@ -400,6 +400,13 @@ describe('the call counts the interpreter makes (B-152)', () => {
     expect(calls(recipe(draft, seq(revise, view, oneShotGate('gate', critic({ mode: 'OK' }), pass, { stage: 'D1', times: 1 }))))).toEqual({ low: 3, high: 6 });
   });
 
+  it('a gate in a stage another gate re-runs can ask "Use it anyway?" again (the check of B-150)', () => {
+    // D1 gates once with no retry; D2's gate retries D1: at worst D1's question twice and D2's once. The re-run counts D2's
+    // own question with its stage too, so the high end is one question over, on the safe side, as B-150 accepted.
+    const r = recipe(seq(draft, view, oneShotGate('first', critic({ mode: 'OK' }), pass)), seq(revise, view, oneShotGate('second', critic({ mode: 'OK' }), pass, { stage: 'D1', times: 1 })));
+    expect(estimateRecipe(r, ctx).humanMinutes).toEqual({ low: 0, high: 4 * HUMAN_MINUTES.confirm[1] });
+  });
+
   it("a critic loop's fix runs only when its verdict does not end the loop (B-151)", () => {
     // Under rankGate(3, 3, 1): at least the build and one passing critique; at most three critiques, two fixes and the re-rank.
     const gate = { ...pass, holder: 'worker', probe: 1, max: 3, plateau: { minGain: 1, window: 2 }, onCap: 'human', onNoConverge: 'recalibrate-human' } as const;
