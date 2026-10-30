@@ -9,7 +9,9 @@
  * choices and the rows whose Who is owner or both; Waiting on the no rows; the checklists their lines. Each item
  * carries its row's Priority and Trigger type (columns at the owner's word of 2026-10-23: "they should be columns
  * because that helps make the Git files readable too no?"), every view shows the priority, the higher priority comes
- * first within a group, and All open rows filters on both.
+ * first within a group, and All open rows filters on both. The page has two panes with the same views, the backlog's
+ * and the playbook's (the owner, 2026-10-30: "two different parent panes (but similar pane architecture as the current
+ * map) for backlog and playbook"): each holds its file's open rows and closed entries, and the two add up to the whole.
  */
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -120,14 +122,38 @@ function holds(D: RouteMapData, docs: Docs) {
   expect(c.launchList.lines).toBe(c.launchList.ticked + c.launchList.open);
   expect(c.review.lines).toBe(c.review.ticked + c.review.open);
   expect(D.reviewDoc).toBe('docs/reviews/2026-10-08-external-review-verification.md');
+
+  // The two panes: each file's open rows and closed entries, adding up to the whole, with the whole's views restricted to them.
+  const panes = [D.panes.backlog, D.panes.playbook];
+  expect(panes.map((p) => p.file)).toEqual(['docs/backlog.md', 'docs/playbook.md']);
+  expect(panes.flatMap((p) => p.done).sort((a, b) => a - b)).toEqual(D.done.entries.map((_, k) => k));
+  for (const k of ['total', 'closed', 'open', 'needYou', 'waitsOnRow', 'noMilestone', 'queue'] as const) expect(panes[0]!.counts[k] + panes[1]!.counts[k], k).toBe(c[k]);
+  for (const k of ['yes', 'maybe', 'no'] as const) expect(panes[0]!.counts.land[k] + panes[1]!.counts.land[k], k).toBe(c.land[k]);
+  for (const p of panes) {
+    const mine = (ids: string[]) => ids.filter((id) => items.get(id)!.file === p.file);
+    expect(p.counts.total).toBe(p.counts.closed + p.counts.open);
+    expect(p.counts.open).toBe(D.items.filter((i) => i.file === p.file).length);
+    expect(p.counts.closed).toBe(p.done.length);
+    expect(p.routes.map((r) => r.id)).toEqual(D.routes.map((r) => r.id));
+    for (const r of p.routes) {
+      expect([...r.stops].sort(), r.id).toEqual(mine(D.routes.find((x) => x.id === r.id)!.stops).sort());
+      const at = new Map(r.stops.map((id, k) => [id, k]));
+      for (const id of r.stops) for (const w of items.get(id)!.waitsOn) if (at.has(w) && w !== id) expect(at.get(w)!, `${w} before ${id} on ${r.id}`).toBeLessThan(at.get(id)!);
+    }
+    expect(p.landNow.flatMap((g) => g.ids)).toEqual(mine(D.landNow.flatMap((g) => g.ids)));
+    expect(p.queue).toEqual({ smallChoice: mine(D.queue.smallChoice), needYou: mine(D.queue.needYou) });
+    expect(p.waiting.flatMap((w) => w.ids).sort()).toEqual(mine(D.waiting.flatMap((w) => w.ids)).sort());
+    for (const w of p.waiting) expect(w.ids).toEqual(mine(D.waiting.find((x) => x.need === w.need)!.ids));
+  }
 }
 
 /**
  * The page's own script, run on a stand-in for the few DOM calls it makes (no browser): every tab shown, every button,
  * marker and table row in it clicked, every select changed to each of its options. It returns what the drawer showed
- * and the text of every view, so a script error on some data, which would leave the page blank, fails here.
+ * and the text of every view, so a script error on some data, which would leave the page blank, fails here. It shows
+ * the pane `pane` first, as a click on its button would.
  */
-function renderAll(html: string): { opened: Set<string>; text: Map<string, string>; filtered: Map<string, string>; table: string[]; drawer: Map<string, string>; errors: string[]; markers: string; went: { n: string; label: string; tab: string; view: string }[] } {
+function renderAll(html: string, pane: 'backlog' | 'playbook' = 'backlog'): { opened: Set<string>; text: Map<string, string>; filtered: Map<string, string>; table: string[]; drawer: Map<string, string>; errors: string[]; markers: string; went: { n: string; label: string; tab: string; view: string }[]; header: string } {
   type Node = El | { nodeType: 3; data: string };
   class El {
     nodeType = 1;
@@ -155,7 +181,7 @@ function renderAll(html: string): { opened: Set<string>; text: Map<string, strin
     fire(k: string, e: unknown = { key: 'Enter', target: this }) { for (const f of this.on[k] ?? []) f(e); }
     all(): El[] { return [this, ...this.children.flatMap((c) => c.all())]; }
   }
-  const byId = new Map(['lede', 'asof', 'markers', 'tabs', 'views', 'scrim', 'drawer', 'dkind', 'dtitle', 'dclose', 'dbody'].map((id) => { const e = new El('div'); e.attrs.id = id; return [id, e]; }));
+  const byId = new Map(['panes', 'plate', 'heading', 'lede', 'asof', 'markers', 'tabs', 'views', 'scrim', 'drawer', 'dkind', 'dtitle', 'dclose', 'dbody'].map((id) => { const e = new El('div'); e.attrs.id = id; return [id, e]; }));
   const opened = new Set<string>();
   // What the drawer's body showed for each row it opened.
   const drawer = new Map<string, string>();
@@ -174,6 +200,9 @@ function renderAll(html: string): { opened: Set<string>; text: Map<string, strin
   const errors: string[] = [];
   const run = (code: string) => new Function('window', 'document', 'location', 'history', 'localStorage', code)(window, document, location, history, localStorage);
   for (const s of scripts) run(s);
+  const button = byId.get('panes')!.children.find((b) => b.id === `pane-${pane}`);
+  if (!button) throw new Error(`no button for the pane ${pane}`);
+  button.fire('click');
   const text = new Map<string, string>();
   // The view after each select is set to each of its options, by "<label>=<value>".
   const filtered = new Map<string, string>();
@@ -205,7 +234,8 @@ function renderAll(html: string): { opened: Set<string>; text: Map<string, strin
     } catch (err) {
       errors.push(`marker: ${String(err)}`);
     }
-  return { opened, text, filtered, table, drawer, errors, markers: byId.get('markers')!.textContent, went };
+  const header = ['panes', 'plate', 'heading', 'lede'].map((id) => byId.get(id)!.textContent).join(' | ');
+  return { opened, text, filtered, table, drawer, errors, markers: byId.get('markers')!.textContent, went, header };
 }
 
 describe('the Route Map, on the format fixtures', () => {
@@ -271,12 +301,18 @@ describe('the Route Map, on the format fixtures', () => {
   it("renders every view with the page's own script, and opens every row from them", () => {
     const { opened, text, errors, markers } = renderAll(html);
     expect(errors).toEqual([]);
-    expect([...opened].sort()).toEqual(D.items.map((i) => i.id).sort());
+    // Every backlog row, and of the playbook's only those a backlog row or checklist line names (a chip opens a row of
+    // either file); with the playbook's pane, every row opens.
+    const mine = D.items.filter((i) => i.file === 'docs/backlog.md');
+    const named = new Set([...mine.flatMap((i) => [...i.waitsOn, ...i.unlocks]), ...[...D.launchList, ...D.review].flatMap((g) => g.lines.flatMap((l) => l.ids))]);
+    for (const i of mine) expect(opened.has(i.id), i.id).toBe(true);
+    for (const id of opened) expect(mine.some((i) => i.id === id) || named.has(id), id).toBe(true);
+    expect([...new Set([...opened, ...renderAll(html, 'playbook').opened])].sort()).toEqual(D.items.map((i) => i.id).sort());
     expect([...text.keys()]).toEqual(['tab-routes', 'tab-land', 'tab-queue', 'tab-waiting', 'tab-items', 'tab-launch', 'tab-review', 'tab-done']);
-    expect(markers).toContain('Rows in all = closed + open (21 = 3 + 18)');
-    expect(markers).toContain('The open rows by Land now (18 = 2 + 3 + 13)');
-    expect(text.get('tab-items')).toContain('18 of the 18 open rows');
-    expect(text.get('tab-queue')).toContain('Your choice: whether any patent is filed');
+    expect(markers).toContain('Rows in all = closed + open (16 = 3 + 13)');
+    expect(markers).toContain('The open rows by Land now (13 = 2 + 2 + 9)');
+    expect(text.get('tab-items')).toContain('13 of the 13 open rows');
+    expect(text.get('tab-queue')).toContain('Your choice: ');
     expect(text.get('tab-review')).toContain('docs/reviews/2026-10-08-external-review-verification.md');
     expect(text.get('tab-done')).toContain('B-004 Merge block 2 to main');
     expect(text.get('tab-launch')).toContain('B-004 (closed)');
@@ -287,20 +323,20 @@ describe('the Route Map, on the format fixtures', () => {
     expect(errors).toEqual([]);
     expect(went.map((w) => [w.label, w.n, w.tab])).toEqual([
       ['closed (the Done table)', '3', 'tab-done'],
-      ['open (pending rows)', '18', 'tab-items'],
-      ['open', '18', 'tab-items'],
+      ['open (pending rows)', '13', 'tab-items'],
+      ['open', '13', 'tab-items'],
       ['yes: an agent can land it now', '2', 'tab-land'],
-      ['small choice: after one choice of yours', '3', 'tab-queue'],
-      ['no: needs something not there today', '13', 'tab-waiting'],
-      ['need you (Who is owner or both)', '9', 'tab-items'],
-      ['wait on another open row', '6', 'tab-items'],
-      ['on the first-live-use route', '5', 'tab-routes'],
+      ['small choice: after one choice of yours', '2', 'tab-queue'],
+      ['no: needs something not there today', '9', 'tab-waiting'],
+      ['need you (Who is owner or both)', '4', 'tab-items'],
+      ['wait on another open row', '5', 'tab-items'],
+      ['on the first-live-use route', '4', 'tab-routes'],
       ['no milestone (wait for their trigger)', '1', 'tab-items'],
       ['Launch checklist lines open, of 4', '3', 'tab-launch'],
       ['Review checklist lines open, of 4', '3', 'tab-review'],
     ]);
-    for (const w of went.filter((x) => x.tab === 'tab-items')) expect(w.view, w.label).toContain(`${w.n} of the 18 open rows`);
-    expect(renderAll(html).markers).toContain('21rows in all');
+    for (const w of went.filter((x) => x.tab === 'tab-items')) expect(w.view, w.label).toContain(`${w.n} of the 13 open rows`);
+    expect(renderAll(html).markers).toContain('16rows in all');
   });
 
   it('shows Priority and Trigger type in All open rows, filters on each, and sorts by priority within Land now and main milestone', () => {
@@ -310,16 +346,20 @@ describe('the Route Map, on the format fixtures', () => {
     expect(all).toContain('IDItemStatusPriorityLand nowWhoMilestoneSizeKindTrigger typeTrigger');
     // The filters' options in the format's order (Priority highest first), and Filed's days latest first, then "before".
     expect(all).toContain('PriorityPriority: highPriority: mediumPriority: low');
-    expect(all).toContain(`Trigger type${TRIGGER_TYPES.map((t) => `Trigger type: ${t}`).join('')}`);
+    // A filter offers the values the pane's rows have: date and owner-decision are only the playbook's here.
+    const types = TRIGGER_TYPES.filter((t) => D.items.some((i) => i.file === 'docs/backlog.md' && i.triggerType === t));
+    expect(types).toEqual(['now', 'event', 'other-row', 'milestone']);
+    expect(all).toContain(`Trigger type${types.map((t) => `Trigger type: ${t}`).join('')}Waits on`);
     expect(all).toContain('Filed: 2026-10-07Filed: before 2026-10-07');
-    for (const p of PRIORITIES) expect(filtered.get(`Priority=${p}`), p).toContain(`${D.items.filter((i) => i.priority === p).length} of the 18 open rows`);
-    for (const t of TRIGGER_TYPES) expect(filtered.get(`Trigger type=${t}`), t).toContain(`${D.items.filter((i) => i.triggerType === t).length} of the 18 open rows`);
-    expect(filtered.get('Priority=high')).toContain('PB-02');
+    const backlog = D.items.filter((i) => i.file === 'docs/backlog.md');
+    for (const p of PRIORITIES) expect(filtered.get(`Priority=${p}`), p).toContain(`${backlog.filter((i) => i.priority === p).length} of the 13 open rows`);
+    for (const t of types) expect(filtered.get(`Trigger type=${t}`), t).toContain(`${backlog.filter((i) => i.triggerType === t).length} of the 13 open rows`);
+    expect(filtered.get('Priority=high')).toContain('B-003');
     expect(filtered.get('Priority=high')).not.toContain('F03 (a)');
-    expect(filtered.get('Trigger type=date')).toContain('PB-03');
-    // By Land now, then main milestone (in the format's order), then priority: F03 (a) (medium) after B-003, B-005 and
-    // PB-02 (high), D1 (a) (medium) before ST9 (a) (low), H1c (a) (medium) before D24 (a) (low).
-    expect(table).toEqual(['B-001', 'B-007', 'F01 (a)', 'B-002', 'D9 (a)', 'B-003', 'B-005', 'PB-02', 'F03 (a)', 'B-006', 'X-VAL-4 (a)', 'D1 (a)', 'ST9 (a)', 'PB-01', 'PB-03', 'B-BoN (a)', 'H1c (a)', 'D24 (a)']);
+    expect(filtered.get('Priority=high')).not.toContain('PB-02');
+    // By Land now, then main milestone (in the format's order), then priority: F03 (a) (medium) after B-003 and B-005
+    // (high), D1 (a) (medium) before ST9 (a) (low). Only the backlog's rows: the playbook's are in their own pane.
+    expect(table).toEqual(['B-001', 'B-007', 'F01 (a)', 'B-002', 'B-003', 'B-005', 'F03 (a)', 'B-006', 'X-VAL-4 (a)', 'D1 (a)', 'ST9 (a)', 'B-BoN (a)', 'H1c (a)']);
     // The drawer names both, and every view shows each row's priority.
     expect(drawer.get('PB-03')).toContain('Prioritylow');
     expect(drawer.get('PB-03')).toContain('Trigger typedate');
@@ -327,6 +367,55 @@ describe('the Route Map, on the format fixtures', () => {
     expect(text.get('tab-land')).toContain('B-001highAn adapter error');
     expect(text.get('tab-queue')).toContain('high F01 (a)');
     expect(text.get('tab-waiting')).toContain('D1 (a)mediumD1 Baseline set');
+  });
+
+  it("has a pane for the playbook with the same views but the checklists, which are the backlog's", () => {
+    const { opened, text, errors, markers, went, table, header } = renderAll(html, 'playbook');
+    expect(errors).toEqual([]);
+    expect(header).toContain('Backlog13 open rows · docs/backlog.mdPlaybook5 open rows · docs/playbook.md');
+    expect(header).toContain('byway · playbook');
+    expect(header).toContain('Of its 5 open rows, 0 can land now, 1 wait on one small choice of yours and 4 need something');
+    expect([...text.keys()]).toEqual(['tab-routes', 'tab-land', 'tab-queue', 'tab-waiting', 'tab-items', 'tab-done']);
+    expect(markers).toContain('Rows in all = closed + open (5 = 0 + 5)');
+    expect(markers).toContain('The open rows by Land now (5 = 0 + 1 + 4)');
+    expect(markers).not.toContain('Checklist lines');
+    expect(went.map((w) => [w.label, w.n, w.tab])).toEqual([
+      ['closed (the Done table)', '0', 'tab-done'],
+      ['open (pending rows)', '5', 'tab-items'],
+      ['open', '5', 'tab-items'],
+      ['yes: an agent can land it now', '0', 'tab-land'],
+      ['small choice: after one choice of yours', '1', 'tab-queue'],
+      ['no: needs something not there today', '4', 'tab-waiting'],
+      ['need you (Who is owner or both)', '5', 'tab-items'],
+      ['wait on another open row', '1', 'tab-items'],
+      ['on the first-live-use route', '1', 'tab-routes'],
+      ['no milestone (wait for their trigger)', '0', 'tab-items'],
+    ]);
+    for (const w of went.filter((x) => x.tab === 'tab-items')) expect(w.view, w.label).toContain(`${w.n} of the 5 open rows`);
+    expect(table).toEqual(['D9 (a)', 'PB-02', 'PB-01', 'PB-03', 'D24 (a)']);
+    expect(text.get('tab-queue')).toContain('Your choice: whether any patent is filed');
+    expect(text.get('tab-land')).toContain('No open row can land now.');
+    expect(text.get('tab-done')).toContain('No playbook row has closed yet.');
+    // Its rows, and the backlog's rows they wait on or that wait on them (B-003 waits on PB-02).
+    for (const id of ['PB-01', 'PB-02', 'PB-03', 'D9 (a)', 'D24 (a)', 'B-003']) expect(opened.has(id), id).toBe(true);
+    expect(text.get('tab-items')).toContain('Trigger typeTrigger type: owner-decisionTrigger type: milestoneTrigger type: dateWaits on');
+  });
+
+  it("puts a closed playbook row's entry in the playbook's pane", () => {
+    // By its PB- ID, or, for a playbook row with an umbrella code or none, by its row cell; a backlog row's entry that
+    // only mentions the playbook stays the backlog's.
+    const added = ['| Owner sets up the review account (PB-04) | 2026-10-30 | Closed |', '| The owner names the study sponsor (D2 (b)) | 2026-10-30 | The playbook row, marked Done |', '| Keep the price table current | d7ffbfa | Closed. The session-start check is the playbook row "Check the prices" |'];
+    const docs = { ...GOOD, backlog: GOOD.backlog.replace('| B-004 Merge block 2 to main | 65825f4 | Closed |', ['| B-004 Merge block 2 to main | 65825f4 | Closed |', ...added].join('\n')) };
+    const page = generate(docs, TEMPLATE_TEXT, HEAD);
+    const P = pageData(page);
+    expect(P.panes.playbook.done).toEqual([1, 2]);
+    expect(P.panes.backlog.done).toEqual([0, 3, 4, 5]);
+    holds(P, docs);
+    const playbookDone = renderAll(page, 'playbook').text.get('tab-done')!;
+    expect(playbookDone).toContain('Owner sets up the review account (PB-04)');
+    expect(playbookDone).toContain('The owner names the study sponsor (D2 (b))');
+    expect(playbookDone).not.toContain('Keep the price table current');
+    expect(renderAll(page, 'backlog').text.get('tab-done')).not.toContain('PB-04');
   });
 
   it('holds the checklists line by line, with the IDs each names', () => {
