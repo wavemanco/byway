@@ -73,7 +73,7 @@ describe('no efficacy claims (spec §4, CR11)', () => {
   });
 
   it('in the READMEs that describe the product', () => {
-    expect(offenders([path.join(REPO, 'README.md'), path.join(WEB, 'README.md')])).toEqual([]);
+    expect(offenders([path.join(REPO, 'README.md'), path.join(REPO, 'docs', 'developers.md'), path.join(WEB, 'README.md')])).toEqual([]);
   });
 
   it('reads templates without their front matter', () => {

@@ -66,8 +66,8 @@ Then open http://127.0.0.1:3000 in your browser. Everything you see there is sam
 ## How byway handles money
 
 - Before a run starts, byway shows what it expects the run to cost, and you set a budget for it. There is also an overall budget for everything you run.
-- byway asks you before a run spends past its budget, and it does not go past the overall budget.
-- The estimate is a careful guess, so a run can end up costing a little more than shown. Settings keeps a record of every paid step; compare it with your provider's own usage page from time to time.
+- A run asks you before it starts a step that it expects would take it over its budget, and byway does not start a step that it expects would take your spending past the overall budget.
+- Expectations can be low, so a step can cost more than expected, and spending can end up a little over a budget. Settings keeps a record of every paid step; compare it with your provider's own usage page from time to time.
 - byway's prices are copied by hand from each provider's price list. Settings shows when they were last checked.
 
 ## What stays on your computer
@@ -92,6 +92,7 @@ For web pages, byway draws each page in a locked-down copy of the Chromium brows
 
 - **Chromium is missing.** Run `pnpm --filter ./apps/web exec playwright install chromium` in the byway folder (on Linux, add `--with-deps` before `chromium`).
 - **Ubuntu 24.04 or later blocks the lock-down.** Run `sh scripts/linux/allow-chromium-sandbox.sh` in the byway folder. Read what it allows first, in the [developers' guide](docs/developers.md#the-os-sandbox).
+- **Your Linux has switched off a feature the lock-down needs** (unprivileged user namespaces). Someone with admin rights on the computer has to switch it on; the [developers' guide](docs/developers.md#the-os-sandbox) says more.
 - **You run byway inside a container.** Run it outside the container instead.
 
 Settings lets you turn the lock-down off if nothing else works. Pages are then less contained, and byway shows a warning for as long as it is off.

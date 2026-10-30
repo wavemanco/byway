@@ -17,6 +17,8 @@ import { filesUnder, REPO } from './guards/scan.ts';
 
 const WEB = path.join(REPO, 'apps', 'web');
 const README = path.join(REPO, 'README.md');
+/** The technical README became docs/developers.md on 2026-10-30 (ADR-0116): its money and decline sentences are checked there. */
+const DEV = path.join(REPO, 'docs', 'developers.md');
 const rel = (file: string) => path.relative(REPO, file).replace(/\\/g, '/');
 
 /** Sentences that promise a budget can never be passed, that a cost estimate is a limit, or that an overrun is small. */
@@ -39,7 +41,7 @@ const OVERRUN = 'Estimates can be low, so a call can cost more than its estimate
 
 describe('estimates are not bounds (F04)', () => {
   it('no screen, and not the README, promises that a budget cannot be passed', () => {
-    const files = [...filesUnder(path.join(WEB, 'src'), /\.tsx?$/), ...filesUnder(path.join(WEB, 'app'), /\.tsx?$/), README];
+    const files = [...filesUnder(path.join(WEB, 'src'), /\.tsx?$/), ...filesUnder(path.join(WEB, 'app'), /\.tsx?$/), README, DEV];
     const hits = files.flatMap((file) => {
       const text = readFileSync(file, 'utf8');
       return BOUND_CLAIMS.filter((c) => c.pattern.test(text)).map((c) => `${rel(file)}: ${c.name}`);
@@ -57,14 +59,17 @@ describe('estimates are not bounds (F04)', () => {
     expect(settings).toContain(`${OVERRUN} spending can end over this amount.`);
   });
 
-  it('the README describes the budgets the way the screens do', () => {
-    const readme = readFileSync(README, 'utf8');
+  it('the developers’ guide describes the budgets the way the screens do, and the README says the same in plain words', () => {
+    const readme = readFileSync(DEV, 'utf8');
+    const user = readFileSync(README, 'utf8');
+    expect(user).toContain('A run asks you before it starts a step that it expects would take it over its budget');
+    expect(user).toContain('spending can end up a little over a budget');
     expect(readme).toMatch(/A run asks before starting a call whose estimated cost would take it over its budget/);
     expect(readme).toContain(`${OVERRUN} spending can end over a budget.`);
   });
 
   it('no screen, and not the README, still sizes the overrun by a fallback model that byway no longer asks for (ADR-0102)', () => {
-    const files = [...filesUnder(path.join(WEB, 'src'), /\.tsx?$/), ...filesUnder(path.join(WEB, 'app'), /\.tsx?$/), README];
+    const files = [...filesUnder(path.join(WEB, 'src'), /\.tsx?$/), ...filesUnder(path.join(WEB, 'app'), /\.tsx?$/), README, DEV];
     const stale = files.filter((file) => STALE.test(readFileSync(file, 'utf8'))).map(rel);
     expect(stale).toEqual([]);
   });
@@ -75,8 +80,8 @@ describe('estimates are not bounds (F04)', () => {
     }
   });
 
-  it('the README says what a decline does to a step and to an image step, for every outcome of the second ask (ADR-0102)', () => {
-    const readme = readFileSync(README, 'utf8');
+  it('the developers’ guide says what a decline does to a step and to an image step, for every outcome of the second ask (ADR-0102)', () => {
+    const readme = readFileSync(DEV, 'utf8');
     // The call ends only for the reasons that end it: a second ask byway stopped before making is made by the step's next
     // attempt (ADR-0102 Decision 2), so "cannot be made" names its two final reasons.
     expect(readme).toContain('If it declines again, or that second call fails, or it cannot be made (a budget has no room for it, or paid calls are paused), the call ends there.');
