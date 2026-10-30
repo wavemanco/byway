@@ -16,6 +16,7 @@ import { DIRECTION_FIRST_SEED_PROMPTS, hasNoExecutor, HUMAN_WRITE_ROLES, leavesN
 import { assetStep } from '../src/activities/asset.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { finishHumanStep } from '../src/activities/human.ts';
+import { usageMissingNote } from '../src/activities/call.ts';
 import { directionOf, modelStep, NOTE_LABELS, parserFor } from '../src/activities/model-step.ts';
 import { ArtifactReader, buildPrompt } from '../src/activities/prompting.ts';
 import { DEFAULT_RELAY_WAITS, relayLink } from '../src/activities/relay.ts';
@@ -232,6 +233,35 @@ describe('the slots the composed profile renders a template with are slots the r
     });
     const filled = new Set([...Object.keys(built.slots), ...activityAdds(step.role, medium)]);
     expect([...slotsForStep(step, medium)].filter((s) => !filled.has(s))).toEqual([]);
+  });
+});
+
+// The owner's choice of 2026-10-30 on B-147: "Use the assumed rule but mention that count was missed." A call the
+// provider answered with no token counts is said in its step's note, as well as marked in the ledger.
+describe('a call that came back with no token counts', () => {
+  const noCounts = (g: Gateway): Gateway => ({
+    ...g,
+    complete: async (req) => ({ ...(await g.complete(req)), usageMissing: true }),
+    image: async (req) => ({ ...(await g.image(req)), usageMissing: true }),
+  });
+
+  it("is said in a model step's note", async () => {
+    const run = await newRun();
+    const doc = (await store.artifacts.putText('# Memo\n', 'text/markdown')).id;
+    await modelStep({ gateway: noCounts(scripted(['- Remove the second line.'])), store, prompts: fakePrompts() }, { run, call: call(run, 'cut-nc'), step: spec('cut', 'model', ['critique']), ports: { artifact: doc }, refs: [] });
+    const finished = (await store.events(run.runId)).find((e) => e.type === 'step-finished' && e.stepId === 'cut-nc');
+    expect((finished?.data as { note?: string }).note).toBe(usageMissingNote(1));
+    expect(usageMissingNote(1)).toMatch(/^The provider gave no token counts for one of this step’s calls, so its cost is byway’s estimate/);
+  });
+
+  it("is said in an image step's note, for its image and its other calls", async () => {
+    const run = await newRun();
+    const doc = (await store.artifacts.putText('# Memo\n\nText.\n', 'text/markdown')).id;
+    const briefs = '```json\n{"images":[{"slot":"hero","prompt":"A loaf","alt":"A loaf","size":"1024x1024"}]}\n```';
+    await assetStep({ gateway: noCounts(scripted([briefs])), store, prompts: fakePrompts() }, { run, call: call(run, 'art-nc'), step: spec('asset', 'model', ['asset'], { block: 'ASSET', knobs: { slots: 1 } }), ports: { artifact: doc } });
+    const finished = (await store.events(run.runId)).find((e) => e.type === 'step-finished' && e.stepId === 'art-nc');
+    // The briefs call and the image: two calls of this step.
+    expect((finished?.data as { note?: string }).note).toContain(usageMissingNote(2));
   });
 });
 

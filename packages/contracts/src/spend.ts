@@ -208,6 +208,7 @@ export function ledgerEntryProblem(value: unknown): string | undefined {
   for (const field of ['runId', 'stepId'] as const) if (e[field] !== undefined && !text(e[field])) return `its "${field}" is empty or not text`;
   if (e.operationId !== undefined && !text(e.operationId)) return 'its "operationId" is not text';
   if (e.priceBasis !== undefined && !own(PRICE_BASES, e.priceBasis)) return 'its "priceBasis" is not "assumed"';
+  if (e.usageMissing !== undefined && e.usageMissing !== true) return 'its "usageMissing" is not true';
   return undefined;
 }
 

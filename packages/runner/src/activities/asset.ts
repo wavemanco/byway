@@ -36,7 +36,7 @@ import { parseHtml, parseMarkdown, parseOptions, parseStoryboard, serializeJson,
 import { imagesSlot, labelled, labelOf } from '@byway/prompts/pure';
 import { parseBriefs } from '../parse.ts';
 import type { AssetInput, AssetResult } from '../types.ts';
-import { askModel } from './call.ts';
+import { askModel, usageMissingNote } from './call.ts';
 import { mediaStatus } from './availability.ts';
 import type { RunnerDeps } from './deps.ts';
 import { ContractMissed, StepError } from './failures.ts';
@@ -156,13 +156,16 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   });
   const slots = plan!;
   let costUsd = briefs.costUsd;
+  // Calls of this step that came back with no token counts, said in its note (B-147).
+  let usageMissing = briefs.usageMissing ?? 0;
+  const said = (note: string | undefined) => (usageMissing ? [note, usageMissingNote(usageMissing)].filter(Boolean).join(' ') : note);
   if (!briefs.value.briefs.length) {
     // Nothing to make: by the prompt's own choice (its minimum is 0); because the step makes no images (a slots knob
     // below 1, so every brief was left out); or because no usable brief came even when asked again.
     const none = slots.kind === 'free' && slots.max < 1;
     const chosen = briefs.shortfall === undefined && !none;
     const note = chosen ? NO_IMAGE_CHOSEN_NOTE : [none ? NO_SLOTS_NOTE : NO_BRIEF_NOTE, ...leftOutSentences(slots, briefs.value)].join(' ');
-    await stepFinished(deps, run, call, { costUsd, ...(chosen ? {} : { skipped: true }), note }, true);
+    await stepFinished(deps, run, call, { costUsd, ...(chosen ? {} : { skipped: true }), note: said(note)! }, true);
     return chosen ? { costUsd } : { costUsd, skipped: true };
   }
 
@@ -190,11 +193,12 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
       continue;
     }
     costUsd += image.costUsd;
+    if (image.usageMissing) usageMissing++;
     made.push(image.made);
     outputs.push(image.made.artifactId);
   }
   if (!made.length) {
-    await stepFinished(deps, run, call, { costUsd, skipped: true, note: [NO_IMAGE_MADE_NOTE, ...declinedSentences(slots, declined), ...waitedSentences(slots, waited), ...leftOutSentences(slots, briefs.value)].join(' ') }, true);
+    await stepFinished(deps, run, call, { costUsd, skipped: true, note: said([NO_IMAGE_MADE_NOTE, ...declinedSentences(slots, declined), ...waitedSentences(slots, waited), ...leftOutSentences(slots, briefs.value)].join(' '))! }, true);
     return { costUsd, skipped: true };
   }
 
@@ -233,6 +237,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
         },
       });
       result.costUsd += integrate.costUsd;
+      usageMissing += integrate.usageMissing ?? 0;
       placed = integrate.value;
     } catch (e) {
       // No answer was usable: the work stays as it was, and every image is kept beside it.
@@ -267,7 +272,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   // not when no image is in the work, as Trim then has none to cut), and what keepsVoice wrote back (ADR-0081), in one note.
   const placedNone = unplaced !== undefined && unplaced.text === undefined;
   const advice = briefs.value.advice && !placedNone ? adviceNote(briefs.value.advice) : undefined;
-  const note = [partialNote(slots, briefs.value, failed, anchorWanted && !anchor, declined, waited), unplaced ? unplacedNote(slots, unplaced) : undefined, advice, restoredNote(restored)].filter((n): n is string => !!n).join(' ') || undefined;
+  const note = said([partialNote(slots, briefs.value, failed, anchorWanted && !anchor, declined, waited), unplaced ? unplacedNote(slots, unplaced) : undefined, advice, restoredNote(restored)].filter((n): n is string => !!n).join(' ') || undefined);
   await stepFinished(deps, run, call, { costUsd: result.costUsd, ...(note ? { note } : {}), outputArtifactIds: outputs }, true);
   return result;
 }
@@ -299,7 +304,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
  * wait ran out, that it may have billed the work and where to wait longer, go in the step's note (waitedSentences). The
  * memo keeps that outcome as it keeps a decline (B-045), so the step run again gets it back and asks nothing.
  */
-async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, tries: number): Promise<{ made: MadeImage; costUsd: number } | { declined: DeclineRecord } | { waited: string } | undefined> {
+async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, tries: number): Promise<{ made: MadeImage; costUsd: number; usageMissing?: true } | { declined: DeclineRecord } | { waited: string } | undefined> {
   const { run, call, step } = input;
   const medium = run.medium;
   for (let attempt = 1; attempt <= tries; attempt++) {
@@ -307,7 +312,7 @@ async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, 
       const img = await deps.gateway.image({ workspaceId: run.workspaceId, runId: run.runId, stepId: step.id, purpose: `asset:${medium}`, profileId: run.profileId, prompt: brief.prompt, size: brief.size });
       const alt = brief.alt || `Image for ${brief.slot}`;
       await announce(deps, run.runId, call, img.artifactId, img.mediaType, { label: `Image: ${oneLine(alt).slice(0, 80)}`, name: `image/${brief.slot}`, ...(medium === 'media' ? { shot: Number(brief.slot) } : {}) });
-      return { made: { slot: brief.slot, alt, artifactId: img.artifactId }, costUsd: img.costUsd };
+      return { made: { slot: brief.slot, alt, artifactId: img.artifactId }, costUsd: img.costUsd, ...(img.usageMissing ? { usageMissing: true as const } : {}) };
     } catch (e) {
       if (!(e instanceof GatewayError) || STOPS_THE_STEP.has(e.code) || e.billed === true || isHeldKeyError(e)) throw e;
       if (e.declined) return { declined: e.declined };

@@ -52,7 +52,13 @@ export interface ModelAnswer<T> {
   costUsd: number;
   /** Set when the answer fell short even after the retry: the problem; `value` is the usable part of it. */
   shortfall?: string;
+  /** How many of its calls came back with no token counts, so their cost is byway's figure (B-147); absent when none. */
+  usageMissing?: number;
 }
+
+/** A step's note when calls of its came back with no token counts (CompletionResult and ImageResult usageMissing, B-147). */
+export const usageMissingNote = (calls: number): string =>
+  `The provider gave no token counts for ${calls === 1 ? 'one of this step’s calls' : `${calls} of this step’s calls`}, so ${calls === 1 ? 'its' : 'their'} cost is byway’s estimate; your provider’s bill may differ.`;
 
 export async function askModel<T>(deps: RunnerDeps, reader: ArtifactReader, req: ModelCall<T>): Promise<ModelAnswer<T>> {
   if (!deps.prompts.has(req.promptId)) throw new StepError(`The ${req.what} step has no prompt template "${req.promptId}".`);
@@ -78,6 +84,7 @@ export async function askModel<T>(deps: RunnerDeps, reader: ArtifactReader, req:
   let maxOutputTokens = req.maxOutputTokens ?? DEFAULT_MAX_OUTPUT;
   let messages: ChatMessage[] = [first];
   let costUsd = 0;
+  let missing = 0;
   let problem = '';
   /** What could be used of the answers that fell short (the parser adds a later one to an earlier), with its problem. */
   let usable: { value: T; problem: string } | undefined;
@@ -85,6 +92,7 @@ export async function askModel<T>(deps: RunnerDeps, reader: ArtifactReader, req:
     const ask: CompletionRequest = { ...base, messages, maxOutputTokens };
     const out = await deps.gateway.complete(req.waitMs !== undefined ? withWait(ask, req.waitMs) : ask);
     costUsd += out.costUsd;
+    if (out.usageMissing) missing++;
     if (out.stopReason === 'max-tokens') {
       // A cut-off answer is never parsed (it may look complete); ask again from the start with more room.
       problem = `The answer was cut off at the output limit (${maxOutputTokens} tokens).`;
@@ -93,7 +101,7 @@ export async function askModel<T>(deps: RunnerDeps, reader: ArtifactReader, req:
       continue;
     }
     const parsed = await req.parse(out.text, rendered, usable?.value);
-    if (parsed.ok) return { value: parsed.value, costUsd };
+    if (parsed.ok) return { value: parsed.value, costUsd, ...(missing ? { usageMissing: missing } : {}) };
     problem = parsed.problem;
     // A malformed answer leaves the earlier usable part as it was.
     if ('usable' in parsed) usable = { value: parsed.usable, problem };
@@ -103,6 +111,6 @@ export async function askModel<T>(deps: RunnerDeps, reader: ArtifactReader, req:
       { role: 'user', content: [{ type: 'text', text: `That answer could not be used: ${problem}\nAnswer again, following the answer format exactly.` }] },
     ];
   }
-  if (usable) return { value: usable.value, costUsd, shortfall: usable.problem };
+  if (usable) return { value: usable.value, costUsd, shortfall: usable.problem, ...(missing ? { usageMissing: missing } : {}) };
   throw new ContractMissed(`The ${req.what} step's answer could not be used after a retry: ${problem}`, problem, costUsd);
 }

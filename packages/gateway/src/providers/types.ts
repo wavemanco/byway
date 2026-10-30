@@ -74,6 +74,11 @@ export interface ProviderCompletion {
   declined?: { reason?: string };
   /** True when the answer was cut off at the output limit; the gateway reports it as stopReason 'max-tokens'. */
   truncated?: boolean;
+  /**
+   * Set when the answer came with no token counts at all: its `usage` counts are NaN, so the gateway settles it by its
+   * rule for a count it cannot read (finiteUsage), marked assumed, and says the counts were missing (B-147).
+   */
+  usageMissing?: true;
   /** The request as sent, with image bytes replaced by artifact references. Stored by hash, never inline. */
   requestBody: unknown;
   /** The provider's response as plain JSON. */
@@ -98,6 +103,8 @@ export interface ProviderImage {
   refusal?: string;
   /** Set when the provider declined the image, with the reason it stated, if any: the gateway asks once more (ADR-0102). */
   declined?: { reason?: string };
+  /** Set when an image came back with no token counts: as ProviderCompletion's (B-147). */
+  usageMissing?: true;
   requestBody: unknown;
   /** The provider's response as plain JSON, with image bytes removed (they go to the artifact store). */
   responseBody: unknown;

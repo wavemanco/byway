@@ -13,7 +13,7 @@ import { parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep,
 import { tellsText } from '../tells.ts';
 import type { ModelStepInput, ModelStepResult, TellsHit } from '../types.ts';
 import { otherFamilyModel, OTHER_FAMILY_FALLBACK_NOTE } from './availability.ts';
-import { askModel } from './call.ts';
+import { askModel, usageMissingNote } from './call.ts';
 import { memoized, newSalt, seededRandom } from './memo.ts';
 import { buildLineup, lineupWrittenFor, planCritic, verdictOf, type Lineup } from './critic.ts';
 import type { RunnerDeps } from './deps.ts';
@@ -61,6 +61,8 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
 
   const result: ModelStepResult = { costUsd: 0 };
   const outputs: string[] = [];
+  // Calls of this step that came back with no token counts, said in its note (B-147).
+  let usageMissing = 0;
 
   if (step.role === 'critic') {
     // The lineup's draws replay on a retry (convention C5), so a shuffle already paid for is the same request again.
@@ -94,6 +96,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
         parse: (text) => parseCritic(text, lineup?.labels),
       });
       result.costUsd += answer.costUsd;
+      usageMissing += answer.usageMissing ?? 0;
       answers.push({ answer: answer.value, ...(lineup ? { lineup } : {}) });
     }
     const verdict = verdictOf(answers, lineupWrittenFor(step));
@@ -140,6 +143,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
       parse,
     });
     result.costUsd = answer.costUsd;
+    usageMissing += answer.usageMissing ?? 0;
     const v = answer.value;
     switch (v.kind) {
       case 'artifact': {
@@ -177,6 +181,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
     result.noteArtifactId = await storeText(deps, run, call, `${result.text}\n`, { label: `${what}: ${NOTE_LABELS[step.role]}`, name: 'note', mediaType: 'text/markdown' });
     outputs.push(result.noteArtifactId);
   }
+  if (usageMissing) result.note = result.note ? `${result.note} ${usageMissingNote(usageMissing)}` : usageMissingNote(usageMissing);
   await stepFinished(deps, run, call, { costUsd: result.costUsd, ...(result.note ? { note: result.note } : {}), ...(outputs.length ? { outputArtifactIds: outputs } : {}) }, true);
   return result;
 }

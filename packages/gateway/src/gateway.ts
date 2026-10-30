@@ -355,6 +355,8 @@ export class ModelGateway implements Gateway {
           // Provenance (spec §3.3): the template behind the call, inside the hash chain like every other field.
           ...(prompt ? { prompt } : {}),
           ...(assumed || replaced ? { priceBasis: 'assumed' as const } : {}),
+          // The answer came with no token counts, so it was settled by the rule for a count it cannot read (B-147).
+          ...(out.usageMissing ? { usageMissing: true as const } : {}),
           // The ledger shows the decline and the retry (ADR-0102), inside the hash chain.
           ...(declined ? { declined } : {}),
           ...(retryOf !== undefined ? { retryOf } : {}),
@@ -383,6 +385,7 @@ export class ModelGateway implements Gateway {
           usage: { inputTokens: out.usage.inputTokens, outputTokens: out.usage.outputTokens },
           costUsd: entry.costUsd,
           ledgerEntryId: entry.id,
+          ...(out.usageMissing ? { usageMissing: true as const } : {}),
         },
       };
     } finally {
@@ -488,6 +491,7 @@ export class ModelGateway implements Gateway {
           costUsd,
           latencyMs: Date.now() - started,
           ...(settled.assumed || usage.replaced ? { priceBasis: 'assumed' as const } : {}),
+          ...(out.usageMissing ? { usageMissing: true as const } : {}),
           ...(declined ? { declined } : {}),
           ...(retryOf !== undefined ? { retryOf } : {}),
         },
@@ -501,7 +505,7 @@ export class ModelGateway implements Gateway {
       if (declined) return { declined, entryId: entry.id, costUsd: entry.costUsd, ...retainedOf(op) };
       // An answer with no usable image that is not a decline: refused, not asked again here (ENG-5); the asset step decides.
       if (out.refusal || !stored) throw new GatewayError('refused', redact(`${ref.provider} ${out.refusal ?? 'returned no image'}`), false, { settled: ledgered });
-      return { answer: { artifactId: stored.id, mediaType: out.mediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd: entry.costUsd, ledgerEntryId: entry.id } };
+      return { answer: { artifactId: stored.id, mediaType: out.mediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd: entry.costUsd, ledgerEntryId: entry.id, ...(out.usageMissing ? { usageMissing: true as const } : {}) } };
     } finally {
       await op.end();
     }

@@ -466,8 +466,10 @@ describe('google adapter', () => {
     // No candidatesTokenCount: only what the breakdown lists apart from IMAGE.
     expect(await outputOf({ thoughtsTokenCount: 300, candidatesTokensDetails: [image, { modality: 'TEXT', tokenCount: 10 }] })).toBe(310);
     expect(await outputOf({ candidatesTokensDetails: [image] })).toBe(0);
-    // No usage at all: nothing.
-    expect(await outputOf(undefined)).toBe(0);
+    // No usage at all: unknown, so the gateway settles it at its planning figures and marks it (B-147), never $0.
+    expect(await outputOf(undefined)).toBeNaN();
+    const missing = await googleAdapter({ client: fake(answer(undefined)).client }).image!(imageRequest);
+    expect([missing.usage.inputTokens, missing.usage.units, missing.usageMissing]).toEqual([Number.NaN, 1, true]);
   });
 
   it('generates images through generateContent with an aspect ratio and the 1K size', async () => {

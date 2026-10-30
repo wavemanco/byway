@@ -198,7 +198,7 @@ export async function completeStreamed(stream: AsyncIterable<ChatChunkLike>, pro
   const parsed = parseChatCompletion(completion);
   return {
     ...parsed,
-    ...(usageArrived ? {} : { usage: { inputTokens: Number.NaN, outputTokens: Number.NaN } }),
+    ...(usageArrived ? {} : { usage: { inputTokens: Number.NaN, outputTokens: Number.NaN }, usageMissing: true as const }),
     responseBody: plain({ ...completion, streamed: { chunks, usage: usageArrived } }),
   };
 }
@@ -251,11 +251,15 @@ export function parseImagesResponse(res: ImagesResponseLike, model: string): Omi
   for (const d of body.data ?? []) if (d.b64_json) d.b64_json = `[${d.b64_json.length} base64 chars, stored as an artifact]`;
   const usage = { inputTokens: res.usage?.input_tokens ?? 0, outputTokens: res.usage?.output_tokens ?? 0, units: b64 ? 1 : 0 };
   if (!b64) return { bytes: new Uint8Array(), mediaType: 'image/png', servedModel: model, usage, refusal: 'returned no image', responseBody: body };
+  // The SDK types usage as optional ("For gpt-image-1 only"): an image that came without it was billed at a cost byway
+  // cannot read, so its counts are unknown and the gateway settles it at its planning figures, marked (B-147).
+  const missing = res.usage == null;
   return {
     bytes: Buffer.from(b64, 'base64'),
     mediaType: FORMAT_TYPES[res.output_format ?? 'png'] ?? 'image/png',
     servedModel: model,
-    usage,
+    usage: missing ? { inputTokens: Number.NaN, outputTokens: Number.NaN, units: 1 } : usage,
+    ...(missing ? { usageMissing: true as const } : {}),
     responseBody: body,
   };
 }

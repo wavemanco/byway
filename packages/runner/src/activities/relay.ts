@@ -18,7 +18,7 @@ import { storeCaps } from '../caps.ts';
 import { parseStoryboard, serializeJson } from '../formats.ts';
 import { parseRelay } from '../parse.ts';
 import type { RelayInput, RelayResult, RelayWaits, RelayWaitsInput, StepSpec } from '../types.ts';
-import { askModel } from './call.ts';
+import { askModel, usageMissingNote } from './call.ts';
 import { mediaStatus } from './availability.ts';
 import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
@@ -130,7 +130,7 @@ export async function relayLink(deps: RunnerDeps, input: RelayInput): Promise<Re
       ),
     );
   } catch (e) {
-    if (e instanceof GatewayError && e.code === 'no-credentials') return skip(NO_VIDEO_NOTE, costUsd);
+    if (e instanceof GatewayError && e.code === 'no-credentials') return skip(link.usageMissing ? `${NO_VIDEO_NOTE} ${usageMissingNote(link.usageMissing)}` : NO_VIDEO_NOTE, costUsd);
     throw e;
   }
   costUsd += clip.costUsd;
@@ -147,7 +147,8 @@ export async function relayLink(deps: RunnerDeps, input: RelayInput): Promise<Re
   const checked = write(next);
   if (checked.problems.length) throw new StepError(`The ${what} step could not update the storyboard: ${checked.problems.join(' ')}`);
   const artifactId = await storeText(deps, run, call, checked.text, { label: `Storyboard with the clip for shot ${shot}`, name: 'work', shot });
-  const note = restoredNote(checked.restored);
+  // The link's brief call may have come back with no token counts (B-147).
+  const note = [restoredNote(checked.restored), link.usageMissing ? usageMissingNote(link.usageMissing) : undefined].filter(Boolean).join(' ') || undefined;
   await stepFinished(deps, run, call, { costUsd, ...(note ? { note } : {}), outputArtifactIds: [clip.artifactId, clip.lastFrameArtifactId, ...(middle ? [middle] : []), artifactId] }, true);
   return { costUsd, artifactId, anchor: clip.lastFrameArtifactId };
 }

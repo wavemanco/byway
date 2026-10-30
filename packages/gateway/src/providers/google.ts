@@ -81,11 +81,17 @@ export function parseGoogleResponse(res: GoogleResponseLike, requestedModel: str
   const u = res.usageMetadata ?? {};
   const refusal = refusalOf(res);
   const declined = declineOf(res);
+  // An answer with no usageMetadata was billed at a cost byway cannot read: its counts are unknown, so the gateway
+  // settles it by its rule for a count it cannot read, marked (B-147). A refusal or decline keeps its reading.
+  const missing = res.usageMetadata == null && !refusal && !declined;
   return {
     text,
     servedModel: res.modelVersion ?? requestedModel,
     // Gemini bills thinking tokens as output ("output price including thinking tokens").
-    usage: { inputTokens: u.promptTokenCount ?? 0, outputTokens: (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0), cacheReadTokens: u.cachedContentTokenCount ?? 0 },
+    usage: missing
+      ? { inputTokens: Number.NaN, outputTokens: Number.NaN }
+      : { inputTokens: u.promptTokenCount ?? 0, outputTokens: (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0), cacheReadTokens: u.cachedContentTokenCount ?? 0 },
+    ...(missing ? { usageMissing: true as const } : {}),
     ...(refusal ? { refusal } : {}),
     ...(declined ? { declined } : {}),
     // MAX_TOKENS: the answer hit maxOutputTokens (thinking tokens count toward it).
@@ -164,6 +170,8 @@ export function parseGoogleImage(res: GoogleResponseLike, requestedModel: string
   }
   const mediaType = (inline.mimeType ?? 'image/png') as MediaType;
   if (!MEDIA_TYPES.has(mediaType)) return noImage(`returned an image of type ${inline.mimeType}, which byway cannot use (PNG, JPEG or WebP only)`);
+  // An image with no usageMetadata: its counts are unknown, so the gateway settles it at its planning figures, marked (B-147).
+  if (res.usageMetadata == null) return { bytes: Buffer.from(inline.data, 'base64'), mediaType, servedModel, usage: { inputTokens: Number.NaN, outputTokens: Number.NaN, units: 1 }, usageMissing: true, responseBody: body };
   return { bytes: Buffer.from(inline.data, 'base64'), mediaType, servedModel, usage, responseBody: body };
 }
 

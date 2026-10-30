@@ -218,6 +218,12 @@ export interface CompletionResult {
   ledgerEntryId: string;
   /** Set when the model declined first and byway's one retry on the same model answered (ADR-0102). */
   declined?: DeclineRecord;
+  /**
+   * Set when the provider's answer gave no token counts: the call was settled by the gateway's rule for a count it
+   * cannot read (its planning figures, or a completion's whole output allowance) and its ledger entry is marked, so its
+   * cost is byway's figure and the provider's bill may differ (B-147).
+   */
+  usageMissing?: true;
 }
 
 export interface ImageRequest extends SpendContext {
@@ -238,6 +244,12 @@ export interface ImageResult {
   ledgerEntryId: string;
   /** Set when the image model declined first and byway's one retry on the same model made the image (ADR-0102). */
   declined?: DeclineRecord;
+  /**
+   * Set when the provider's answer gave no token counts: the call was settled by the gateway's rule for a count it
+   * cannot read (its planning figures, or a completion's whole output allowance) and its ledger entry is marked, so its
+   * cost is byway's figure and the provider's bill may differ (B-147).
+   */
+  usageMissing?: true;
 }
 
 export interface VideoRequest extends SpendContext {
@@ -339,6 +351,11 @@ export interface LedgerEntry {
    * reported. Covered by the hash chain.
    */
   priceBasis?: 'assumed';
+  /**
+   * True when the provider's answer gave no token counts at all, so `usage` holds byway's figures and the entry is
+   * priced on that assumption (priceBasis 'assumed'; B-147). Absent otherwise. Covered by the hash chain.
+   */
+  usageMissing?: true;
   /**
    * The spend-book operation this entry records (ADR-0095), so the book and the audit file reconcile one-to-one: an entry
    * written twice, or found again after a restart, is recognised. Absent on entries from before the book. Covered by the
