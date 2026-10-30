@@ -58,6 +58,15 @@ code { font-family: var(--mono); font-size: 0.88em; background: var(--chip); pad
 .muted { color: var(--muted); }
 .label { font-family: var(--display); font-weight: 700; font-size: 0.72rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
 
+/* The two files: a junction sign, one panel per file. */
+.panes { display: flex; flex-wrap: wrap; gap: 8px; padding-block: 0 14px; }
+.pane { flex: 1 1 240px; min-width: 0; display: grid; gap: 2px; text-align: left; border: 2px solid var(--rule); background: var(--panel); border-radius: 8px; padding: 10px 14px 8px; cursor: pointer; }
+.pane b { font-family: var(--display); font-weight: 800; font-size: var(--s2); line-height: 1.1; }
+.pane span { color: var(--muted); font-size: var(--s-1); }
+.pane:hover:not([aria-selected="true"]) { border-color: var(--ink); }
+.pane[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.pane[aria-selected="true"] span { color: var(--accent-ink); }
+
 /* Header: a guide sign. */
 .sign { display: grid; gap: 14px; grid-template-columns: 1fr; align-items: end; padding-block: 8px 18px; border-bottom: 3px solid var(--ink); }
 .sign .plate { display: inline-flex; align-items: center; gap: 10px; background: var(--accent); color: var(--accent-ink); font-family: var(--display); font-weight: 800; font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase; padding: 5px 10px 3px; border-radius: 4px; width: max-content; }
@@ -197,9 +206,11 @@ ul.plain { margin: 0; padding-left: 1.1rem; display: grid; gap: 4px; }
 </style>
 
 <div class="wrap">
+  <nav class="panes" role="tablist" aria-label="Files" id="panes"></nav>
+
   <header class="sign">
-    <span class="plate"><i class="shield"></i>byway &middot; backlog</span>
-    <h1>Where the backlog leads, and what stands in the way</h1>
+    <span class="plate"><i class="shield"></i><span id="plate">byway &middot; backlog</span></span>
+    <h1 id="heading">Where the backlog leads, and what stands in the way</h1>
     <p class="lede" id="lede"></p>
     <p class="asof" id="asof"></p>
   </header>
@@ -292,40 +303,59 @@ window.DATA = /*DATA*/null;
     return h('span', { class: 'chip missing', title: 'No row has this ID' }, `${id} (no such row)`);
   }
 
-  // Header.
-  $('#lede').textContent = D.lede;
-  $('#asof').textContent = D.asOf;
+  // The two files, each a pane with the same views (the owner, 2026-10-30): the backlog's coding work and checklists,
+  // and the playbook's people, outside actions and milestones. Rows link across them; a row opens wherever it is named.
+  const TABS = [['routes', 'Routes'], ['land', 'Land now'], ['queue', 'Your queue'], ['waiting', 'Waiting on'], ['items', 'All open rows'], ['launch', 'Launch checklist'], ['review', 'Review checklist'], ['done', 'Done']];
+  const PANES = {
+    backlog: { heading: 'Where the backlog leads, and what stands in the way', tabs: TABS, noDone: 'The Done table has no entries.' },
+    playbook: { heading: 'What the playbook asks of people, and what it waits on', tabs: TABS.filter(([id]) => id !== 'launch' && id !== 'review'), noDone: 'No playbook row has closed yet.' },
+  };
+  let pane = 'backlog', P = D.panes.backlog, C = {};
+  // A view's link: the tab's name for the backlog, the pane's name before it for the playbook (#playbook-queue).
+  const token = (id) => pane === 'backlog' ? id : `${pane}-${id}`;
+  const parse = (t) => { const m = /^playbook-(.+)$/.exec(t || ''); return m ? ['playbook', m[1]] : ['backlog', t || '']; };
+  const rows = () => D.items.filter((i) => i.file === P.file);
 
-  // Mile markers: two sums that add up, then subsets of the open rows, then checklist lines.
-  const C = D.counts;
-  const filters = { q: '', status: '', priority: '', land: '', who: '', milestone: '', size: '', kind: '', trigger: '', waits: '', file: '', filed: '' };
+  $('#asof').textContent = D.asOf;
+  const panes = $('#panes');
+  for (const [k, p] of Object.entries(D.panes)) panes.append(h('button', { class: 'pane', role: 'tab', id: `pane-${k}`, 'aria-selected': 'false', 'aria-controls': 'views', type: 'button', onclick: () => { clearFilters(); setPane(k); show(PANES[k].tabs.some(([id]) => id === tabNow) ? tabNow : 'routes'); } },
+    h('b', {}, p.label), h('span', {}, `${p.counts.open} open rows${DOT}${p.file}`)));
+
+  // Mile markers: two sums that add up, then subsets of the open rows, then (the backlog's) checklist lines.
+  const filters = { q: '', status: '', priority: '', land: '', who: '', milestone: '', size: '', kind: '', trigger: '', waits: '', filed: '' };
   const clearFilters = () => { for (const k of Object.keys(filters)) filters[k] = ''; };
   const go = (tab, f = {}) => () => { clearFilters(); Object.assign(filters, f); show(tab); };
   // A marker with no view of its own (rows in all: no view lists closed and open rows together) is not a button.
   const marker = (n, text, onclick) => onclick ? h('button', { class: 'marker', type: 'button', onclick }, h('b', {}, String(n)), h('span', {}, text)) : h('div', { class: 'marker static' }, h('b', {}, String(n)), h('span', {}, text));
   const op = (s) => h('span', { class: 'op', 'aria-hidden': 'true' }, s);
   const strip = (title, ...kids) => h('section', { class: 'strip', 'aria-label': title }, h('p', { class: 'label' }, title), h('div', { class: 'eq' }, kids));
-  const firstLive = D.routes.find((r) => r.id === 'first-live-use');
-  $('#markers').append(
-    strip(`Rows in all = closed + open (${C.total} = ${C.closed} + ${C.open})`,
-      marker(C.total, 'rows in all', null), op('='), marker(C.closed, 'closed (the Done table)', go('done')), op('+'), marker(C.open, 'open (pending rows)', go('items'))),
-    strip(`The open rows by Land now (${C.open} = ${C.land.yes} + ${C.land.maybe} + ${C.land.no})`,
-      marker(C.open, 'open', go('items')), op('='), marker(C.land.yes, 'yes: an agent can land it now', go('land')), op('+'), marker(C.land.maybe, 'small choice: after one choice of yours', go('queue')), op('+'), marker(C.land.no, 'no: needs something not there today', go('waiting'))),
-    strip(`Subsets of the ${C.open} open rows (they overlap)`,
-      marker(C.needYou, 'need you (Who is owner or both)', go('items', { who: 'owner-or-both' })), marker(C.waitsOnRow, 'wait on another open row', go('items', { waits: 'yes' })), marker(firstLive ? firstLive.stops.length : 0, 'on the first-live-use route', go('routes')), marker(C.noMilestone, 'no milestone (wait for their trigger)', go('items', { milestone: 'none' }))),
-    strip('Checklist lines (lines, not rows)',
-      marker(C.launchList.open, `Launch checklist lines open, of ${C.launchList.lines}`, go('launch')), marker(C.review.open, `Review checklist lines open, of ${C.review.lines}`, go('review'))),
-  );
-
-  // Tabs.
-  const TABS = [['routes', 'Routes'], ['land', 'Land now'], ['queue', 'Your queue'], ['waiting', 'Waiting on'], ['items', 'All open rows'], ['launch', 'Launch checklist'], ['review', 'Review checklist'], ['done', 'Done']];
   const tabs = $('#tabs'), views = $('#views');
-  for (const [id, name] of TABS) tabs.append(h('button', { class: 'tab', role: 'tab', id: `tab-${id}`, 'aria-selected': 'false', 'aria-controls': 'views', type: 'button', onclick: () => { clearFilters(); show(id); } }, name));
+  let tabNow = 'routes';
+  function setPane(k) {
+    pane = k; P = D.panes[k]; C = { ...P.counts, launchList: D.counts.launchList, review: D.counts.review };
+    for (const b of panes.children) b.setAttribute('aria-selected', String(b.id === `pane-${k}`));
+    $('#plate').textContent = `byway${DOT}${P.label.toLowerCase()}`;
+    $('#heading').textContent = PANES[k].heading;
+    $('#lede').textContent = P.lede;
+    const firstLive = P.routes.find((r) => r.id === 'first-live-use');
+    $('#markers').replaceChildren(...[
+      strip(`Rows in all = closed + open (${C.total} = ${C.closed} + ${C.open})`,
+        marker(C.total, 'rows in all', null), op('='), marker(C.closed, 'closed (the Done table)', go('done')), op('+'), marker(C.open, 'open (pending rows)', go('items'))),
+      strip(`The open rows by Land now (${C.open} = ${C.land.yes} + ${C.land.maybe} + ${C.land.no})`,
+        marker(C.open, 'open', go('items')), op('='), marker(C.land.yes, 'yes: an agent can land it now', go('land')), op('+'), marker(C.land.maybe, 'small choice: after one choice of yours', go('queue')), op('+'), marker(C.land.no, 'no: needs something not there today', go('waiting'))),
+      strip(`Subsets of the ${C.open} open rows (they overlap)`,
+        marker(C.needYou, 'need you (Who is owner or both)', go('items', { who: 'owner-or-both' })), marker(C.waitsOnRow, 'wait on another open row', go('items', { waits: 'yes' })), marker(firstLive ? firstLive.stops.length : 0, 'on the first-live-use route', go('routes')), marker(C.noMilestone, 'no milestone (wait for their trigger)', go('items', { milestone: 'none' }))),
+      k === 'backlog' ? strip('Checklist lines (lines, not rows)',
+        marker(C.launchList.open, `Launch checklist lines open, of ${C.launchList.lines}`, go('launch')), marker(C.review.open, `Review checklist lines open, of ${C.review.lines}`, go('review'))) : null,
+    ].filter(Boolean));
+    tabs.replaceChildren(...PANES[k].tabs.map(([id, name]) => h('button', { class: 'tab', role: 'tab', id: `tab-${id}`, 'aria-selected': 'false', 'aria-controls': 'views', type: 'button', onclick: () => { clearFilters(); show(id); } }, name)));
+  }
   function show(id) {
+    tabNow = id;
     for (const b of tabs.children) b.setAttribute('aria-selected', String(b.id === `tab-${id}`));
     views.replaceChildren(RENDER[id]());
-    try { localStorage.setItem('byway-routemap-tab', id); } catch {}
-    try { if (location.hash !== `#${id}`) history.replaceState(null, '', `#${id}`); } catch {}
+    try { localStorage.setItem('byway-routemap-tab', token(id)); } catch {}
+    try { if (location.hash !== `#${token(id)}`) history.replaceState(null, '', `#${token(id)}`); } catch {}
   }
 
   // Which checklist lines name a row.
@@ -383,7 +413,7 @@ window.DATA = /*DATA*/null;
       const wrap = h('div', { class: 'section' });
       wrap.append(h('p', { class: 'intro' }, `Each milestone is a route, and its stops are the open rows whose Milestone names it, each after the rows it waits on, the ones that can land first, then the higher priority. A row with several milestones is on each of their routes. The ${C.noMilestone} open rows whose Milestone is none wait only for their trigger and are on no route (Waiting on and All open rows have them). Select a stop to see its row.`), legend());
       const grid = h('div', { class: 'routes' });
-      for (const r of D.routes) {
+      for (const r of P.routes) {
         const n = (k) => r.stops.filter((id) => items.get(id)?.landNow === k).length;
         grid.append(h('section', { class: `route${r.id === 'first-live-use' ? ' primary' : ''}`, 'aria-labelledby': `r-${r.id}` },
           h('header', {}, h('p', { class: 'when' }, r.id), h('h3', { id: `r-${r.id}` }, r.label), h('p', { class: 'status' }, r.stops.length ? `${r.stops.length} open rows: ${n('yes')} can land now, ${n('maybe')} wait on a small choice, ${n('no')} not now.` : 'No open row names this milestone.')),
@@ -395,9 +425,9 @@ window.DATA = /*DATA*/null;
     land() {
       const wrap = h('div', { class: 'section' });
       wrap.append(h('p', { class: 'intro' }, `The rows whose Land now is yes: an agent can do each today, with no decision or action of yours, nothing open it waits on, and nothing it needs missing. ${ofOpen(C.land.yes)}, grouped by their main milestone (the first their Milestone names), the higher priority first in each.`));
-      if (!D.landNow.length) wrap.append(h('p', { class: 'empty' }, 'No open row can land now.'));
+      if (!P.landNow.length) wrap.append(h('p', { class: 'empty' }, 'No open row can land now.'));
       const grid = h('div', { class: 'grid2' });
-      for (const g of D.landNow) grid.append(h('section', { class: 'card' },
+      for (const g of P.landNow) grid.append(h('section', { class: 'card' },
         h('div', { class: 'meta' }, h('span', { class: 'pill accent' }, g.milestone), h('span', { class: 'pill' }, `${g.ids.length} rows`), h('span', { class: 'pill' }, sizes(g.ids))),
         h('h3', {}, g.label),
         h('div', { class: 'chips' }, g.ids.map(chipFor))));
@@ -406,30 +436,32 @@ window.DATA = /*DATA*/null;
     },
     queue() {
       const wrap = h('div', { class: 'section' });
-      const all = [...D.queue.smallChoice, ...D.queue.needYou];
+      const Q = P.queue;
+      const all = [...Q.smallChoice, ...Q.needYou];
       const max = Math.max(1, ...all.map((id) => items.get(id).unlocks.length));
-      wrap.append(h('p', { class: 'intro' }, `Your queue: ${ofOpen(C.queue)}. First the ${D.queue.smallChoice.length} rows whose Land now is a small choice, with the choice, the higher priority first, then the ones that open up more rows; then the ${D.queue.needYou.length} other rows whose Who is owner or both, by milestone, and within one the higher priority first. The bar is the number of rows that wait on it directly.`));
+      wrap.append(h('p', { class: 'intro' }, `Your queue: ${ofOpen(C.queue)}. First the ${Q.smallChoice.length} rows whose Land now is a small choice, with the choice, the higher priority first, then the ones that open up more rows; then the ${Q.needYou.length} other rows whose Who is owner or both, by milestone, and within one the higher priority first. The bar is the number of rows that wait on it directly.`));
       const qrow = (id, k, extra) => { const it = items.get(id); return h('div', { class: 'qrow' }, h('span', { class: 'n' }, String(k + 1)), h('div', { class: 'body' },
         h('button', { class: 'go', type: 'button', onclick: () => openItem(id) }, h('span', { class: 't' }, plain(it.title)), h('span', { class: 'who' }, prio(it), ` ${id}${DOT}who: ${it.who}${DOT}${it.milestones.join(', ')}${DOT}size ${it.size}`)),
         extra(it),
         it.unlocks.length ? [h('div', { class: 'bar', role: 'img', 'aria-label': `${it.unlocks.length} rows wait on it` }, h('i', { style: `width:${(it.unlocks.length / max) * 100}%` })), h('div', { class: 'chips' }, it.unlocks.map(chipFor))] : null)); };
-      wrap.append(h('h3', {}, `Small choices (${D.queue.smallChoice.length})`));
-      wrap.append(D.queue.smallChoice.length ? h('div', { class: 'queue' }, D.queue.smallChoice.map((id, k) => qrow(id, k, (it) => h('p', {}, h('strong', {}, 'Your choice: '), md(it.landNowWhy, it.file))))) : h('p', { class: 'empty' }, 'No row waits on a small choice.'));
-      wrap.append(h('h3', { style: 'margin-top:12px' }, `Other rows that need you (${D.queue.needYou.length})`));
-      wrap.append(D.queue.needYou.length ? h('div', { class: 'queue' }, D.queue.needYou.map((id, k) => qrow(id, k, (it) => h('p', {}, landPill(it), it.landNowWhy ? [' ', md(it.landNowWhy, it.file)] : null)))) : h('p', { class: 'empty' }, 'No other row needs you.'));
+      wrap.append(h('h3', {}, `Small choices (${Q.smallChoice.length})`));
+      wrap.append(Q.smallChoice.length ? h('div', { class: 'queue' }, Q.smallChoice.map((id, k) => qrow(id, k, (it) => h('p', {}, h('strong', {}, 'Your choice: '), md(it.landNowWhy, it.file))))) : h('p', { class: 'empty' }, 'No row waits on a small choice.'));
+      wrap.append(h('h3', { style: 'margin-top:12px' }, `Other rows that need you (${Q.needYou.length})`));
+      wrap.append(Q.needYou.length ? h('div', { class: 'queue' }, Q.needYou.map((id, k) => qrow(id, k, (it) => h('p', {}, landPill(it), it.landNowWhy ? [' ', md(it.landNowWhy, it.file)] : null)))) : h('p', { class: 'empty' }, 'No other row needs you.'));
       return wrap;
     },
     waiting() {
       const wrap = h('div', { class: 'section' });
       wrap.append(h('p', { class: 'intro' }, `The rows whose Land now is no, grouped by what each says it needs, the higher priority first in each: ${ofOpen(C.land.no)}. When that is there, they come back.`));
       const grid = h('div', { class: 'grid2' });
-      for (const w of D.waiting) grid.append(h('section', { class: 'card' }, h('div', { class: 'meta' }, stop('waiting'), h('span', { class: 'pill wait' }, `${w.ids.length} rows`)), h('h3', {}, md(w.need)), h('div', { class: 'chips' }, w.ids.map(chipFor))));
+      for (const w of P.waiting) grid.append(h('section', { class: 'card' }, h('div', { class: 'meta' }, stop('waiting'), h('span', { class: 'pill wait' }, `${w.ids.length} rows`)), h('h3', {}, md(w.need)), h('div', { class: 'chips' }, w.ids.map(chipFor))));
       wrap.append(grid);
       return wrap;
     },
     items() {
       const wrap = h('div', { class: 'section' });
-      const present = (f) => [...new Set(D.items.map(f).flat())];
+      const mine = rows();
+      const present = (f) => [...new Set(mine.map(f).flat())];
       const sel = (key, label, opts) => h('select', { 'aria-label': label, onchange: (e) => { filters[key] = e.target.value; draw(); } }, h('option', { value: '' }, label), opts.map(([v, t]) => h('option', { value: v, selected: filters[key] === v }, t)));
       const q = h('input', { type: 'search', placeholder: 'Search IDs, items, triggers, details, files', 'aria-label': 'Search', value: filters.q, oninput: (e) => { filters.q = e.target.value; draw(); } });
       wrap.append(h('div', { class: 'filters' }, q,
@@ -442,10 +474,9 @@ window.DATA = /*DATA*/null;
         sel('kind', 'Kind', present((i) => i.kind).sort().map((v) => [v, `Kind: ${v}`])),
         sel('trigger', 'Trigger type', inOrder(present((i) => i.triggerType), D.triggerTypes).map((v) => [v, `Trigger type: ${v}`])),
         sel('waits', 'Waits on', [['yes', 'Waits on: another row'], ['no', 'Waits on: none']]),
-        sel('file', 'File', present((i) => i.file).sort().map((v) => [v, v])),
         // The days, latest first, then "before 2026-10-07".
         sel('filed', 'Filed', present((i) => i.filed).sort((a, b) => { const da = /^\d{4}-/.test(a), db = /^\d{4}-/.test(b); return da !== db ? (da ? -1 : 1) : (a < b ? 1 : a > b ? -1 : 0); }).map((v) => [v, `Filed: ${v}`]))));
-      wrap.append(h('p', { class: 'muted', style: 'font-size:var(--s-1);margin-bottom:8px' }, 'Each filter is a column of the backlog\'s tables (Who: owner or both is the Who column\'s two values that need you); a row with several milestones matches each of them. The rows go by Land now, then main milestone, then priority, highest first.'));
+      wrap.append(h('p', { class: 'muted', style: 'font-size:var(--s-1);margin-bottom:8px' }, `Each filter is a column of ${P.file}'s tables (Who: owner or both is the Who column\'s two values that need you); a row with several milestones matches each of them. The rows go by Land now, then main milestone, then priority, highest first.`));
       const countEl = h('p', { class: 'count' });
       const tbody = h('tbody');
       wrap.append(countEl, h('div', { class: 'tablewrap' }, h('table', {}, h('thead', {}, h('tr', {}, ['ID', 'Item', 'Status', 'Priority', 'Land now', 'Who', 'Milestone', 'Size', 'Kind', 'Trigger type', 'Trigger'].map((c) => h('th', { scope: 'col' }, c)))), tbody)));
@@ -462,12 +493,11 @@ window.DATA = /*DATA*/null;
           && (!filters.kind || i.kind === filters.kind)
           && (!filters.trigger || i.triggerType === filters.trigger)
           && (!filters.waits || (filters.waits === 'yes') === i.waitsOn.some((w) => w !== i.id && items.has(w)))
-          && (!filters.file || i.file === filters.file)
           && (!filters.filed || i.filed === filters.filed)
           && (!q || `${i.id} ${i.title} ${i.trigger} ${i.details} ${i.files} ${i.landNowWhy}`.toLowerCase().includes(q));
-        const rows = D.items.filter(ok).sort((a, b) => lorder[a.landNow] - lorder[b.landNow] || msRank(a.milestones[0]) - msRank(b.milestones[0]) || prioRank(a.priority) - prioRank(b.priority) || order.get(a.id) - order.get(b.id));
-        countEl.textContent = `${rows.length} of the ${C.open} open rows`;
-        tbody.replaceChildren(...rows.map((i) => h('tr', { class: 'click', tabindex: '0', onclick: () => openItem(i.id), onkeydown: (e) => { if (e.key === 'Enter') openItem(i.id); } },
+        const shown = mine.filter(ok).sort((a, b) => lorder[a.landNow] - lorder[b.landNow] || msRank(a.milestones[0]) - msRank(b.milestones[0]) || prioRank(a.priority) - prioRank(b.priority) || order.get(a.id) - order.get(b.id));
+        countEl.textContent = `${shown.length} of the ${C.open} open rows`;
+        tbody.replaceChildren(...shown.map((i) => h('tr', { class: 'click', tabindex: '0', onclick: () => openItem(i.id), onkeydown: (e) => { if (e.key === 'Enter') openItem(i.id); } },
           h('td', { class: 'mono' }, i.id),
           h('td', { class: 'wide' }, h('div', { class: 't' }, plain(i.title)), h('div', { class: 'muted' }, i.section)),
           h('td', {}, statusPill(i)),
@@ -497,16 +527,22 @@ window.DATA = /*DATA*/null;
     },
     done() {
       const wrap = h('div', { class: 'section' });
-      wrap.append(h('p', { class: 'intro' }, `docs/backlog.md's table "Done since the route map of 2026-10-18": the ${C.closed} closed entries, counted as closed in the numbers above. A row that closes leaves its table for this one.`));
-      if (!D.done.entries.length) { wrap.append(h('p', { class: 'empty' }, 'The Done table has no entries.')); return wrap; }
-      wrap.append(h('div', { class: 'tablewrap' }, h('table', {}, h('thead', {}, h('tr', {}, D.done.headers.map((c) => h('th', { scope: 'col' }, c)))), h('tbody', {}, D.done.entries.map((e) => h('tr', {}, D.done.headers.map((_, k) => h('td', { class: k === 0 ? 'wide' : '' }, k === 0 ? h('div', { class: 't' }, md(e.cells[k] ?? '')) : md(e.cells[k] ?? '')))))))));
+      wrap.append(h('p', { class: 'intro' }, pane === 'backlog'
+        ? `docs/backlog.md's table "Done since the route map of 2026-10-18": its ${C.closed} entries that close backlog rows, counted as closed in the numbers above. A row that closes leaves its table for this one.`
+        : `The entries of docs/backlog.md's table "Done since the route map of 2026-10-18" that close playbook rows (their ID is a PB- one, or their row cell starts "The playbook row"): ${C.closed}, counted as closed in the numbers above. A playbook row that closes leaves its table for that one.`));
+      if (!P.done.length) { wrap.append(h('p', { class: 'empty' }, PANES[pane].noDone)); return wrap; }
+      wrap.append(h('div', { class: 'tablewrap' }, h('table', {}, h('thead', {}, h('tr', {}, D.done.headers.map((c) => h('th', { scope: 'col' }, c)))), h('tbody', {}, P.done.map((k) => D.done.entries[k]).map((e) => h('tr', {}, D.done.headers.map((_, k) => h('td', { class: k === 0 ? 'wide' : '' }, k === 0 ? h('div', { class: 't' }, md(e.cells[k] ?? '')) : md(e.cells[k] ?? '')))))))));
       return wrap;
     },
   };
 
+  // The link's view, else the one last shown here, else the backlog's routes.
+  const known = (t) => { const [k, id] = parse(t); return PANES[k].tabs.some(([x]) => x === id); };
   let start = (location.hash || '').slice(1);
-  if (!TABS.some(([id]) => id === start)) { try { start = localStorage.getItem('byway-routemap-tab') || 'routes'; } catch { start = 'routes'; } }
-  if (!TABS.some(([id]) => id === start)) start = 'routes';
-  show(start);
+  if (!known(start)) { try { start = localStorage.getItem('byway-routemap-tab') || ''; } catch { start = ''; } }
+  if (!known(start)) start = 'routes';
+  const [k0, id0] = parse(start);
+  setPane(k0);
+  show(id0);
 })();
 </script>

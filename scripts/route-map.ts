@@ -473,7 +473,6 @@ export interface Item {
 
 export interface RouteMapData {
   title: string;
-  lede: string;
   asOf: string;
   commit: string;
   date: string;
@@ -507,6 +506,22 @@ export interface RouteMapData {
   review: { group: string; lines: Omit<CheckLine, 'file' | 'group'>[] }[];
   done: { headers: string[]; entries: DoneEntry[] };
   doneIds: string[];
+  /** The backlog's and the playbook's rows apart, each with its own views (the counts above are of both). */
+  panes: { backlog: Pane; playbook: Pane };
+}
+
+/** One file's open rows and its views, in the same shape as the whole map's. */
+export interface Pane {
+  file: DocFile;
+  label: string;
+  lede: string;
+  counts: { total: number; closed: number; open: number; land: { yes: number; maybe: number; no: number }; needYou: number; waitsOnRow: number; noMilestone: number; queue: number };
+  /** The indexes of the Done entries that are this file's. */
+  done: number[];
+  routes: RouteMapData['routes'];
+  landNow: RouteMapData['landNow'];
+  queue: RouteMapData['queue'];
+  waiting: RouteMapData['waiting'];
 }
 
 const LAND_ORDER = { yes: 0, maybe: 1, no: 2 } as const;
@@ -605,35 +620,64 @@ export function routeMapData(model: Model, head: Head, linkBase: string | null =
     return out;
   };
 
-  const routes = MILESTONES.filter((m) => m !== 'none').map((m) => ({ id: m, label: MILESTONE_LABELS[m], stops: ordered(items.filter((i) => i.milestones.includes(m))).map((i) => i.id) }));
   const main = (i: Item) => i.milestones[0] ?? 'none';
-  const landNow: RouteMapData['landNow'] = MILESTONES.map((m) => ({ milestone: m, label: MILESTONE_LABELS[m], ids: items.filter((i) => i.landNow === 'yes' && main(i) === m).sort(priorityThenFile).map((i) => i.id) })).filter((g) => g.ids.length);
-  // A "yes" row whose main milestone is not a value of the format still shows, in a group of its own (the format test flags the value).
-  const strays = items.filter((i) => i.landNow === 'yes' && !(MILESTONES as readonly string[]).includes(main(i))).sort(priorityThenFile).map((i) => i.id);
-  if (strays.length) landNow.push({ milestone: 'unknown', label: 'A milestone the backlog format does not name', ids: strays });
   const byReach = (a: Item, b: Item) => opens.get(b)! - opens.get(a)! || msRank(a.milestones[0]) - msRank(b.milestones[0]) || fileOrder(a, b);
-  // The small choices: the higher priority first, then the ones that open more rows. The others that need you: by main
-  // milestone, and within one the higher priority first, then the ones that open more rows.
-  const smallChoice = items.filter((i) => i.landNow === 'maybe').sort((a, b) => byPriority(a, b) || byReach(a, b));
-  const needYou = items.filter((i) => i.ownerNeeded && i.landNow !== 'maybe').sort((a, b) => msRank(a.milestones[0]) - msRank(b.milestones[0]) || byPriority(a, b) || byReach(a, b));
-  const needs = new Map<string, { need: string; ids: string[] }>();
-  for (const i of items.filter((x) => x.landNow === 'no').sort(priorityThenFile)) {
-    const need = i.landNowWhy.replace(/\s+/g, ' ').replace(/[.;]\s*$/, '').trim();
-    const key = need.toLowerCase();
-    if (!needs.has(key)) needs.set(key, { need, ids: [] });
-    needs.get(key)!.ids.push(i.id);
-  }
-  const waiting = [...needs.values()].sort((a, b) => b.ids.length - a.ids.length || a.need.localeCompare(b.need));
-
-  const count = (f: (i: Item) => boolean) => items.filter(f).length;
-  const land = { yes: count((i) => i.landNow === 'yes'), maybe: count((i) => i.landNow === 'maybe'), no: count((i) => i.landNow === 'no') };
+  /** The views of a set of open rows: the routes, Land now, your queue and Waiting on, and their counts. */
+  const viewsOf = (rows: Item[]) => {
+    const routes = MILESTONES.filter((m) => m !== 'none').map((m) => ({ id: m, label: MILESTONE_LABELS[m], stops: ordered(rows.filter((i) => i.milestones.includes(m))).map((i) => i.id) }));
+    const landNow: RouteMapData['landNow'] = MILESTONES.map((m) => ({ milestone: m, label: MILESTONE_LABELS[m], ids: rows.filter((i) => i.landNow === 'yes' && main(i) === m).sort(priorityThenFile).map((i) => i.id) })).filter((g) => g.ids.length);
+    // A "yes" row whose main milestone is not a value of the format still shows, in a group of its own (the format test flags the value).
+    const strays = rows.filter((i) => i.landNow === 'yes' && !(MILESTONES as readonly string[]).includes(main(i))).sort(priorityThenFile).map((i) => i.id);
+    if (strays.length) landNow.push({ milestone: 'unknown', label: 'A milestone the backlog format does not name', ids: strays });
+    // The small choices: the higher priority first, then the ones that open more rows. The others that need you: by main
+    // milestone, and within one the higher priority first, then the ones that open more rows.
+    const smallChoice = rows.filter((i) => i.landNow === 'maybe').sort((a, b) => byPriority(a, b) || byReach(a, b));
+    const needYou = rows.filter((i) => i.ownerNeeded && i.landNow !== 'maybe').sort((a, b) => msRank(a.milestones[0]) - msRank(b.milestones[0]) || byPriority(a, b) || byReach(a, b));
+    const needs = new Map<string, { need: string; ids: string[] }>();
+    for (const i of rows.filter((x) => x.landNow === 'no').sort(priorityThenFile)) {
+      const need = i.landNowWhy.replace(/\s+/g, ' ').replace(/[.;]\s*$/, '').trim();
+      const key = need.toLowerCase();
+      if (!needs.has(key)) needs.set(key, { need, ids: [] });
+      needs.get(key)!.ids.push(i.id);
+    }
+    const waiting = [...needs.values()].sort((a, b) => b.ids.length - a.ids.length || a.need.localeCompare(b.need));
+    const count = (f: (i: Item) => boolean) => rows.filter(f).length;
+    const counts = {
+      open: rows.length,
+      land: { yes: count((i) => i.landNow === 'yes'), maybe: count((i) => i.landNow === 'maybe'), no: count((i) => i.landNow === 'no') },
+      needYou: count((i) => i.ownerNeeded),
+      waitsOnRow: count((i) => i.waitsOn.some((w) => known.has(w) && w !== i.id)),
+      noMilestone: count((i) => i.milestones.length === 1 && i.milestones[0] === 'none'),
+      queue: smallChoice.length + needYou.length,
+    };
+    return { counts, routes, landNow, queue: { smallChoice: smallChoice.map((i) => i.id), needYou: needYou.map((i) => i.id) }, waiting };
+  };
+  const all = viewsOf(items);
+  const { routes, landNow, waiting } = all;
+  const land = all.counts.land;
   const open = items.length;
   const closed = model.done.entries.length;
+  /**
+   * The backlog and the playbook apart (the owner, 2026-10-30): each pane is its file's open rows and the Done entries
+   * that close them. A closed row is no longer in its table, so an entry is the playbook's when its ID is a PB- one or
+   * its row cell (the third) starts "The playbook row", as the entries of playbook rows without one say.
+   */
+  const doneFile = (e: DoneEntry): DocFile => (idsIn(e.cells[0] ?? '').at(-1)?.startsWith('PB-') || /^The playbook row\b/.test(e.cells[2] ?? '') ? PLAYBOOK : BACKLOG);
+  const paneOf = (file: DocFile, label: string, what: string): Pane => {
+    const v = viewsOf(items.filter((i) => i.file === file));
+    const done = model.done.entries.flatMap((e, k) => (doneFile(e) === file ? [k] : []));
+    const l = v.counts.land;
+    const lede = `byway's ${label.toLowerCase()}: ${what}. Every row and every number here comes from ${file}, part of the single version of what is pending; nothing is kept apart from it. Of its ${v.counts.open} open rows, ${l.yes} can land now, ${l.maybe} wait on one small choice of yours and ${l.no} need something that is not there today.`;
+    return { file, label, lede, counts: { ...v.counts, total: done.length + v.counts.open, closed: done.length }, done, routes: v.routes, landNow: v.landNow, queue: v.queue, waiting: v.waiting };
+  };
+  const panes = {
+    backlog: paneOf(BACKLOG, 'Backlog', 'the coding work, with the Launch and Review checklists'),
+    playbook: paneOf(PLAYBOOK, 'Playbook', 'the people and roles, the outside actions and the milestones, which are not coding work'),
+  };
   const lines = (ls: CheckLine[]) => ({ lines: ls.length, ticked: ls.filter((l) => l.checked).length, open: ls.filter((l) => !l.checked).length });
   const at = `commit ${head.commit} (${head.date})${head.dirty ? ', with changes to those files not yet committed' : ''}`;
   return {
     title: 'byway Route Map',
-    lede: `byway's backlog as a route map. Every row and every number here comes from docs/backlog.md and docs/playbook.md, the single version of what is pending; nothing is kept apart from them. Of the ${open} open rows, ${land.yes} can land now, ${land.maybe} wait on one small choice of yours and ${land.no} need something that is not there today.`,
     asOf: `Generated by scripts/route-map.ts from docs/backlog.md and docs/playbook.md at ${at}`,
     commit: head.commit,
     date: head.date,
@@ -646,21 +690,17 @@ export function routeMapData(model: Model, head: Head, linkBase: string | null =
     priorities: [...PRIORITIES],
     triggerTypes: [...TRIGGER_TYPES],
     counts: {
+      ...all.counts,
       total: closed + open,
       closed,
-      open,
-      land,
-      needYou: count((i) => i.ownerNeeded),
-      waitsOnRow: count((i) => i.waitsOn.some((w) => known.has(w) && w !== i.id)),
-      noMilestone: count((i) => i.milestones.length === 1 && i.milestones[0] === 'none'),
-      queue: smallChoice.length + needYou.length,
       launchList: lines(model.launchList),
       review: lines(model.review),
     },
+    panes,
     items,
     routes,
     landNow,
-    queue: { smallChoice: smallChoice.map((i) => i.id), needYou: needYou.map((i) => i.id) },
+    queue: all.queue,
     waiting,
     launchList: groups(model.launchList.map(({ file: _f, code: _c, ...l }) => l)),
     review: groups(model.review.map(({ file: _f, ...l }) => l)),
@@ -723,7 +763,7 @@ function main(argv: string[]): number {
   const data = routeMapData(model, gitHead(), linkBase);
   writeFileSync(out, renderPage(readFileSync(TEMPLATE, 'utf8'), data));
   const c = data.counts;
-  console.log(`${out}: ${c.total} rows in all = ${c.closed} closed + ${c.open} open; open = ${c.land.yes} land now + ${c.land.maybe} small choice + ${c.land.no} not now (${data.asOf})`);
+  console.log(`${out}: ${c.total} rows in all = ${c.closed} closed + ${c.open} open; open = ${c.land.yes} land now + ${c.land.maybe} small choice + ${c.land.no} not now; ${data.panes.backlog.counts.open} open in the backlog, ${data.panes.playbook.counts.open} in the playbook (${data.asOf})`);
   const problems = formatProblems(model);
   if (problems.length) console.warn(`The two files depart from the backlog format in ${problems.length} places (pnpm exec vitest run scripts/test/backlog-format.test.ts lists them).`);
   return 0;
