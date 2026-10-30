@@ -643,7 +643,9 @@ export function estimateRecipe(recipe: Recipe, ctx: PricingContext): CostEstimat
   const w = walkOf(recipe, ctx);
   const base = walkStages(w, recipe);
   const { total, hold } = walkStages({ ...w, stageBase: base.byStage, stageOver: base.overByStage }, recipe);
-  return { ...estimateOf(total), holdUsd: ceilCents(Math.max(hold, total.high.usd)) };
+  const e = estimateOf(total);
+  // At least the high end, and +0 on a $0 estimate (ceilCents gives -0 there, which JSON stores as 0).
+  return { ...e, holdUsd: Math.max(e.highUsd, ceilCents(hold)) };
 }
 
 /**
