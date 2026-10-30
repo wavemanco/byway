@@ -7,10 +7,9 @@
  * count a cap raised by a person's No (ADR-0073, ADR-0093), so neither script raises one.
  *
  * Where the estimate is known to differ from the engine, the case is marked failing with the backlog row that holds
- * the difference (KNOWN), so the day a fix lands it fails here and is turned back into a plain case. On the mock's
- * answers only C1's cheapest run shows one (B-151, a critic loop's low end); the differences B-149 and B-150 hold need
- * a critic that fails C5's launch gate, which the mock does not, and the advisor's estimate.test.ts holds them, B-151's
- * and B-154's case by case.
+ * the difference (KNOWN), so the day a fix lands it fails here and is turned back into a plain case. None is known since
+ * the estimate fixes of 2026-10-30 (B-149, B-150, B-151, B-153, B-154, and a loop's low end counted as one round): the
+ * mock's critics never fail C5's launch gate, so the advisor's estimate.test.ts holds B-149's and B-150's cases.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { estimateRecipe } from '@byway/advisor';
@@ -58,11 +57,7 @@ const CONFIGS: [Recipe, Partial<Omit<StartRunInput, 'recipe' | 'workspaceId'>>][
 ];
 
 /** The cases where the estimate is known to differ from the engine, by the backlog row that holds the difference. */
-const KNOWN: Partial<Record<string, string>> = {
-  // 18 completions under a low end of 24: one of the four drafts passes its first critique, and each fix after a
-  // passing one is not run, where the estimate counts the gate's probe (2) rounds, fix included, for every draft.
-  'c1 cheapest': 'B-151',
-};
+const KNOWN: Partial<Record<string, string>> = {};
 
 /** The demo profile, as the harness's runs use it: the mock makes images and clips. */
 const demo = PROFILES.find((p) => p.id === DEMO_PROFILE_ID)!;

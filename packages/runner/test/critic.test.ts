@@ -12,6 +12,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { criticPlanBound } from '@byway/advisor';
 import type { CompletionRequest, CompletionResult, Gateway } from '@byway/contracts';
 import { buildLineup, CARD_NOTE, cutNote, FEW_REFS_NOTE, OK_FALLBACK_NOTE, planCritic, verdictOf, WORDS_UNDER_LABEL, type Lineup } from '../src/activities/critic.ts';
 import { StepError } from '../src/activities/failures.ts';
@@ -458,6 +459,21 @@ describe('the OK fallback says what was supplied (LABEL-2)', () => {
     expect(planCritic(great, ['a', 'b'], random)).toMatchObject({ mode: 'OK', note: FEW_REFS_NOTE });
     expect(FEW_REFS_NOTE).toMatch(/^Fewer than three examples were supplied/);
     expect(planCritic(great, ['a', 'b', 'c'], random)).toMatchObject({ mode: 'GREAT' });
+  });
+});
+
+// The estimate prices the most a critic can make (@byway/advisor criticPlanBound, B-149): held to what planCritic plans
+// with more references than any critic takes.
+describe('the estimate counts what planCritic plans', () => {
+  it('the lineup orders and the references, for every refs and shuffles knob a critic can carry', () => {
+    const spare = Array.from({ length: 12 }, (_, i) => `ref-${i}`);
+    for (const mode of ['GREAT', 'OK'])
+      for (const refs of [undefined, 0, 1, 2, 3, 4, 9, 10, 12])
+        for (const shuffles of [undefined, 1, 2, 3, 4, 5]) {
+          const knobs = { mode, ...(refs !== undefined ? { refs } : {}), ...(shuffles !== undefined ? { shuffles } : {}) } as StepSpec['knobs'];
+          const plan = planCritic({ knobs }, spare, random);
+          expect(criticPlanBound(knobs), JSON.stringify(knobs)).toEqual({ calls: plan.shuffles, refs: plan.refs.length });
+        }
   });
 });
 
