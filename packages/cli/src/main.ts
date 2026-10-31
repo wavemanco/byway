@@ -1,5 +1,4 @@
-import { readFileSync, realpathSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { ZodError } from 'zod';
 import { parseRecipe, recipeHash, type Recipe } from '@byway/recipe';
 import { validate } from '@byway/validator';
@@ -47,17 +46,6 @@ function load(file: string): Recipe {
   }
 }
 
-/** True when this module is the program entry, also when launched through a symlink or junction. */
-export function isEntry(moduleUrl: string, argv1: string | undefined): boolean {
-  if (!argv1) return false;
-  try {
-    const a = realpathSync(argv1);
-    const b = realpathSync(fileURLToPath(moduleUrl));
-    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
-  } catch {
-    return false;
-  }
-}
 
 function validateCommand(file: string, io: Io): number {
   const recipe = load(file);
@@ -97,7 +85,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
   }
 }
 
-if (isEntry(import.meta.url, process.argv[1])) {
+// Node marks the program's entry module, also when it is launched through a symlink or junction (Node 24.2+).
+if (import.meta.main) {
   const code = await run(process.argv.slice(2), { out: (s) => console.log(s), err: (s) => console.error(s) });
   process.exit(code);
 }

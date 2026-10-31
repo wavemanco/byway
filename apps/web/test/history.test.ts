@@ -5,14 +5,27 @@ const NOW = new Date('2026-10-07T15:00:00.000Z');
 
 describe('History', () => {
   it('says when a run last changed, in words for recent times and as a date after that', () => {
-    expect(formatWhen('2026-10-07T14:59:40.000Z', NOW)).toBe('Just now');
-    expect(formatWhen('2026-10-07T14:55:00.000Z', NOW)).toBe('5 min ago');
-    expect(formatWhen('2026-10-07T12:00:00.000Z', NOW)).toBe('3 h ago');
-    expect(formatWhen('2026-10-06T12:00:00.000Z', NOW)).toBe('Yesterday');
-    expect(formatWhen('2026-10-01T12:00:00.000Z', NOW)).toBe('Oct 1');
-    expect(formatWhen('2025-12-24T12:00:00.000Z', NOW)).toBe('Dec 24, 2025');
+    expect(formatWhen('2026-10-07T14:59:40.000Z', NOW, 'UTC')).toBe('Just now');
+    expect(formatWhen('2026-10-07T14:55:00.000Z', NOW, 'UTC')).toBe('5 min ago');
+    expect(formatWhen('2026-10-07T12:00:00.000Z', NOW, 'UTC')).toBe('3 h ago');
+    expect(formatWhen('2026-10-06T12:00:00.000Z', NOW, 'UTC')).toBe('Yesterday');
+    expect(formatWhen('2026-10-01T12:00:00.000Z', NOW, 'UTC')).toBe('Oct 1');
+    expect(formatWhen('2025-12-24T12:00:00.000Z', NOW, 'UTC')).toBe('Dec 24, 2025');
     // A clock skewed into the future still reads sensibly.
-    expect(formatWhen('2026-10-07T15:00:30.000Z', NOW)).toBe('Just now');
+    expect(formatWhen('2026-10-07T15:00:30.000Z', NOW, 'UTC')).toBe('Just now');
+  });
+
+  it('counts days in the person’s own time zone, not UTC (B-159)', () => {
+    // 15:30 and 18:00 on the same Los Angeles evening, which UTC puts on two days.
+    const evening = new Date('2026-10-07T01:00:00.000Z');
+    expect(formatWhen('2026-10-06T22:30:00.000Z', evening, 'America/Los_Angeles')).toBe('2 h ago');
+    expect(formatWhen('2026-10-06T22:30:00.000Z', evening, 'UTC')).toBe('Yesterday');
+    // An older run near midnight shows its own day's date.
+    expect(formatWhen('2026-10-01T03:00:00.000Z', NOW, 'America/Los_Angeles')).toBe('Sep 30');
+    expect(formatWhen('2026-10-01T03:00:00.000Z', NOW, 'UTC')).toBe('Oct 1');
+    // With no zone given, the machine's own: the same answer as naming it.
+    const own = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    for (const iso of ['2026-10-06T22:30:00.000Z', '2026-10-01T03:00:00.000Z', '2025-12-24T12:00:00.000Z']) expect(formatWhen(iso, NOW)).toBe(formatWhen(iso, NOW, own));
   });
 
   it('names the export by its format', () => {
