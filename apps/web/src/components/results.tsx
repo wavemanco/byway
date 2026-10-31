@@ -82,14 +82,17 @@ export function Storyboard({ board, media = {}, skipped = [] }: StoryboardProps)
         {board.shots.map((shot) => (
           <li key={shot.shot} className="shot">
             <div className="shot-media">
-              <figure>
-                {shot.imageArtifactId ? (
-                  <img src={artifactUrl(shot.imageArtifactId)} alt={`Frame for shot ${shot.shot}: ${shot.description}`} loading="lazy" />
-                ) : (
-                  <div className="shot-empty">No frame yet</div>
-                )}
-                {shot.clipArtifactId ? <figcaption>Frame</figcaption> : null}
-              </figure>
+              {/* A shot with a clip and no still shows its clip alone: with a video model C5 makes shot 1's still only (F12 (b)). */}
+              {shot.imageArtifactId || !shot.clipArtifactId ? (
+                <figure>
+                  {shot.imageArtifactId ? (
+                    <img src={artifactUrl(shot.imageArtifactId)} alt={`Frame for shot ${shot.shot}: ${shot.description}`} loading="lazy" />
+                  ) : (
+                    <div className="shot-empty">No frame yet</div>
+                  )}
+                  {shot.clipArtifactId ? <figcaption>Frame</figcaption> : null}
+                </figure>
+              ) : null}
               {shot.clipArtifactId ? (
                 <figure>
                   <Clip shot={shot} id={shot.clipArtifactId} media={media} />

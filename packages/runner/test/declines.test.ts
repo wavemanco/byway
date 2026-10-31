@@ -16,7 +16,7 @@ import { createPromptRenderer } from '@byway/prompts';
 import { steps } from '@byway/recipe';
 import { createActivities } from '../src/activities/index.ts';
 import { serializeJson } from '../src/formats.ts';
-import { FAILURE, toStepSpec, type AssetInput, type RunRef } from '../src/types.ts';
+import { FAILURE, toStepSpec, type AssetInput, type RunRef, type StepSpec } from '../src/types.ts';
 import { storeBrief } from './helpers/briefs.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
@@ -126,7 +126,9 @@ describe('a model that declines twice (ADR-0102)', () => {
  * demo mode, with images priced at $0.04 each and a model that declines shot 1's image.
  */
 describe('an image the model declined, when its step runs again (ADR-0102)', () => {
-  const FRAMES = toStepSpec(steps(CATALOG.find((r) => r.id === 'c5')!).find(({ step: s }) => s.id === 'anchor-frames')!.step);
+  // A still per shot: C5's anchor-frames step without its anchor, since with a video model it makes shot 1's still alone
+  // (F12 (b), 2026-10-31). The decline rules hold on any image step that makes several.
+  const FRAMES: StepSpec = { ...toStepSpec(steps(CATALOG.find((r) => r.id === 'c5')!).find(({ step: s }) => s.id === 'anchor-frames')!.step), produces: ['artifact'] };
   const BRIEFS = '```json\n' + JSON.stringify({ images: [1, 2, 3].map((slot) => ({ slot, prompt: `An image for ${slot}`, alt: `Alt ${slot}`, size: '1536x1024' })) }) + '\n```';
   const STORYBOARD = serializeJson({ storyboard: [1, 2, 3].map((shot) => ({ shot, description: `Shot ${shot} shows the cup`, imagePrompt: `The cup, angle ${shot}`, durationSec: 3 })), voiceover: 'Less waste.' });
   const SHOT_1 = 'An image for 1';
@@ -178,6 +180,9 @@ describe('an image the model declined, when its step runs again (ADR-0102)', () 
     return { run, call: { key: `${run.runId}/anchor-frames/-/1`, stepId: 'anchor-frames', stage: 'D2' }, step: FRAMES, ports: { artifact } };
   }
 
+  /** Shot 1's image on the storyboard the step wrote. */
+  const shot1Image = async (id: string) => (JSON.parse(await store.artifacts.getText(id)) as { storyboard: { imageArtifactId?: string }[] }).storyboard[0]!.imageArtifactId;
+
   const ledger = () =>
     readFileSync(path.join(dir, 'ledger.jsonl'), 'utf8')
       .trim()
@@ -199,7 +204,7 @@ describe('an image the model declined, when its step runs again (ADR-0102)', () 
     expect(model.asks(SHOT_1)).toBe(2);
     // Both attempts of shot 1's image are in the step's cost, once: $0.08, and shots 2 and 3 at $0.04 each.
     expect(result.costUsd).toBeCloseTo(0.16, 9);
-    expect(result.anchor).toBeUndefined();
+    expect(await shot1Image(result.artifactId!)).toBeUndefined();
     expect(await stepNote(input.run.runId)).toContain('The demo’s model mock-image declined the image for shot 1 (reason given: IMAGE_SAFETY). byway asked it once more, and it declined again. Both attempts were billed: $0.0800 in all.');
     expect(ledger().filter((e) => e.kind === 'image')).toHaveLength(4);
     expect(declinedEvents(await store.events(input.run.runId)).map((e) => (e.data as { retry?: string }).retry)).toEqual(['declined']);
@@ -286,7 +291,7 @@ describe('an image the model declined, when its step runs again (ADR-0102)', () 
     // Shot 1's one ledgered retry names the declined call; no other entry buys shot 1's image again.
     expect(images.filter((e) => e.retryOf !== undefined).map((e) => e.retryOf)).toEqual([declinedEntry[0]!.id]);
     expect(images).toHaveLength(4);
-    expect(result.anchor).toBeDefined();
+    expect(await shot1Image(result.artifactId!)).toBeDefined();
     expect(declinedEvents(await store.events(input.run.runId)).map((e) => (e.data as { retry?: string }).retry)).toEqual(['answered']);
   });
 });

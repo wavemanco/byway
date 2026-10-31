@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGateway, type GatewayOptions, type ModelGateway } from '../src/gateway.ts';
 import { MemorySpendBook } from '../src/memory-book.ts';
 import { encodePng } from '../src/mock/png.ts';
-import { FAL_EXTRACT_FRAME, FAL_START_TIMEOUT_HEADERS, falStartTimeoutSeconds, FRAME_GRACE_MS, RESULT_LOOK_MS, STOPPED, submitJob, untilEnded, WAITED, type FalCancel, type FalClientLike } from '../src/providers/fal.ts';
+import { FAL_EXTRACT_FRAME, FAL_NO_FALLBACK_HEADER, FAL_START_TIMEOUT_HEADERS, falStartTimeoutSeconds, FRAME_GRACE_MS, RESULT_LOOK_MS, STOPPED, submitJob, untilEnded, WAITED, type FalCancel, type FalClientLike } from '../src/providers/fal.ts';
 import { fakeFetch, MemoryArtifacts } from './fakes.ts';
 
 const KEYS = { FAL_KEY: '0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6:00112233445566778899aabbccddeeff' };
@@ -573,6 +573,20 @@ describe('fal’s start deadline: below the wait by about one clip’s making, u
     expect(FAL_START_TIMEOUT_HEADERS).toEqual(['X-Fal-Request-Start-Timeout', 'x-fal-request-timeout']);
     expect([seen[0]?.get('X-Fal-Request-Start-Timeout'), seen[0]?.get('x-fal-request-timeout')]).toEqual(['1500', '1500']);
     expect([seen[1]?.get('X-Fal-Request-Start-Timeout'), seen[1]?.get('x-fal-request-timeout')]).toEqual([null, null]);
+  });
+
+  // The owner's "Send it: fallbacks off" (2026-10-30, B-024; ADR-0102's Later note): every job, with a start deadline or
+  // without (an extract-frame job), asks fal not to reroute it to another endpoint.
+  it('submitJob turns fal’s fallbacks off on every job', async () => {
+    const seen: Headers[] = [];
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      seen.push(new Headers(init?.headers));
+      return new Response(JSON.stringify({ request_id: 'req-1' }), { status: 200 });
+    }) as typeof fetch;
+    await submitJob(fetchImpl, KEYS.FAL_KEY, BALANCED_VIDEO, { prompt: 'p' }, 1500);
+    await submitJob(fetchImpl, KEYS.FAL_KEY, FAL_EXTRACT_FRAME, { video_url: 'https://fal.media/x.mp4' });
+    expect(FAL_NO_FALLBACK_HEADER).toBe('x-app-fal-disable-fallback');
+    expect(seen.map((h) => h.get('x-app-fal-disable-fallback'))).toEqual(['true', 'true']);
   });
 });
 

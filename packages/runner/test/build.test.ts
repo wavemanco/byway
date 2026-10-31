@@ -36,9 +36,13 @@ import { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE, workflowBundleHash } from '..
  * gate with no retry no longer says another try ran (ENGINE-3), limits.ts uses walk.ts's children() (RECIPES-9),
  * replicate takes as an option's view only one its branch made (B-063), and the run order that `lockedScripts` reads
  * knows a route's branches exclude each other (B-057); the fix round's test-only walk counter in semantics.ts
- * (withWalkLimit, inert outside it) is in the bundle too. Runs waiting under an older bundle end plainly (ADR-0078).
+ * (withWalkLimit, inert outside it) is in the bundle too. C5's anchor stills and their check (F12 (b), F10 (b); the
+ * owner's "Shot 1 only with video" and "Yes, check it first") change it on purpose, from bb8de3c5… to f5cb3d64…, though
+ * no workflow code changed: @byway/prompts' id lists gain the two prompts the anchor step's activity calls, and the
+ * bundle inlines those lists, which no workflow code reads, because esbuild cannot tell their `.map` and `Object.values`
+ * calls are pure (backlog row B-176). Runs waiting under an older bundle end plainly (ADR-0078).
  */
-const PINNED_WORKFLOW_HASH = 'bb8de3c5860db36ce92189a45467c2cd6f0987fac8f656ee8d1e82de733da470';
+const PINNED_WORKFLOW_HASH = 'f5cb3d649d2552972936e54215ce99825dad2e19d6463383ac0fc9df3e13c154';
 
 describe('the workflow bundle', () => {
   it('inlines the workspace and leaves only the Temporal workflow SDK external', async () => {

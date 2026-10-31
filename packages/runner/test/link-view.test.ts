@@ -186,6 +186,24 @@ describe('the shot check inside a relay link (F10)', () => {
     expect(await store.artifacts.getText(item.textArtifactId!)).toMatch(/^Shot 1 \(3s\)[\s\S]*Shot 3 \(3s\)[\s\S]*Voice-over: Less waste\./);
   });
 
+  it('outside a link, a shot with no still is shown by its clip: a frame from its middle, else its last (F12 (b))', async () => {
+    // With a video model C5 makes shot 1's still alone, so the critics judge the later shots by the clips the person gets.
+    const deps: RunnerDeps = { gateway: gateway(() => 1), store, prompts: library };
+    const run = await newRun();
+    const put = (c: number) => store.artifacts.put(png(4, 3, [c, c, c]), 'image/png').then((r) => r.id);
+    const [still1, clip1, mid1, clip2, mid2, last2, clip3, last3] = await Promise.all([1, 2, 3, 4, 5, 6, 7, 8].map((c) => put(c * 20)));
+    const shots = [
+      { shot: 1, imageArtifactId: still1, clipArtifactId: clip1, middleFrameArtifactId: mid1 },
+      { shot: 2, clipArtifactId: clip2, middleFrameArtifactId: mid2, lastFrameArtifactId: last2 },
+      { shot: 3, clipArtifactId: clip3, lastFrameArtifactId: last3 },
+      { shot: 4 },
+    ];
+    const text = serializeJson({ storyboard: shots.map((s) => ({ description: `Shot ${s.shot}: the cup`, imagePrompt: 'cup', durationSec: 3, ...s })), voiceover: 'Less waste.' });
+    const board = (await store.artifacts.putText(text, 'application/json')).id;
+    const { view } = await renderView(deps, { run, call: { key: `${run.runId}/feed-render/-/1`, stepId: 'feed-render', stage: 'D3' }, step: spec('shot-render'), artifactIds: [board], pool: false });
+    expect(view.items[0]!.imageArtifactIds).toEqual([still1, mid2, last3]);
+  });
+
   it('the shot-check prompt says exactly what it is shown and what it cannot see', () => {
     const p = library.render('product.c5.shot-check', { medium: 'media', view: 'Shot 2 (3s): the cup' });
     expect(p.version).toBe(3);

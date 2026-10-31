@@ -21,6 +21,8 @@ describe('how many images an ASSET prompt asks for is its own to declare (F11)',
       // D3 (ADR-0101): the writer's Yes decides, so C3's prompt asks for exactly one image.
       ['product.c3.asset.md', { min: 1, max: 1 }],
       ['product.c5.anchor-frames.md', 'each'],
+      // C5's anchor step in a run with no video model: a still per shot (F12 (b), 2026-10-31).
+      ['product.c5.shot-frames.md', 'each'],
     ]);
     expect(library.render('product.c3.asset', { medium: 'prose', artifact: '# A piece' }).images).toEqual({ min: 1, max: 1 });
     expect(library.render('helper.asset.briefs', { medium: 'media', artifact: '{}' }).images).toBe('each');
