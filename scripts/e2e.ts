@@ -4,8 +4,9 @@
  * (apps/web/.next-e2e), so a byway you are running from this checkout is not rebuilt under you (DEV-1). Stand-in
  * provider keys are set, and the suite fails if any of them shows up in a request, a response or the build folder
  * (apps/web/e2e/keys.ts; SEC-3). When the suite ends it stops byway the clean way (the same path as Ctrl+C) and removes
- * the data directory. A run that is killed reaches neither: its byway still stops, when it finds its runner gone, and
- * the next run removes the data directory it left (B-124). Arguments are passed to `playwright test`.
+ * the data directory. A run that is killed reaches neither, and on Windows the Temporal server byway's engine started
+ * runs on: the next run stops it and removes the data directory it was left in (e2e-leftovers.ts; B-124). Arguments are
+ * passed to `playwright test`.
  *
  * It also builds the runner's workflow bundle into a file of its own (packages/runner/dist/e2e-<pid>.js, serve.ts's
  * BYWAY_WORKFLOWS_BUNDLE), removed at the end, so the two byways share no file there either. The bundle is the same code
@@ -23,6 +24,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { E2E_KEYS, SENTINEL } from '../apps/web/e2e/keys.ts';
+import { removeLeftovers } from './e2e-leftovers.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = path.join(ROOT, 'apps', 'web');
@@ -61,33 +63,6 @@ const freePort = () =>
     });
   });
 
-/** Whether a process is running (one we may not signal is running too). */
-const alive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'EPERM';
-  }
-};
-
-/**
- * Removes the data directories earlier runs left in the system temp folder: a run that was killed never reaches its
- * `finally` (B-124). Each is named for its run's process, so only those whose process is gone are removed; one an engine
- * still holds open is left, and said.
- */
-function removeLeftovers(): void {
-  for (const name of readdirSync(tmpdir())) {
-    const pid = /^byway-e2e-(\d+)-/.exec(name)?.[1];
-    if (!pid || alive(Number(pid))) continue;
-    try {
-      rmSync(path.join(tmpdir(), name), { recursive: true, force: true });
-    } catch (err) {
-      console.error(`e2e: ${name}, left by an earlier run, could not be removed (${(err as NodeJS.ErrnoException).code}): an engine it started may still be running.`);
-    }
-  }
-}
-
 const exited = (child: ChildProcess) => new Promise<number | null>((resolve) => (child.exitCode !== null ? resolve(child.exitCode) : child.once('exit', (code) => resolve(code))));
 
 async function waitUntilReady(url: string, server: ChildProcess, timeoutMs: number): Promise<void> {
@@ -106,7 +81,7 @@ async function waitUntilReady(url: string, server: ChildProcess, timeoutMs: numb
 }
 
 async function main(): Promise<number> {
-  removeLeftovers();
+  removeLeftovers(tmpdir());
   const dataDir = mkdtempSync(path.join(tmpdir(), `byway-e2e-${process.pid}-`));
   const webPort = await freePort();
   const temporalPort = await freePort();
@@ -115,13 +90,8 @@ async function main(): Promise<number> {
   const log = createWriteStream(logFile);
 
   console.log(`e2e: starting byway in demo mode at ${baseUrl} (engine port ${temporalPort}, data ${dataDir})`);
-  // Detached: on Windows Node ends its children with it, so a killed suite would end byway at once, and the Temporal
-  // server byway's engine started (which no such tie holds) would run on. Left running, byway finds its runner gone and
-  // stops the engine itself (B-124).
   const server = spawn(process.execPath, ['--import', 'tsx', path.join('scripts', 'serve.ts'), 'start', '--demo'], {
     cwd: ROOT,
-    detached: true,
-    windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     env: {
       ...process.env,

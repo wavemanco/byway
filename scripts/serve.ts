@@ -156,8 +156,9 @@ async function build(env: Record<string, string>): Promise<void> {
 const webPortInUseMessage = (port: number): string => `Port ${port} on 127.0.0.1 is already in use: is byway already running? Stop it, or choose another port with PORT.`;
 
 async function main(): Promise<void> {
-  // A runner that pipes this output and goes away (a killed `pnpm e2e`) leaves a broken pipe. A write to it must not end
-  // byway before its stop has stopped the engine: the engine would run on with nobody to stop it (B-124).
+  // A runner that pipes this output and goes away leaves a broken pipe: a killed `pnpm e2e` on Linux or macOS, where
+  // byway outlives it. A write to it must not end byway before its stop has stopped the engine, which would run on with
+  // nobody to stop it (B-124). On Windows Node ends byway with its runner, and the next e2e run stops the engine left.
   for (const out of [process.stdout, process.stderr]) out.on('error', () => undefined);
   const { mode, demo } = parseServeArgs(process.argv.slice(2), process.env);
   const webPort = port('PORT', 3000);

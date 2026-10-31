@@ -7,7 +7,7 @@
  * - a control that takes itself off the screen moves focus first: Start's attach button, gone at five attachments;
  * - closing a step opened from the timeline returns focus to the row that opened it;
  * - what the status and alert regions say when an action is on its way, refused or done (R5 (a)): the first
- *   recommendation, a refused one and Try again's outcome, and a Settings save;
+ *   recommendation, a refused one and Try again's outcome, and Settings saves, one of them refused;
  * - cases other work owns, as plain tests: a draft that survives opening a step (F06), the viewer's scripts switch (F05),
  *   the compare view of two pages (F13 compare view), and a page's links after its copy is edited (F07; an
  *   owner-tagged expected failure until F07's fix landed, ADR-0081).
@@ -390,15 +390,17 @@ test.describe('the status and alert regions say what happened (R5 (a))', () => {
   });
 
   test('a refused recommendation is an alert; Try again says it is busy, and its outcome is said', async ({ page }) => {
-    // The first ask is refused after SLOW_MS; the next is held as long, then let through, so its busy state can be read.
+    // The first ask is refused; the next is held until its busy state has been read, then let through.
     let asks = 0;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((r) => (release = r));
     await page.route(
       (url) => url.pathname.endsWith('/recommend'),
       async (route) => {
         if (route.request().method() !== 'POST') return route.continue();
         asks++;
-        await new Promise((r) => setTimeout(r, SLOW_MS));
         if (asks === 1) return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'e2e: no recommendation this time' }) });
+        await held;
         return route.continue();
       },
     );
@@ -411,33 +413,40 @@ test.describe('the status and alert regions say what happened (R5 (a))', () => {
     await page.keyboard.press('Enter');
     await expect.poll(() => asks).toBe(2);
     await expect(failed.locator('button[aria-busy="true"]')).toHaveText('Trying again…');
+    release();
     await expect(page.locator('#proposal-title')).toHaveText('Memo Polish', { timeout: 60_000 });
     await expect(recommendStatus(page)).toHaveText('Now recommending Memo Polish.');
     await expect(page.getByRole('alert').filter({ hasText: 'byway could not recommend a recipe' })).toHaveCount(0);
   });
 
-  test('Settings: a refused save is an alert, and a save that goes through is said in the status region', async ({ page }) => {
+  test('Settings: a save is said in the status region; a refused one clears it and is an alert', async ({ page }) => {
     await page.goto('/settings');
     const status = page.locator('.settings > p[role="status"]');
     const alert = page.locator('.settings > p[role="alert"]');
     const input = page.getByLabel('Workspace budget in dollars');
     // The budget it already has, saved again: nothing about the workspace changes.
     const budget = await input.inputValue();
+    const said = `Workspace budget set to ${formatUsd(Number(budget))}.`;
+    // The second save is refused; the first and the third go through.
     let saves = 0;
     const settings = (url: URL) => url.pathname === '/api/settings';
     await page.route(settings, async (route) => {
       if (route.request().method() !== 'PATCH') return route.continue();
       saves++;
-      if (saves === 1) return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'e2e: that was not saved' }) });
+      if (saves === 2) return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'e2e: that was not saved' }) });
       return route.continue();
     });
     const save = page.getByRole('button', { name: 'Save budget' });
     await save.click();
+    await expect(status).toHaveText(said);
+    await expect(alert).toHaveCount(0);
+    await save.click();
     await expect(alert).toHaveText('e2e: that was not saved');
+    // The earlier save's words are gone: the refusal is not read out as a success.
     await expect(status).toHaveText('');
     await save.click();
-    await expect.poll(() => saves).toBe(2);
-    await expect(status).toHaveText(`Workspace budget set to ${formatUsd(Number(budget))}.`);
+    await expect.poll(() => saves).toBe(3);
+    await expect(status).toHaveText(said);
     await expect(alert).toHaveCount(0);
     await page.unroute(settings);
   });

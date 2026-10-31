@@ -125,12 +125,14 @@ describe("serve.ts's port checks, before anything is built or opened (BUILD-2)",
 });
 
 /**
- * B-124: a `pnpm e2e` that is killed leaves its byway with a broken output pipe and no runner. serve.ts ignores errors on
- * its own output from main's first line, so the stop it starts when its runner goes still stops the engine, and a runner
- * that went during start-up, before the listener was there, stops it once it is. The next run removes the data
- * directory the killed one left; each is named for its run's process.
+ * B-124: a `pnpm e2e` that is killed reaches neither its clean stop nor its cleanup. On Linux and macOS byway outlives
+ * it, with a broken output pipe and no runner: serve.ts ignores errors on its own output from main's first line, so the
+ * stop it starts when its runner goes still stops the engine, and a runner that went during start-up, before the
+ * listener was there, stops it once it is. On Windows Node ends byway with its runner and the Temporal server runs on;
+ * the next run stops it and removes the data directory it was left in (scripts/e2e-leftovers.ts, tested in
+ * e2e-leftovers.test.ts). Each data directory is named for its run's process.
  */
-describe('a killed e2e run leaves no engine running, and the next run removes its data directory (B-124)', () => {
+describe('a killed e2e run leaves no engine running for long, and the next run removes its data directory (B-124)', () => {
   const e2e = codeLines(read('scripts/e2e.ts'));
 
   it("serve.ts ignores errors on its own output from main's first line", () => {
@@ -143,17 +145,16 @@ describe('a killed e2e run leaves no engine running, and the next run removes it
     expect(main[listener + 1]).toBe('if (process.connected === false) void stop(0);');
   });
 
-  it('e2e.ts starts byway detached, so a killed suite does not end it before it can stop its engine', () => {
+  it("e2e.ts starts byway attached, in the runner's console and process group, so Ctrl+C reaches it as before", () => {
     const spawned = e2e.findIndex((l) => l.startsWith("const server = spawn(process.execPath, ['--import', 'tsx', path.join('scripts', 'serve.ts')"));
     expect(spawned).toBeGreaterThan(0);
-    expect(e2e.slice(spawned + 1, spawned + 4)).toEqual(['cwd: ROOT,', 'detached: true,', 'windowsHide: true,']);
+    expect(e2e.slice(spawned + 1, spawned + 3)).toEqual(['cwd: ROOT,', "stdio: ['ignore', 'pipe', 'pipe', 'ipc'],"]);
+    expect(matching(e2e, /\bdetached\b/)).toEqual([]);
   });
 
-  it("e2e.ts names its data directory for its own process, after removing those whose run's process is gone", () => {
+  it("e2e.ts names its data directory for its own process, after removing what runs whose process is gone left", () => {
     const made = e2e.indexOf('const dataDir = mkdtempSync(path.join(tmpdir(), `byway-e2e-${process.pid}-`));');
     expect(made).toBeGreaterThan(0);
-    expect(e2e[made - 1]).toBe('removeLeftovers();');
-    expect(matching(e2e, /\.exec\(name\)/)).toEqual(['const pid = /^byway-e2e-(\\d+)-/.exec(name)?.[1];']);
-    expect(matching(e2e, /alive\(Number\(pid\)\)/)).toEqual(['if (!pid || alive(Number(pid))) continue;']);
+    expect(e2e[made - 1]).toBe('removeLeftovers(tmpdir());');
   });
 });

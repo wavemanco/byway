@@ -189,11 +189,12 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
         </fieldset>
         <p id={`${ids}-video`} className="profile-video">
           {videoAvailability(chosen)}
-          {mode === 'demo' && !chosen?.video ? <span className="muted">. Demo runs show labelled placeholder clips instead.</span> : null}
+          {/* The profile choices are described by both lines: a hidden full stop keeps them two sentences when read out. */}
+          {mode === 'demo' && !chosen?.video ? <span className="muted">. Demo runs show labelled placeholder clips instead.</span> : <span className="sr-only">.</span>}
         </p>
         <p id={`${ids}-images`} className="profile-images">
           {imageAvailability(chosen)}
-          {mode === 'demo' && !chosen?.images ? <span className="muted">. Demo runs show sample images instead.</span> : null}
+          {mode === 'demo' && !chosen?.images ? <span className="muted">. Demo runs show sample images instead.</span> : <span className="sr-only">.</span>}
         </p>
       </section>
 
