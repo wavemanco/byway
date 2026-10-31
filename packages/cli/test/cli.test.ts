@@ -1,9 +1,9 @@
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { isEntry, run, type Io } from '../src/main.ts';
+import { run, type Io } from '../src/main.ts';
 
 const RECIPES = join(import.meta.dirname, '../../../recipes');
 
@@ -99,14 +99,14 @@ describe('file robustness (review findings)', () => {
     expect(io.stderr.join('\n')).toContain('nests deeper than');
   });
 
-  it('recognises itself as the entry point through a directory junction or symlink', () => {
+  it('runs as the program when launched through a directory junction or symlink (import.meta.main; B-172)', () => {
     const real = join(import.meta.dirname, '../src');
     const link = join(mkdtempSync(join(tmpdir(), 'byway-link-')), 'src');
     symlinkSync(real, link, 'junction');
-    const moduleUrl = pathToFileURL(join(real, 'main.ts')).href;
-    expect(isEntry(moduleUrl, join(link, 'main.ts'))).toBe(true);
-    expect(isEntry(moduleUrl, join(real, 'json.ts'))).toBe(false);
-    expect(isEntry(moduleUrl, undefined)).toBe(false);
+    const out = spawnSync(process.execPath, [join(link, 'main.ts'), 'hash', join(RECIPES, 'b-plain.json')], { encoding: 'utf8' });
+    expect(out.status, out.stderr).toBe(0);
+    expect(out.stdout.trim()).toMatch(/^sha256:[0-9a-f]{64}$/);
+    // Imported, as this file imports it, it runs nothing: this test file would have exited otherwise.
   });
 });
 

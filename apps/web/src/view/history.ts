@@ -5,23 +5,36 @@ import { formatUsd } from './format.ts';
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
-const sameDay = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-const otherYear = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+const sameDay = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+const otherYear = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
-function dayNumber(date: Date): number {
-  return Math.floor(date.getTime() / (24 * HOUR));
+/** A date's calendar day in `timeZone`, or in the machine's own zone when none is given. */
+function calendarDay(date: Date, timeZone?: string): { y: number; m: number; d: number } {
+  if (!timeZone) return { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() };
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(date).map((x) => [x.type, x.value]));
+  return { y: Number(p.year), m: Number(p.month), d: Number(p.day) };
 }
 
-/** "Just now", "5 min ago", "3 h ago", "Yesterday", "Oct 1", "Dec 24, 2025" (UTC, so server and browser agree). */
-export function formatWhen(iso: string, now: Date = new Date()): string {
+const dayNumber = ({ y, m, d }: { y: number; m: number; d: number }): number => Date.UTC(y, m - 1, d) / (24 * HOUR);
+
+/**
+ * "Just now", "5 min ago", "3 h ago", "Yesterday", "Oct 1", "Dec 24, 2025", by the days of the machine's own time zone
+ * (or `timeZone`): byway's server is the person's machine, so the page and the browser count the same days (B-159).
+ */
+export function formatWhen(iso: string, now: Date = new Date(), timeZone?: string): string {
   const at = new Date(iso);
   const ago = now.getTime() - at.getTime();
   if (ago < MINUTE) return 'Just now';
   if (ago < HOUR) return `${Math.floor(ago / MINUTE)} min ago`;
-  const days = dayNumber(now) - dayNumber(at);
+  const then = calendarDay(at, timeZone);
+  const today = calendarDay(now, timeZone);
+  const days = dayNumber(today) - dayNumber(then);
   if (days === 0) return `${Math.floor(ago / HOUR)} h ago`;
   if (days === 1) return 'Yesterday';
-  return at.getUTCFullYear() === now.getUTCFullYear() ? sameDay.format(at) : otherYear.format(at);
+  const [near, far] = timeZone
+    ? [new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone }), new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone })]
+    : [sameDay, otherYear];
+  return then.y === today.y ? near.format(at) : far.format(at);
 }
 
 const EXPORT_NAMES: Record<string, string> = {

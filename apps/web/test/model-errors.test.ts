@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { GatewayError } from '@byway/contracts';
 import { waitedError } from '@byway/gateway';
-import { modelProblem } from '../src/server/model-errors.ts';
+import { modelProblem, PROVIDER_REFUSED } from '../src/server/model-errors.ts';
 
 const billed = (code: 'byway-failure' | 'provider-error', message: string) => new GatewayError(code, message, false, { billed: true });
 
@@ -83,6 +83,20 @@ describe('byway’s own failures while recommending or composing (follow-up (e))
 
   it('keeps the provider’s own failure as it was', () => {
     expect(modelProblem(new GatewayError('provider-error', 'HTTP 503', true))).toEqual({ status: 503, message: 'The model provider did not answer. Try again in a minute.' });
+  });
+
+  it('a request the provider refused as made, or a 403, says trying again will not help, in the provider’s own redacted words (B-157)', () => {
+    // An unknown or retired model, a request over the context window: the gateway's 'invalid-request'.
+    const notFound = new GatewayError('invalid-request', 'anthropic returned 404: model: claude-retired-1 not found');
+    expect(modelProblem(notFound)).toEqual({ status: 400, message: 'anthropic returned 404: model: claude-retired-1 not found' });
+    // A 403 the provider answered (an organization that must be verified): a refusal another try cannot change.
+    const forbidden = new GatewayError('provider-error', 'openai returned 403: Your organization must be verified to use the model', false);
+    expect(modelProblem(forbidden)).toEqual({ status: 502, message: `${PROVIDER_REFUSED} openai returned 403: Your organization must be verified to use the model` });
+    expect(PROVIDER_REFUSED).toBe('The model provider refused this request, so trying again will not help:');
+    // Not retried, but not a refusal the provider answered (an SDK failure with no answer): not called one.
+    expect(modelProblem(new GatewayError('provider-error', 'anthropic call failed: Unexpected token in JSON', false))).toEqual({ status: 503, message: 'The model provider did not answer. Try again in a minute.' });
+    // A 403 marked retryable is not a refusal either.
+    expect(modelProblem(new GatewayError('provider-error', 'openai returned 403: busy', true))?.status).toBe(503);
   });
 
   it('reads an error made by another server bundle by its name, code and billed flag, not its class', () => {

@@ -476,6 +476,9 @@ describe('model errors while recommending or composing (UX-2)', () => {
       [gatewayError('budget-exceeded', 'workspace'), 400, /workspace budget.*Settings/],
       [gatewayError('rate-limited'), 503, /busy/],
       [gatewayError('provider-error'), 503, /did not answer/],
+      // B-157: a request the provider refused as made answers in its own (redacted) words; a 403 says trying again will not help.
+      [gatewayError('invalid-request'), 400, /^invalid-request from the provider$/],
+      [new GatewayError('provider-error', 'openai returned 403: Your organization must be verified', false), 502, /^The model provider refused this request, so trying again will not help: openai returned 403/],
       // ADR-0095: a line of the ledger the spend book cannot read pauses paid calls until the person acknowledges it.
       [gatewayError('accounting-fault'), 409, /cannot read.*Settings, Spending records/],
       // byway's own failures (follow-up (e)): a billed call it could not keep says it was paid for; a call it did not start says so.

@@ -6,9 +6,8 @@
  * held to the library by a test (packages/prompts/test/template-slots.test.ts): run `pnpm prompts:slots` after editing
  * a template's slots, or adding or removing a template.
  */
-import { realpathSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { MEDIA } from '@byway/protocol';
 import { createPromptRenderer, type PromptLibrary } from './renderer.ts';
 
@@ -55,19 +54,8 @@ export function templateSlotsText(library: PromptLibrary = createPromptRenderer(
   ].join('\n');
 }
 
-/** True when this module is the program entry, also when launched through a symlink or junction. */
-function isEntry(): boolean {
-  if (!process.argv[1]) return false;
-  try {
-    const a = realpathSync(process.argv[1]);
-    const b = realpathSync(fileURLToPath(import.meta.url));
-    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
-  } catch {
-    return false;
-  }
-}
-
-if (isEntry()) {
+// Node marks the program's entry module, also when it is launched through a symlink or junction (Node 24.2+).
+if (import.meta.main) {
   writeFileSync(TEMPLATE_SLOTS_FILE, templateSlotsText());
   console.log(`wrote ${TEMPLATE_SLOTS_FILE}`);
 }
