@@ -124,9 +124,12 @@ describe('what Settings says the last start-up check found', () => {
     expect(rendererFindings(off({ at: AT, osSandbox: false, ready: true, sandbox: 'starts' })).offerOn).toBe(true);
   });
 
-  it('could not start: why on this computer and the fix, whichever way it is set, and no offer', () => {
+  it('could not start: why on this computer and the fix, whichever way it is set, and no offer; while it is on, the switch above as the second way out (D2 (b))', () => {
     const said = { tone: 'caution', text: "At byway's last start-up, the OS sandbox could not start on this computer.", why: fails.why, fix: fails.fix };
-    expect(rendererFindings(on(fails))).toEqual({ found: { ...said, after: 'Until it can, byway cannot draw pages.' }, offerOn: false });
+    expect(rendererFindings(on(fails))).toEqual({
+      found: { ...said, after: 'Until it can, byway cannot draw pages. If none of this is possible, you can turn the sandbox off above; it asks first and says what that risks.' },
+      offerOn: false,
+    });
     expect(rendererFindings(off({ ...fails, osSandbox: false, ready: true }))).toEqual({ found: said, offerOn: false });
   });
 

@@ -86,14 +86,37 @@ const nameOf = (e: Record<string, unknown>): string[] => [typeof e.name === 'str
  * body unset, and Google's SDK makes one up from the HTTP status text ("Service Unavailable").
  */
 function hasProviderBody(e: Record<string, unknown>): boolean {
-  if (isObject(e.error) || isObject(e.body)) return true;
-  if (typeof e.message !== 'string' || !e.message.startsWith('{')) return false;
+  return isObject(e.error) || isObject(e.body) || googleBody(e) !== undefined;
+}
+
+/** Google's error body, which its SDK puts in the message as JSON, when it carries a canonical status (INVALID_ARGUMENT). */
+function googleBody(e: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (typeof e.message !== 'string' || !e.message.startsWith('{')) return undefined;
   try {
-    const status = (JSON.parse(e.message) as { error?: { status?: unknown } })?.error?.status;
-    return typeof status === 'string' && /^[A-Z][A-Z_]+$/.test(status);
+    const body = (JSON.parse(e.message) as { error?: unknown })?.error;
+    return isObject(body) && typeof body.status === 'string' && /^[A-Z][A-Z_]+$/.test(body.status) ? body : undefined;
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+const sentence = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+
+/**
+ * The provider's own words from the error body its SDK parsed (B-178): Anthropic's nested `error.error.message`,
+ * OpenAI's and OpenRouter's `error.message`, Google's JSON message, fal's `detail` (a sentence, or a list of `msg`s)
+ * or `message`.
+ * Undefined when there is none, and the SDK's message is kept: it is raw (Anthropic's is the body as JSON after the
+ * status) but true.
+ */
+function providerSentence(e: Record<string, unknown>): string | undefined {
+  if (isObject(e.error)) return sentence(isObject(e.error.error) ? e.error.error.message : e.error.message);
+  if (isObject(e.body)) {
+    const detail = e.body.detail;
+    const listed = Array.isArray(detail) ? sentence(detail.map((d) => (isObject(d) ? sentence(d.msg) : undefined)).filter(Boolean).join('; ')) : undefined;
+    return listed ?? sentence(detail) ?? sentence(e.body.message);
+  }
+  return sentence(googleBody(e)?.message);
 }
 
 /** Whether the failure looks like a network failure (a socket or DNS code, a timeout or abort) anywhere in its chain. */
@@ -204,6 +227,7 @@ function retryAfterMs(err: unknown): number | undefined {
  * each SDK's classes. Retryability comes from the same reading as billing: an HTTP status as mapped below, a stream
  * error event by its type, a network failure found anywhere along the cause chain (a reset wrapped by undici is a
  * network failure, which the old top-level check missed), and a stream that ended early. Anything else is not retried.
+ * The message gives the provider's own words where its error body has them (providerSentence), else the SDK's.
  * Messages pass through the redactor: providers sometimes echo part of a key back.
  */
 export function toGatewayError(err: unknown, provider: ProviderId, redact: Redactor): GatewayError {
@@ -214,7 +238,7 @@ export function toGatewayError(err: unknown, provider: ProviderId, redact: Redac
   const byBody = status === undefined ? BODY_TYPES[bodyType(err) ?? ''] : undefined;
   const transient = status === undefined && (networkSignature(err) !== undefined || (typeof e.message === 'string' && ENDED_EARLY.test(e.message)));
   const { code, retryable } = status !== undefined ? classify(status) : (byBody ?? (transient ? { code: 'provider-error' as const, retryable: true } : { code: 'provider-error' as const, retryable: false }));
-  const detail = typeof e.message === 'string' && e.message ? e.message : String(err);
+  const detail = (isObject(err) ? providerSentence(err) : undefined) ?? (typeof e.message === 'string' && e.message ? e.message : String(err));
   const prefix = status !== undefined ? `${provider} returned ${status}` : `${provider} call failed`;
   // Redacted whole, then cut: a key across the cut would otherwise be kept in part.
   const out: ClassifiedError = new GatewayError(code, redact(`${prefix}: ${detail}`).slice(0, 2000), retryable);

@@ -97,6 +97,8 @@ For web pages, byway draws each page in a locked-down copy of the Chromium brows
 
 Settings lets you turn the lock-down off if nothing else works. Pages are then less contained, and byway shows a warning for as long as it is off.
 
+On Linux, if your pages have Japanese text: the font Playwright installs with `--with-deps` (WenQuanYi Zen Hei) lays out vertical Japanese wrongly, so the reviewing models see a page no visitor would. Install Noto CJK and remove that font, as byway's own checks do: `sudo apt-get install fonts-noto-cjk`, then `sudo apt-get remove fonts-wqy-zenhei`. This also changes the fallback font for Chinese, and installing Chromium again with `--with-deps` can bring the font back.
+
 ## Contributing
 
 byway is in its early days. While its foundations are still settling, it accepts pull requests only from its existing contributors.

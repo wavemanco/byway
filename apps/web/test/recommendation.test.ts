@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Recommendation } from '@byway/contracts';
 import type { ComposeView } from '../src/server/api.ts';
 import { awaitingFirst, composedAfterStart, composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState } from '../src/view/recommendation.ts';
-import { COMPOSED_CHANGED, COMPOSED_REFUSED, HELD_KEY_REFUSAL } from '../src/view/refusals.ts';
+import { COMPOSED_CHANGED, COMPOSED_REFUSED, HELD_KEY_REFUSAL, TRY_AGAIN_WONT_HELP } from '../src/view/refusals.ts';
 import { composedRefusalGroups, composeNotice } from '../src/view/composed.ts';
 
 const rec = (recipeId: string): Recommendation =>
@@ -67,7 +67,16 @@ describe('the Recommendation screen’s state (F14)', () => {
   it('a failed retry keeps the failure panel, with the new reason', () => {
     const next = retryFailed(failed(), 'The provider is busy. Try again in a minute.');
     expect(next.problem).toBe('The provider is busy. Try again in a minute.');
+    expect(next.tryAgainHelps).toBe(true);
     expect(screen(next, null, OPTIONS)).toBe('failed');
+  });
+
+  it('a refusal asking again cannot fix says so to the panel, and the next failure is read afresh (B-178)', () => {
+    const refused = retryFailed(failed(), 'The model provider refused this request, so trying again will not help: openai returned 403: verify', TRY_AGAIN_WONT_HELP);
+    expect(refused.tryAgainHelps).toBe(false);
+    expect(screen(refused, null, OPTIONS)).toBe('failed');
+    expect(failed().tryAgainHelps).toBe(true);
+    expect(retryFailed(refused, 'The model provider is busy right now. Try again in a minute.').tryAgainHelps).toBe(true);
   });
 
   it('a flip after recovery follows the newly routed recipe', () => {

@@ -842,11 +842,11 @@ describe('how many images a prose step may make is the prompt’s to say', () =>
     expect(notes).toEqual([NO_BRIEF_NOTE]);
   });
 
-  it('C3’s explainer says Yes makes the image, and that the AI may add advice you can act on at Trim (D3, ADR-0101)', () => {
+  it('C3’s explainer says Yes makes the image where an image provider is set up, that the AI may add advice you can act on at Trim, and why you might answer No (D3, ADR-0101, B-077)', () => {
     const step = spec('c3', 'asset');
     expect(library.info(step.prompt!, 'prose').images).toEqual({ min: 1, max: 1 });
     expect(stepPresentation('c3', 'asset')?.explainer).toBe(
-      'If you answer Yes, the AI makes a header image for the piece. It may also add one line of advice, which you can act on at Trim. Charts computed from your data are not made in this version.',
+      'If you answer Yes and an image provider is set up, the AI makes a header image for the piece, and may add one line of advice you can act on at Trim. Real photos often beat generated ones: if you have one, answer No. Charts computed from your data are not made in this version.',
     );
   });
 

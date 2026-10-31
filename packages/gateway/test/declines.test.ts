@@ -337,7 +337,7 @@ describe('a decline gets one retry on the same model, then a plain failure (ADR-
     const { client, calls } = fakeAnthropic([declined('cyber'), overloaded(), overloaded(), overloaded(), overloaded()]);
     const err = (await gateway({ clients: { anthropic: client } }).complete(req()).catch((e: unknown) => e)) as GatewayError;
     expect(err).toMatchObject({ code: 'refused', retryable: false });
-    expect(err.message).toMatch(/^Anthropic’s model claude-opus-5-5 declined this request \(reason given: cyber\)\. byway asked it once more, but that attempt failed: anthropic returned 529: 529 overloaded\. The declined attempt was billed: \$0\.0040\. Rephrase/);
+    expect(err.message).toMatch(/^Anthropic’s model claude-opus-5-5 declined this request \(reason given: cyber\)\. byway asked it once more, but that attempt failed: anthropic returned 529: Overloaded\. The declined attempt was billed: \$0\.0040\. Rephrase/);
     expect(err.declined).toMatchObject({ retry: 'failed' });
     // The declined call, then the retry's four transport attempts (the gateway's own retry policy), and nothing more.
     expect(calls).toHaveLength(5);

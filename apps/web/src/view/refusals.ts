@@ -30,6 +30,14 @@ export const COMPOSED_REFUSED = 'composed-refused';
  */
 export const COMPOSED_CHANGED = 'composed-changed';
 
+/**
+ * A model call refused, as made, in a way asking again unchanged cannot fix: a 403 the provider answered, or an invalid
+ * request such as a retired model or a brief over its context window (B-157, B-033). The Recommendation screen then
+ * makes "Choose from the Library" its main button and keeps "Try again" beside it, for after the person fixes the cause
+ * outside byway (B-178; the owner's "Demote it, clean the cause (Recommended)", 2026-10-31).
+ */
+export const TRY_AGAIN_WONT_HELP = 'try-again-wont-help';
+
 /** A top-level field of a refused body, the variable name of the key found in it and, for a list, its items that held one. */
 export interface HeldKeyPart {
   field: string;

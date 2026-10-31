@@ -5,10 +5,13 @@
  * was wrong or the workspace budget spent. Errors are matched by name and code, not class: the services may have been
  * created by another server bundle, whose classes are different objects.
  */
+import { TRY_AGAIN_WONT_HELP } from '../view/refusals.ts';
 
 export interface ModelProblem {
   status: number;
   message: string;
+  /** TRY_AGAIN_WONT_HELP when the request was refused as made (a 403, an invalid request), so asking again unchanged cannot help (B-178). */
+  code?: typeof TRY_AGAIN_WONT_HELP;
 }
 
 const named = (err: unknown, name: string): err is Error & { code?: unknown; budget?: { scope?: unknown }; heldKey?: unknown; billed?: unknown; declined?: unknown; waited?: unknown; retryable?: unknown; forbidden?: unknown } =>
@@ -76,9 +79,9 @@ export function modelProblem(err: unknown): ModelProblem | undefined {
         // The provider answered and refused the request as made (a retired or unknown model, a request over its context
         // window, any invalid_request_error), or the gateway refused it before sending (a request byway built wrong): the
         // gateway's words, already redacted, say why (B-157).
-        return { status: 400, message: err.message };
+        return { status: 400, message: err.message, code: TRY_AGAIN_WONT_HELP };
       case 'provider-error':
-        if (err.retryable === false && refused(err)) return { status: 502, message: `${PROVIDER_REFUSED} ${err.message}` };
+        if (err.retryable === false && refused(err)) return { status: 502, message: `${PROVIDER_REFUSED} ${err.message}`, code: TRY_AGAIN_WONT_HELP };
         return { status: 503, message: 'The model provider did not answer. Try again in a minute.' };
       case 'byway-failure':
         // Not billed: byway did not make the call (it is stopping, or could not record it as sent). Its own words say so.

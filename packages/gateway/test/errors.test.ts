@@ -77,6 +77,39 @@ describe('toGatewayError', () => {
     expect(e.message).not.toContain(key.slice(0, 10));
   });
 
+  it("says the provider's own words where its error body has them, not the SDK's raw text (B-178)", () => {
+    // As each SDK builds them: Anthropic's message is the whole body as JSON after the status; OpenAI's (and OpenRouter's,
+    // through the same SDK) is the body's message after the status; Google's is the body as JSON; fal's carries `body`.
+    const anthropicBody = { type: 'error', error: { type: 'invalid_request_error', message: 'prompt is too long: 1048576 tokens > 1000000 maximum' } };
+    const anthropic = Object.assign(new Error(`400 ${JSON.stringify(anthropicBody)}`), { status: 400, error: anthropicBody });
+    // B-033: a brief larger than the model's context window reads as the provider says it.
+    expect(toGatewayError(anthropic, 'anthropic', redact).message).toBe('anthropic returned 400: prompt is too long: 1048576 tokens > 1000000 maximum');
+    const openai = Object.assign(new Error('403 Your organization must be verified to use the model `gpt-image-2`.'), {
+      status: 403,
+      error: { message: 'Your organization must be verified to use the model `gpt-image-2`.', type: 'invalid_request_error', param: null, code: null },
+    });
+    expect(toGatewayError(openai, 'openai', redact).message).toBe('openai returned 403: Your organization must be verified to use the model `gpt-image-2`.');
+    const google = Object.assign(new Error(JSON.stringify({ error: { code: 404, message: 'models/gemini-0 is not found for API version v1beta.', status: 'NOT_FOUND' } })), { status: 404 });
+    expect(toGatewayError(google, 'google', redact).message).toBe('google returned 404: models/gemini-0 is not found for API version v1beta.');
+    const fal = Object.assign(new Error('HTTP 422'), { status: 422, body: { detail: [{ loc: ['body', 'prompt'], msg: 'Field required', type: 'missing' }, { msg: 'Image too large' }] } });
+    expect(toGatewayError(fal, 'fal', redact).message).toBe('fal returned 422: Field required; Image too large');
+    expect(toGatewayError(Object.assign(new Error('HTTP 403: x'), { status: 403, body: { message: 'Exhausted balance.' } }), 'fal', redact).message).toBe('fal returned 403: Exhausted balance.');
+    // A mid-stream error event, with no status.
+    const overloaded = Object.assign(new Error('{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}'), { error: { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } } });
+    expect(toGatewayError(overloaded, 'anthropic', redact).message).toBe('anthropic call failed: Overloaded');
+  });
+
+  it("keeps the SDK's message where the body has no words, and redacts the provider's as it did the SDK's", () => {
+    // A proxy's page (Google's SDK makes up a body from the status text), a body with no message, and no body.
+    const proxied = Object.assign(new Error(JSON.stringify({ error: { code: 503, message: '<html>busy</html>', status: 'Service Unavailable' } })), { status: 503 });
+    expect(toGatewayError(proxied, 'google', redact).message).toBe(`google returned 503: ${proxied.message}`);
+    const bare = Object.assign(new Error('500 {"type":"error","error":{"type":"api_error"}}'), { status: 500, error: { type: 'error', error: { type: 'api_error' } } });
+    expect(toGatewayError(bare, 'anthropic', redact).message).toBe('anthropic returned 500: 500 {"type":"error","error":{"type":"api_error"}}');
+    expect(toGatewayError(apiError(400, 'upstream says no'), 'openai', redact).message).toBe('openai returned 400: upstream says no');
+    const echoed = Object.assign(new Error('401 x'), { status: 401, error: { message: 'Incorrect API key provided: sk-live-0123456789abcdefXYZ' } });
+    expect(toGatewayError(echoed, 'openai', redact).message).not.toContain('0123456789abcdef');
+  });
+
   it('treats timeouts and connection failures as retryable', () => {
     const timeout = Object.assign(new Error('Request timed out.'), { name: 'APIConnectionTimeoutError' });
     const conn = Object.assign(new Error('Connection error.'), { name: 'APIConnectionError' });

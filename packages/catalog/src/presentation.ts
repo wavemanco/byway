@@ -202,7 +202,8 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Custom imagery',
-        explainer: 'If you answer Yes, the AI makes a header image for the piece. It may also add one line of advice, which you can act on at Trim. Charts computed from your data are not made in this version.',
+        explainer:
+          'If you answer Yes and an image provider is set up, the AI makes a header image for the piece, and may add one line of advice you can act on at Trim. Real photos often beat generated ones: if you have one, answer No. Charts computed from your data are not made in this version.',
         covers: ['asset'],
       },
       trimByYou('Your turn: list what the piece could lose, and the AI removes it.'),

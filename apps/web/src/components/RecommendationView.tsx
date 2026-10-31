@@ -149,7 +149,7 @@ export function RecommendationView(props: Props) {
       setNotice(first ? `byway recommends ${title}.` : `Now recommending ${title}.`);
       if (!first) setFocusProposal((n) => n + 1);
     } catch (err) {
-      setState((s) => retryFailed(s, err instanceof Error ? err.message : 'byway could not recommend a recipe. Try again.'));
+      setState((s) => retryFailed(s, err instanceof Error ? err.message : 'byway could not recommend a recipe. Try again.', err instanceof ApiError ? err.code : undefined));
     }
   });
   const retry = () => void retrying.run(false);
@@ -221,10 +221,11 @@ export function RecommendationView(props: Props) {
             <h1>byway could not recommend a recipe</h1>
             <p>{state.problem}</p>
             <div className="empty-actions">
-              <ActionButton className="button button-primary" onClick={retry} busy={retrying.busy}>
+              {/* A refusal asking again cannot fix makes the Library the way on; Try again stays for after the cause is fixed (B-178). */}
+              <ActionButton className={state.tryAgainHelps ? 'button button-primary' : 'button'} onClick={retry} busy={retrying.busy}>
                 {retrying.busy ? 'Trying again…' : 'Try again'}
               </ActionButton>
-              <Link className="button" href="/library">
+              <Link className={state.tryAgainHelps ? 'button' : 'button button-primary'} href="/library">
                 Choose from the Library
               </Link>
             </div>

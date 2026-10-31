@@ -13,7 +13,7 @@
  */
 import type { Recommendation } from '@byway/contracts';
 import type { ComposeView } from '../server/api.ts';
-import { COMPOSED_CHANGED, COMPOSED_REFUSED } from './refusals.ts';
+import { COMPOSED_CHANGED, COMPOSED_REFUSED, TRY_AGAIN_WONT_HELP } from './refusals.ts';
 
 export type Selection = { kind: 'recipe'; recipeId: string } | { kind: 'composed' };
 
@@ -21,6 +21,11 @@ export interface RecState {
   rec: Recommendation | null;
   /** Why recommending failed, in words; null once a recommendation is in. */
   problem: string | null;
+  /**
+   * False when the failure was a refusal asking again unchanged cannot fix (TRY_AGAIN_WONT_HELP): the failure panel then
+   * makes "Choose from the Library" its main button and keeps "Try again" beside it (B-178).
+   */
+  tryAgainHelps: boolean;
   /** What the proposal shows; null when there is nothing to show (recommending failed and nothing else was chosen). */
   selection: Selection | null;
   composed: ComposeView | null;
@@ -39,7 +44,7 @@ const recipe = (recipeId: string): Selection => ({ kind: 'recipe', recipeId });
 
 export function initialRecState(seed: RecSeed): RecState {
   const selection = seed.chosenRecipeId ? recipe(seed.chosenRecipeId) : seed.recommendation ? recipe(seed.recommendation.recipeId) : null;
-  return { rec: seed.recommendation, problem: seed.recommendation ? null : seed.recommendProblem, selection, composed: seed.composed, remainingUsd: seed.remainingUsd };
+  return { rec: seed.recommendation, problem: seed.recommendation ? null : seed.recommendProblem, tryAgainHelps: true, selection, composed: seed.composed, remainingUsd: seed.remainingUsd };
 }
 
 /** Try again succeeded. A recipe the person built meanwhile stays on screen; otherwise the recommendation is shown. */
@@ -53,9 +58,9 @@ export function recovered(state: RecState, result: { recommendation: Recommendat
   };
 }
 
-/** Try again failed: the failure panel stays, with the new reason. */
-export function retryFailed(state: RecState, message: string): RecState {
-  return { ...state, problem: message };
+/** Try again failed: the failure panel stays, with the new reason and whether another try can help (B-178). */
+export function retryFailed(state: RecState, message: string, code?: string): RecState {
+  return { ...state, problem: message, tryAgainHelps: code !== TRY_AGAIN_WONT_HELP };
 }
 
 /** A flipped chooser answer re-routed: the screen follows the newly recommended recipe. */

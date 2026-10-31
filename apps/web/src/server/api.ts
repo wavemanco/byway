@@ -68,7 +68,7 @@ async function asking<T>(call: () => Promise<T>): Promise<T> {
     return await call();
   } catch (err) {
     const problem = modelProblem(err);
-    if (problem) throw new HttpError(problem.status, problem.message);
+    if (problem) throw new HttpError(problem.status, problem.message, problem.code);
     throw err;
   }
 }

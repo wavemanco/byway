@@ -31,6 +31,7 @@ import {
 } from '../src/server/api.ts';
 import { AnswerWaitPatch, RecommendInput } from '../src/server/schemas.ts';
 import { artifactInfo, getRunData } from '../src/server/run-data.ts';
+import { TRY_AGAIN_WONT_HELP } from '../src/view/refusals.ts';
 import { FIRST_QUESTION } from './fixtures/runner.ts';
 import { ENGINE, TINY_PNG_BASE64, testHost, type TestHost } from './fixtures/services.ts';
 
@@ -493,6 +494,13 @@ describe('model errors while recommending or composing (UX-2)', () => {
       recommend.mockRejectedValueOnce(err);
       await expect(recommendIntake(d, intakeId)).rejects.toMatchObject({ status, message: expect.stringMatching(message) });
     }
+    // B-178: a refusal asking again cannot fix carries its code to the screen; a failure another try may fix carries none.
+    for (const err of [gatewayError('invalid-request'), Object.assign(new GatewayError('provider-error', 'openai returned 403: verify', false), { forbidden: true as const })]) {
+      recommend.mockRejectedValueOnce(err);
+      await expect(recommendIntake(d, intakeId)).rejects.toMatchObject({ code: TRY_AGAIN_WONT_HELP });
+    }
+    recommend.mockRejectedValueOnce(gatewayError('rate-limited'));
+    await expect(recommendIntake(d, intakeId)).rejects.toMatchObject({ code: undefined });
     const compose = vi.spyOn(d.services.advisor, 'compose');
     compose.mockRejectedValueOnce(new AdvisorError('compose-unreadable', 'unreadable'));
     await expect(composeIntake(d, intakeId)).rejects.toMatchObject({ status: 502, message: expect.stringMatching(/build a recipe/) });
