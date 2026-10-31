@@ -744,7 +744,7 @@ export class ModelGateway implements Gateway {
               // Not sent again (ADR-0091): a second submission is a second job, billed again.
               const err: ClassifiedError = new GatewayError(
                 'provider-error',
-                redact(`${ref.provider} may have accepted ${what} (${(e as Error).message}). byway did not send it again, because a second submission could make and bill another. Check your ${ref.provider} dashboard before trying this step again.`.slice(0, 2000)),
+                redact(`${ref.provider} may have accepted ${what} (${(e as Error).message}). byway did not send it again, because a second submission could make and bill another. Check your ${ref.provider} dashboard before trying this step again.`).slice(0, 2000),
                 false,
               );
               err.billing = 'maybe';
@@ -1194,8 +1194,8 @@ function takenOver(provider: ProviderId, what: string, jobs: Partial<Record<Prov
   const err: ClassifiedError = new GatewayError(
     'provider-error',
     redact(
-      `${provider} had already accepted ${what} from another attempt of this step (${listed.join(' and ')}) while this one was getting it ready, so byway did not submit it again, because a second submission would make and bill another. ${them} in Settings under Spending records. Check your ${provider} dashboard before trying this step again.`.slice(0, 2000),
-    ),
+      `${provider} had already accepted ${what} from another attempt of this step (${listed.join(' and ')}) while this one was getting it ready, so byway did not submit it again, because a second submission would make and bill another. ${them} in Settings under Spending records. Check your ${provider} dashboard before trying this step again.`,
+    ).slice(0, 2000),
     false,
   );
   err.billing = 'maybe';
@@ -1319,7 +1319,7 @@ async function keep(put: () => Promise<ArtifactRecord>): Promise<{ record?: Arti
  */
 function billedFailure(redact: Redactor, what: string, cause: unknown, settled?: { ledgerEntryId: string; costUsd: number }): GatewayError {
   const reason = cause instanceof Error ? cause.message : String(cause);
-  return new GatewayError('byway-failure', redact(`${what}: ${reason}. It is not retried, because a retry would pay again.`.slice(0, 2000)), false, { billed: true, ...(settled ? { settled } : {}) });
+  return new GatewayError('byway-failure', redact(`${what}: ${reason}. It is not retried, because a retry would pay again.`).slice(0, 2000), false, { billed: true, ...(settled ? { settled } : {}) });
 }
 
 /** What an adapter's error says when its own message cannot be read as text, so none of its words are passed on. */

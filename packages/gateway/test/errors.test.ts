@@ -60,6 +60,23 @@ describe('toGatewayError', () => {
     expect(e.message).toContain('openai');
   });
 
+  it('marks a provider that refused the request as forbidden: an HTTP 403, or a permission_error a stream sends after its 200 (B-157)', () => {
+    const forbidden = (err: unknown) => (toGatewayError(err, 'anthropic', redact) as { forbidden?: true }).forbidden;
+    expect(forbidden(apiError(403, 'Your organization must be verified'))).toBe(true);
+    expect(forbidden(Object.assign(new Error('permission denied'), { error: { type: 'error', error: { type: 'permission_error' } } }))).toBe(true);
+    for (const status of [400, 401, 404, 429, 500]) expect(forbidden(apiError(status, 'no')), String(status)).toBeUndefined();
+    expect(forbidden(new Error('Unexpected token in JSON'))).toBeUndefined();
+  });
+
+  it('redacts a provider message whole before cutting it to 2000 characters, so a key across the cut is not kept in part', () => {
+    const key = 'sk-live-0123456789abcdefXYZ';
+    // The key starts 10 characters before the cut: cut first, then redacted, its first 10 characters would be kept.
+    const message = `${'x'.repeat(2000 - 'openai returned 400: '.length - 10)}${key} and more`;
+    const e = toGatewayError(apiError(400, message), 'openai', redact);
+    expect(e.message.length).toBeLessThanOrEqual(2000);
+    expect(e.message).not.toContain(key.slice(0, 10));
+  });
+
   it('treats timeouts and connection failures as retryable', () => {
     const timeout = Object.assign(new Error('Request timed out.'), { name: 'APIConnectionTimeoutError' });
     const conn = Object.assign(new Error('Connection error.'), { name: 'APIConnectionError' });

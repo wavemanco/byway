@@ -10,7 +10,11 @@ import type { Redactor } from './redact.ts';
 export type Billing = 'none' | 'maybe';
 
 /** A GatewayError with what classification found: the provider's retry-after hint, and whether the attempt was billed. */
-export type ClassifiedError = GatewayError & { retryAfterMs?: number; billing?: Billing };
+/**
+ * `forbidden`: the provider answered and refused the request as forbidden (an HTTP 403, or an error body typed
+ * permission_error, which a stream can send after its 200), so another try is refused the same way (B-157).
+ */
+export type ClassifiedError = GatewayError & { retryAfterMs?: number; billing?: Billing; forbidden?: true };
 
 /**
  * Socket and DNS failures that happen before a request is written: nothing reached the provider. Node's fetch (undici)
@@ -212,7 +216,9 @@ export function toGatewayError(err: unknown, provider: ProviderId, redact: Redac
   const { code, retryable } = status !== undefined ? classify(status) : (byBody ?? (transient ? { code: 'provider-error' as const, retryable: true } : { code: 'provider-error' as const, retryable: false }));
   const detail = typeof e.message === 'string' && e.message ? e.message : String(err);
   const prefix = status !== undefined ? `${provider} returned ${status}` : `${provider} call failed`;
-  const out: ClassifiedError = new GatewayError(code, redact(`${prefix}: ${detail}`.slice(0, 2000)), retryable);
+  // Redacted whole, then cut: a key across the cut would otherwise be kept in part.
+  const out: ClassifiedError = new GatewayError(code, redact(`${prefix}: ${detail}`).slice(0, 2000), retryable);
+  if (status === 403 || (status === undefined && bodyType(err) === 'permission_error')) out.forbidden = true;
   out.billing = billing;
   const hint = retryAfterMs(err);
   if (hint !== undefined) out.retryAfterMs = hint;

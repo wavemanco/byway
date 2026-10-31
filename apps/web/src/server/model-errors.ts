@@ -11,7 +11,7 @@ export interface ModelProblem {
   message: string;
 }
 
-const named = (err: unknown, name: string): err is Error & { code?: unknown; budget?: { scope?: unknown }; heldKey?: unknown; billed?: unknown; declined?: unknown; waited?: unknown; retryable?: unknown } =>
+const named = (err: unknown, name: string): err is Error & { code?: unknown; budget?: { scope?: unknown }; heldKey?: unknown; billed?: unknown; declined?: unknown; waited?: unknown; retryable?: unknown; forbidden?: unknown } =>
   err instanceof Error && err.name === name;
 
 /**
@@ -21,11 +21,12 @@ const named = (err: unknown, name: string): err is Error & { code?: unknown; bud
 export const PROVIDER_REFUSED = 'The model provider refused this request, so trying again will not help:';
 
 /**
- * A provider that answered 403 (an organization that must be verified, a permission error), as the gateway writes it
- * ("<provider> returned 403: …", errors.ts toGatewayError). Other errors that are not retried, such as an SDK failure
- * with no answer from the provider, are not called a refusal.
+ * A provider that answered and refused the request as forbidden (an organization that must be verified, a permission
+ * error): the gateway marks it `forbidden` (errors.ts toGatewayError), for an HTTP 403 and for a permission_error a
+ * stream sends after its 200. Other errors that are not retried, such as an SDK failure with no answer from the provider,
+ * are not called a refusal.
  */
-const refused403 = (message: string): boolean => /^\S+ returned 403: /.test(message);
+const refused = (err: { forbidden?: unknown }): boolean => err.forbidden === true;
 
 /**
  * What is said after the gateway's words for a call that used the whole of its model's wait: asking again is a new call,
@@ -73,10 +74,11 @@ export function modelProblem(err: unknown): ModelProblem | undefined {
         return { status: 503, message: 'The model provider is busy right now. Try again in a minute.' };
       case 'invalid-request':
         // The provider answered and refused the request as made (a retired or unknown model, a request over its context
-        // window, any invalid_request_error): its own words, already redacted by the gateway, say why (B-157).
+        // window, any invalid_request_error), or the gateway refused it before sending (a request byway built wrong): the
+        // gateway's words, already redacted, say why (B-157).
         return { status: 400, message: err.message };
       case 'provider-error':
-        if (err.retryable === false && refused403(err.message)) return { status: 502, message: `${PROVIDER_REFUSED} ${err.message}` };
+        if (err.retryable === false && refused(err)) return { status: 502, message: `${PROVIDER_REFUSED} ${err.message}` };
         return { status: 503, message: 'The model provider did not answer. Try again in a minute.' };
       case 'byway-failure':
         // Not billed: byway did not make the call (it is stopping, or could not record it as sent). Its own words say so.

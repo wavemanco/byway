@@ -90,13 +90,19 @@ describe('byway’s own failures while recommending or composing (follow-up (e))
     const notFound = new GatewayError('invalid-request', 'anthropic returned 404: model: claude-retired-1 not found');
     expect(modelProblem(notFound)).toEqual({ status: 400, message: 'anthropic returned 404: model: claude-retired-1 not found' });
     // A 403 the provider answered (an organization that must be verified): a refusal another try cannot change.
-    const forbidden = new GatewayError('provider-error', 'openai returned 403: Your organization must be verified to use the model', false);
+    // As the gateway makes it (errors.ts toGatewayError): an HTTP 403, or a permission_error a stream sends, is marked forbidden.
+    const forbidden = Object.assign(new GatewayError('provider-error', 'openai returned 403: Your organization must be verified to use the model', false), { forbidden: true as const });
     expect(modelProblem(forbidden)).toEqual({ status: 502, message: `${PROVIDER_REFUSED} openai returned 403: Your organization must be verified to use the model` });
     expect(PROVIDER_REFUSED).toBe('The model provider refused this request, so trying again will not help:');
     // Not retried, but not a refusal the provider answered (an SDK failure with no answer): not called one.
     expect(modelProblem(new GatewayError('provider-error', 'anthropic call failed: Unexpected token in JSON', false))).toEqual({ status: 503, message: 'The model provider did not answer. Try again in a minute.' });
     // A 403 marked retryable is not a refusal either.
-    expect(modelProblem(new GatewayError('provider-error', 'openai returned 403: busy', true))?.status).toBe(503);
+    expect(modelProblem(Object.assign(new GatewayError('provider-error', 'openai returned 403: busy', true), { forbidden: true as const }))?.status).toBe(503);
+    // The mark decides, not the words: a message that only looks like a 403 is not a refusal.
+    expect(modelProblem(new GatewayError('provider-error', 'openai returned 403: no mark', false))?.status).toBe(503);
+    // A permission_error a stream sent after its 200 has no status in its words, and is still a refusal.
+    const streamed = Object.assign(new GatewayError('provider-error', 'anthropic call failed: {"type":"error","error":{"type":"permission_error"}}', false), { forbidden: true as const });
+    expect(modelProblem(streamed)?.message).toMatch(/^The model provider refused this request, so trying again will not help: anthropic call failed/);
   });
 
   it('reads an error made by another server bundle by its name, code and billed flag, not its class', () => {
