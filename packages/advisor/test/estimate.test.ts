@@ -1,4 +1,4 @@
-import { c1, c2, c3, c4, c5, c6a, c7, PROTOCOL_CONFIGS } from '@byway/catalog';
+import { c1, c2, c3, c4, c5, C5_CHAIN_LINKS, c6a, c7, PROTOCOL_CONFIGS } from '@byway/catalog';
 import type { CostEstimate } from '@byway/contracts';
 import { EXTRACT_FRAME_SECONDS_BOUND, FAL_EXTRACT_FRAME, maxCompletionCost, PRICES, priceFor, PROFILES } from '@byway/gateway';
 import { loop, oneShotGate, replicate, seq, step, withHash, type Node, type Recipe, type Step } from '@byway/recipe';
@@ -423,9 +423,10 @@ describe('the call counts the interpreter makes (B-152)', () => {
   it('C5’s anchor step makes shot 1’s still, checks it, and makes it again at most once where clips are made; without a video model a still per shot (F12 (b), F10 (b))', () => {
     // The owner's "Shot 1 only with video" (2026-10-31) and "Yes, check it first" (2026-10-30; asset.ts checkAnchor): one
     // still at the low end and two at the high, and its briefs and the check besides the build.
-    const anchor = step({ id: 'anchor-frames', role: 'asset', block: 'ASSET', actor: 'model', tier: 'mid', prompt: 'product.c5.anchor-frames', consumes: ['artifact'], produces: ['artifact', 'anchor'], writes: true, knobs: { slots: 3 } });
+    const anchor = step({ id: 'anchor-frames', role: 'asset', block: 'ASSET', actor: 'model', tier: 'mid', prompt: 'product.c5.anchor-frames', consumes: ['artifact'], produces: ['artifact', 'anchor'], writes: true });
     const media = withHash({ ...c4, medium: 'media', stages: [{ stage: 'D1', body: seq(draft, anchor) }] } as Recipe);
-    expect(estimateRecipe(media, ctx).images).toEqual({ low: 1, high: 2 });
+    // Shot 1's still and its remake, and a still for each shot past the chain: a six-shot storyboard's shots 5 and 6.
+    expect(estimateRecipe(media, ctx).images).toEqual({ low: 1, high: 2 + (STORYBOARD_SHOTS.high - C5_CHAIN_LINKS) });
     expect(calls(media)).toEqual({ low: 3, high: 3 });
     // No video model: no clip, so a still per shot, as the runner makes them, and no check.
     expect(estimateRecipe(media, { ...ctx, video: false }).images).toEqual({ low: STORYBOARD_SHOTS.low, high: STORYBOARD_SHOTS.high });

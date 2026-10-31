@@ -136,6 +136,28 @@ describe('result parsing', () => {
     expect(clipKind('image/svg+xml')).toBe('image');
     expect(clipKind(undefined)).toBe('link');
   });
+
+  it('shows a shot with a clip and no still by its clip alone, never as a frame still to come (F12 (b))', () => {
+    // With a video model C5 makes shot 1's still alone; the later shots have their clips.
+    const board = parseStoryboard(
+      JSON.stringify({
+        storyboard: [
+          { shot: 1, description: 'Open on hands', imagePrompt: 'hands', durationSec: 3, imageArtifactId: 'sha256:f1', clipArtifactId: 'sha256:c1' },
+          { shot: 2, description: 'The street', imagePrompt: 'street', durationSec: 4, clipArtifactId: 'sha256:c2' },
+          { shot: 3, description: 'The cup', imagePrompt: 'cup', durationSec: 3 },
+        ],
+        voiceover: 'Made slowly.',
+      }),
+    );
+    const html = renderToStaticMarkup(createElement(Storyboard, { board: board! }));
+    const shots = html.split('<li class="shot">').slice(1);
+    expect(shots[0]).toContain('<figcaption>Frame</figcaption>');
+    expect(shots[1]).not.toContain('No frame yet');
+    expect(shots[1]).not.toContain('<figcaption>Frame</figcaption>');
+    expect(shots[1]).toContain('<figcaption>Clip</figcaption>');
+    // A shot with neither still keeps its placeholder.
+    expect(shots[2]).toContain('No frame yet');
+  });
 });
 
 describe('text helpers', () => {

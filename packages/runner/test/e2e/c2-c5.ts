@@ -212,8 +212,9 @@ export function c2c5Scenarios(use: () => Harness): void {
         expect(sb.voiceover).toBe(script);
         expect(sb.headline).toBe(headline);
         expect(sb.tagline).toBe(tagline);
-        // With a video model only shot 1's still is made (F12 (b), the owner's "Shot 1 only with video"); every shot has its clip.
-        expect(sb.storyboard.filter((s) => s.imageArtifactId).map((s) => s.shot)).toEqual([1]);
+        // With a video model, shot 1's still and one for shot 5, past the chain's four links (F12 (b): "Shot 1 only with video",
+        // "Stills past the chain"); every shot has its clip, shot 5's from render-in-scene.
+        expect(sb.storyboard.filter((s) => s.imageArtifactId).map((s) => s.shot)).toEqual([1, 5]);
         expect(sb.storyboard.filter((s) => s.clipArtifactId).map((s) => s.shot)).toEqual([1, 2, 3, 4, 5]);
         // The launch gate's critic sees the later shots by their clips: it is shown a frame from the middle of shot 2's.
         const middle2 = sb.storyboard.find((s) => s.shot === 2)!.middleFrameArtifactId!;

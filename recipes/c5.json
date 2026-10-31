@@ -209,9 +209,6 @@
               "anchor"
             ],
             "writes": true,
-            "knobs": {
-              "slots": 3
-            },
             "keepsVoice": true
           },
           {
@@ -577,5 +574,5 @@
     "C5-DR7"
   ],
   "bank": true,
-  "hash": "sha256:70e995d6c9d258b9d69a9dc7dc8ee2e74975f6f03b086c214f899696f6a2e4b1"
+  "hash": "sha256:122e53ba100c8f31166354a70a5a4bde734650e02aae4db9bde0eca49d000ffb"
 }

@@ -142,7 +142,11 @@ export function checkBriefs(parsed: Parsed<ImageBrief[]>, plan: SlotPlan, earlie
     ...(value.missing.length ? [`There is none for ${value.missing.map((id) => slotName(plan, id)).join(', ')}.`] : []),
     ...(unknown.length ? [`${unknown.map((u) => JSON.stringify(u)).join(', ')} ${unknown.length > 1 ? 'are' : 'is'} not ${plan.medium === 'media' ? 'a shot' : 'an option'} of this work.`] : []),
   ];
-  return { ok: false, problem: `Write one brief per ${what}: ${plan.expected.join(', ')}. ${wrong.join(' ')}`, usable: value };
+  // A plan that makes some shots only (C5's anchor step) asks for those alone.
+  const names = plan.expected.map((id) => slotName(plan, id));
+  const only = names.length > 1 ? `one brief for each of ${names.slice(0, -1).join(', ')} and ${names.at(-1)}, and no others` : `one brief, for ${names[0]} only`;
+  const ask = plan.others?.length ? `Write ${only} (slot = the shot number).` : `Write one brief per ${what}: ${plan.expected.join(', ')}.`;
+  return { ok: false, problem: `${ask} ${wrong.join(' ')}`, usable: value };
 }
 
 /** How a slot is named to the person: "shot 2", "option C", "“hero”". */

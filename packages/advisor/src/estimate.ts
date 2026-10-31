@@ -2,6 +2,7 @@ import type { CostEstimate, Medium, ModelProfile, ProblemBrief, Tier } from '@by
 import { FAL_VIDEO_EXTRAS, PRICES, falVideoSeconds, maxCompletionCost, priceFor, textTokens, tokenCost, type PriceRow } from '@byway/gateway';
 import { GREAT_MIN_REFERENCES, problemSlot } from '@byway/prompts/pure';
 import { MEDIUM_FORMAT } from '@byway/protocol';
+import { C5_CHAIN_LINKS } from '@byway/catalog';
 import { asksSwaps, audioAsset, exitPoints, loopRounds, promptShows, type Gate, type Loop, type Node, type Recipe, type Seq, type Stage, type Step } from '@byway/recipe';
 import { AdvisorError } from './errors.ts';
 
@@ -337,11 +338,13 @@ function stepSpan(w: Walk, s: Step, set: Count): Span {
         if (audioAsset(s)) return NONE;
         // With no image model the runner skips the whole step, its briefs and integrate calls included (asset.ts).
         if (!w.priced.image) return NONE;
-        // C5's anchor frame where clips are made: one still, shot 1's, checked once before any clip and made again once
-        // at worst (F12 (b), F10 (b); asset.ts checkAnchor). With no video model, a still per shot, as below.
+        // C5's anchor frames where clips are made: shot 1's still, checked once before any clip and made again once at
+        // worst, and a still for each shot past the chain's links (C5_CHAIN_LINKS) at the high end (F12 (b), F10 (b);
+        // asset.ts). With no video model, a still per shot, as below.
         if (medium === 'media' && s.produces.includes('anchor') && makesClips(w)) {
+          const past = Math.max(0, STORYBOARD_SHOTS.high - C5_CHAIN_LINKS);
           const check = completion(w, 'check', 'big', count(1, 1), undefined);
-          return add(completion(w, 'asset.briefs', tierOf(s), count(1, 1), s), images(w, count(1, 1)), check, onlyHigh(images(w, count(1, 1))));
+          return add(completion(w, 'asset.briefs', tierOf(s), count(1, 1), s), images(w, count(1, 1 + past)), check, onlyHigh(images(w, count(1, 1))));
         }
         const slots = knobNumber(s, 'slots') ?? DEFAULT_SLOTS;
         // On options, a board for each chosen option, at most MOOD_BOARDS (the runner reads no slots knob there).

@@ -14,7 +14,7 @@ export { c1 } from './c1.ts';
 export { c2 } from './c2.ts';
 export { c3 } from './c3.ts';
 export { c4 } from './c4.ts';
-export { c5 } from './c5.ts';
+export { c5, C5_CHAIN_LINKS } from './c5.ts';
 export { c6 } from './c6.ts';
 export { c6a } from './c6a.ts';
 export { c7 } from './c7.ts';

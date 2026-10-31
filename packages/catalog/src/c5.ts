@@ -21,6 +21,14 @@ import {
 const KEEP = { keepsVoice: true } as const;
 
 /**
+ * The relay chain's links (03 C5: chains of 3–4 segments). C5's anchor step reads it too (the runner's asset step and the
+ * estimate): with a video model it makes shot 1's still, where the chain starts, and a still for each shot past the
+ * chain, which the protocol's storyboard may add "for frames" (the owner's "Stills past the chain", 2026-10-31,
+ * F12 (b)). Its prompt says "the first four"; a test holds them equal.
+ */
+export const C5_CHAIN_LINKS = 4;
+
+/**
  * C5 Media Relay (03 C5): specialist models are the production medium, and continuity comes from the handoff.
  *
  *   D1:: C2 > territories > ?H VISION(creative director: brief + shot list + style frames) > pick(H,1) concept
@@ -72,10 +80,10 @@ export const c5: Recipe = withHash({
     {
       stage: 'D2',
       body: seq(
-        asset('c5', 'anchor-frames', ['artifact'], ['artifact', 'anchor'], { writes: true, knobs: { slots: 3 }, ...KEEP }),
+        asset('c5', 'anchor-frames', ['artifact'], ['artifact', 'anchor'], { writes: true, ...KEEP }),
         relay(
           'shot-chain',
-          4,
+          C5_CHAIN_LINKS,
           seq(
             step({
               id: 'clip',
