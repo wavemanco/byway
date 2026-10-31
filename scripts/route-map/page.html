@@ -120,6 +120,11 @@ button.go { text-align: left; background: none; border: 0; padding: 0; cursor: p
 button.go:hover .t { text-decoration: underline; text-underline-offset: 3px; }
 .line .t { font-size: var(--s0); line-height: 1.35; overflow-wrap: anywhere; }
 .who { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+/* Which file holds a stop, on the routes that cross both, and when it is picked up. */
+.src { display: inline-block; font-family: var(--mono); font-size: 0.66rem; font-weight: 600; line-height: 1.35; padding: 0 5px; border-radius: 3px; margin-right: 6px; vertical-align: 1px; color: var(--ink); }
+.src-b { background: var(--chip); border: 1px solid var(--rule); }
+.src-p { background: color-mix(in srgb, var(--accent) 24%, var(--panel)); border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--panel)); }
+.trig { font-size: var(--s-1); color: var(--muted); line-height: 1.35; overflow-wrap: anywhere; }
 
 /* Cards and lists. */
 .grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); gap: 16px; }
@@ -303,23 +308,31 @@ window.DATA = /*DATA*/null;
     return h('span', { class: 'chip missing', title: 'No row has this ID' }, `${id} (no such row)`);
   }
 
-  // The two files, each a pane with the same views (the owner, 2026-10-30): the backlog's coding work and checklists,
-  // and the playbook's people, outside actions and milestones. Rows link across them; a row opens wherever it is named.
-  const TABS = [['routes', 'Routes'], ['land', 'Land now'], ['queue', 'Your queue'], ['waiting', 'Waiting on'], ['items', 'All open rows'], ['launch', 'Launch checklist'], ['review', 'Review checklist'], ['done', 'Done']];
+  // Three panes: the routes, which cross the two files (the owner, 2026-10-31), and each file's own lists (2026-10-30):
+  // the backlog's work in the repository and its checklists, the playbook's people, outside actions, budget and
+  // milestones. Rows link across them; a row opens wherever it is named.
+  const FILE_TABS = [['land', 'Land now'], ['queue', 'Your queue'], ['waiting', 'Waiting on'], ['items', 'All open rows'], ['launch', 'Launch checklist'], ['review', 'Review checklist'], ['done', 'Done']];
   const PANES = {
-    backlog: { heading: 'Where the backlog leads, and what stands in the way', tabs: TABS, noDone: 'The Done table has no entries.' },
-    playbook: { heading: 'What the playbook asks of people, and what it waits on', tabs: TABS.filter(([id]) => id !== 'launch' && id !== 'review'), noDone: 'No playbook row has closed yet.' },
+    routes: { heading: 'Where byway is going, and what stands in the way', tabs: [['routes', 'Routes']] },
+    backlog: { heading: 'What is left to build, and what it waits on', tabs: FILE_TABS, noDone: 'The Done table has no entries.' },
+    playbook: { heading: 'What the playbook asks of people, and what it waits on', tabs: FILE_TABS.filter(([id]) => id !== 'launch' && id !== 'review'), noDone: 'No playbook row has closed yet.' },
   };
-  let pane = 'backlog', P = D.panes.backlog, C = {};
-  // A view's link: the tab's name for the backlog, the pane's name before it for the playbook (#playbook-queue).
-  const token = (id) => pane === 'backlog' ? id : `${pane}-${id}`;
-  const parse = (t) => { const m = /^playbook-(.+)$/.exec(t || ''); return m ? ['playbook', m[1]] : ['backlog', t || '']; };
+  // The Routes pane is the whole map's: both files' open rows, counted together.
+  const ROUTES = { label: 'Routes', lede: D.lede, counts: D.counts };
+  const paneData = (k) => (k === 'routes' ? ROUTES : D.panes[k]);
+  let pane = 'routes', P = ROUTES, C = {};
+  // A view's link: #routes; the backlog's views by their names (#queue); the playbook's with its name before (#playbook-queue).
+  const token = (id) => (pane === 'playbook' ? `playbook-${id}` : id);
+  const parse = (t) => { if (t === 'routes') return ['routes', 'routes']; const m = /^playbook-(.+)$/.exec(t || ''); return m ? ['playbook', m[1]] : ['backlog', t || '']; };
   const rows = () => D.items.filter((i) => i.file === P.file);
+  const PLAYBOOK = 'docs/playbook.md';
+  const fileTag = (it) => (it.file === PLAYBOOK ? h('span', { class: 'src src-p' }, 'Playbook') : h('span', { class: 'src src-b' }, 'Backlog'));
 
   $('#asof').textContent = D.asOf;
   const panes = $('#panes');
-  for (const [k, p] of Object.entries(D.panes)) panes.append(h('button', { class: 'pane', role: 'tab', id: `pane-${k}`, 'aria-selected': 'false', 'aria-controls': 'views', type: 'button', onclick: () => { clearFilters(); setPane(k); show(PANES[k].tabs.some(([id]) => id === tabNow) ? tabNow : 'routes'); } },
-    h('b', {}, p.label), h('span', {}, `${p.counts.open} open rows${DOT}${p.file}`)));
+  const PANE_SUB = { routes: `${D.counts.open} open rows${DOT}both files`, backlog: `${D.panes.backlog.counts.open} open rows${DOT}${D.panes.backlog.file}`, playbook: `${D.panes.playbook.counts.open} open rows${DOT}${D.panes.playbook.file}` };
+  for (const k of ['routes', 'backlog', 'playbook']) panes.append(h('button', { class: 'pane', role: 'tab', id: `pane-${k}`, 'aria-selected': 'false', 'aria-controls': 'views', type: 'button', onclick: () => { clearFilters(); setPane(k); show(PANES[k].tabs.some(([id]) => id === tabNow) ? tabNow : PANES[k].tabs[0][0]); } },
+    h('b', {}, paneData(k).label), h('span', {}, PANE_SUB[k])));
 
   // Mile markers: two sums that add up, then subsets of the open rows, then (the backlog's) checklist lines.
   const filters = { q: '', status: '', priority: '', land: '', who: '', milestone: '', size: '', kind: '', trigger: '', waits: '', filed: '' };
@@ -331,23 +344,37 @@ window.DATA = /*DATA*/null;
   const strip = (title, ...kids) => h('section', { class: 'strip', 'aria-label': title }, h('p', { class: 'label' }, title), h('div', { class: 'eq' }, kids));
   const tabs = $('#tabs'), views = $('#views');
   let tabNow = 'routes';
+  const toPane = (k, tab) => () => { clearFilters(); setPane(k); show(tab); };
+  // The Routes pane's numbers: the open rows of both files, and how many the routes hold.
+  function routeMarkers() {
+    const firstLive = D.routes.find((r) => r.id === 'first-live-use');
+    const onRoute = new Set(D.routes.flatMap((r) => r.stops)).size;
+    const b = D.panes.backlog.counts.open, p = D.panes.playbook.counts.open;
+    return [
+      strip(`Open rows = the backlog's + the playbook's (${D.counts.open} = ${b} + ${p})`,
+        marker(D.counts.open, 'open rows', null), op('='), marker(b, 'in the backlog', toPane('backlog', 'items')), op('+'), marker(p, 'in the playbook', toPane('playbook', 'items'))),
+      strip(`The routes (a row with several milestones is on each of their routes)`,
+        marker(onRoute, 'open rows on a route', null), marker(firstLive ? firstLive.stops.length : 0, 'on the first-live-use route', null), marker(D.counts.noMilestone, 'on no route: no milestone, they wait for their trigger', null)),
+    ];
+  }
+  // A file's numbers: two sums that add up, then subsets of its open rows, then (the backlog's) checklist lines.
+  const fileMarkers = (k) => [
+    strip(`Rows in all = closed + open (${C.total} = ${C.closed} + ${C.open})`,
+      marker(C.total, 'rows in all', null), op('='), marker(C.closed, 'closed (the Done table)', go('done')), op('+'), marker(C.open, 'open (pending rows)', go('items'))),
+    strip(`The open rows by Land now (${C.open} = ${C.land.yes} + ${C.land.maybe} + ${C.land.no})`,
+      marker(C.open, 'open', go('items')), op('='), marker(C.land.yes, 'yes: an agent can land it now', go('land')), op('+'), marker(C.land.maybe, 'small choice: after one choice of yours', go('queue')), op('+'), marker(C.land.no, 'no: needs something not there today', go('waiting'))),
+    strip(`Subsets of the ${C.open} open rows (they overlap)`,
+      marker(C.needYou, 'need you (Who is owner or both)', go('items', { who: 'owner-or-both' })), marker(C.waitsOnRow, 'wait on another open row', go('items', { waits: 'yes' })), marker(C.noMilestone, 'no milestone (wait for their trigger)', go('items', { milestone: 'none' }))),
+    k === 'backlog' ? strip('Checklist lines (lines, not rows)',
+      marker(C.launchList.open, `Launch checklist lines open, of ${C.launchList.lines}`, go('launch')), marker(C.review.open, `Review checklist lines open, of ${C.review.lines}`, go('review'))) : null,
+  ];
   function setPane(k) {
-    pane = k; P = D.panes[k]; C = { ...P.counts, launchList: D.counts.launchList, review: D.counts.review };
+    pane = k; P = paneData(k); C = { ...P.counts, launchList: D.counts.launchList, review: D.counts.review };
     for (const b of panes.children) b.setAttribute('aria-selected', String(b.id === `pane-${k}`));
     $('#plate').textContent = `byway${DOT}${P.label.toLowerCase()}`;
     $('#heading').textContent = PANES[k].heading;
     $('#lede').textContent = P.lede;
-    const firstLive = P.routes.find((r) => r.id === 'first-live-use');
-    $('#markers').replaceChildren(...[
-      strip(`Rows in all = closed + open (${C.total} = ${C.closed} + ${C.open})`,
-        marker(C.total, 'rows in all', null), op('='), marker(C.closed, 'closed (the Done table)', go('done')), op('+'), marker(C.open, 'open (pending rows)', go('items'))),
-      strip(`The open rows by Land now (${C.open} = ${C.land.yes} + ${C.land.maybe} + ${C.land.no})`,
-        marker(C.open, 'open', go('items')), op('='), marker(C.land.yes, 'yes: an agent can land it now', go('land')), op('+'), marker(C.land.maybe, 'small choice: after one choice of yours', go('queue')), op('+'), marker(C.land.no, 'no: needs something not there today', go('waiting'))),
-      strip(`Subsets of the ${C.open} open rows (they overlap)`,
-        marker(C.needYou, 'need you (Who is owner or both)', go('items', { who: 'owner-or-both' })), marker(C.waitsOnRow, 'wait on another open row', go('items', { waits: 'yes' })), marker(firstLive ? firstLive.stops.length : 0, 'on the first-live-use route', go('routes')), marker(C.noMilestone, 'no milestone (wait for their trigger)', go('items', { milestone: 'none' }))),
-      k === 'backlog' ? strip('Checklist lines (lines, not rows)',
-        marker(C.launchList.open, `Launch checklist lines open, of ${C.launchList.lines}`, go('launch')), marker(C.review.open, `Review checklist lines open, of ${C.review.lines}`, go('review'))) : null,
-    ].filter(Boolean));
+    $('#markers').replaceChildren(...(k === 'routes' ? routeMarkers() : fileMarkers(k)).filter(Boolean));
     tabs.replaceChildren(...PANES[k].tabs.map(([id, name]) => h('button', { class: 'tab', role: 'tab', id: `tab-${id}`, 'aria-selected': 'false', 'aria-controls': 'views', type: 'button', onclick: () => { clearFilters(); show(id); } }, name)));
   }
   function show(id) {
@@ -411,13 +438,14 @@ window.DATA = /*DATA*/null;
   const RENDER = {
     routes() {
       const wrap = h('div', { class: 'section' });
-      wrap.append(h('p', { class: 'intro' }, `Each milestone is a route, and its stops are the open rows whose Milestone names it, each after the rows it waits on, the ones that can land first, then the higher priority. A row with several milestones is on each of their routes. The ${C.noMilestone} open rows whose Milestone is none wait only for their trigger and are on no route (Waiting on and All open rows have them). Select a stop to see its row.`), legend());
+      wrap.append(h('p', { class: 'intro' }, `Each milestone is a route, and its stops are the open rows of both files whose Milestone names it, each after the rows it waits on in either file, the ones that can land first, then the higher priority. Each stop says which file holds it and when it is picked up (its Trigger). A row with several milestones is on each of their routes. The ${C.noMilestone} open rows whose Milestone is none wait only for their trigger and are on no route (each file's Waiting on and All open rows have them). Select a stop to see its row.`), legend(), h('div', { class: 'legend' }, h('span', {}, fileTag({ file: 'docs/backlog.md' }), 'a row of docs/backlog.md: work in the repository'), h('span', {}, fileTag({ file: PLAYBOOK }), 'a row of docs/playbook.md: what happens outside it')));
       const grid = h('div', { class: 'routes' });
-      for (const r of P.routes) {
+      for (const r of D.routes) {
         const n = (k) => r.stops.filter((id) => items.get(id)?.landNow === k).length;
+        const inPlaybook = r.stops.filter((id) => items.get(id)?.file === PLAYBOOK).length;
         grid.append(h('section', { class: `route${r.id === 'first-live-use' ? ' primary' : ''}`, 'aria-labelledby': `r-${r.id}` },
-          h('header', {}, h('p', { class: 'when' }, r.id), h('h3', { id: `r-${r.id}` }, r.label), h('p', { class: 'status' }, r.stops.length ? `${r.stops.length} open rows: ${n('yes')} can land now, ${n('maybe')} wait on a small choice, ${n('no')} not now.` : 'No open row names this milestone.')),
-          r.stops.length ? h('ol', { class: 'line' }, r.stops.map((id) => { const it = items.get(id); const s = stateOf(it); return h('li', {}, stop(s), h('button', { class: 'go', type: 'button', onclick: () => openItem(id), 'aria-label': `${id}: ${plain(it.title)}. ${STATE[s][1]}. Priority: ${it.priority}. Who: ${it.who}` }, h('span', { class: 't' }, plain(it.title)), h('span', { class: 'who' }, prio(it), ` ${id}${DOT}${it.who}${DOT}${STATE[s][1].toLowerCase()}`))); })) : null));
+          h('header', {}, h('p', { class: 'when' }, r.id), h('h3', { id: `r-${r.id}` }, r.label), h('p', { class: 'status' }, r.stops.length ? `${r.stops.length} open rows (${r.stops.length - inPlaybook} in the backlog, ${inPlaybook} in the playbook): ${n('yes')} can land now, ${n('maybe')} wait on a small choice, ${n('no')} not now.` : 'No open row names this milestone.')),
+          r.stops.length ? h('ol', { class: 'line' }, r.stops.map((id) => { const it = items.get(id); const s = stateOf(it); const where = it.file === PLAYBOOK ? 'Playbook' : 'Backlog'; return h('li', {}, stop(s), h('button', { class: 'go', type: 'button', onclick: () => openItem(id), 'aria-label': `${id}: ${plain(it.title)}. ${where} row. ${STATE[s][1]}. Priority: ${it.priority}. Who: ${it.who}. When: ${plain(it.trigger)}` }, h('span', { class: 't' }, plain(it.title)), h('span', { class: 'who' }, prio(it), fileTag(it), ` ${id}${DOT}${it.who}${DOT}${STATE[s][1].toLowerCase()}`), h('span', { class: 'trig' }, `When: ${plain(it.trigger)}`))); })) : null));
       }
       wrap.append(grid);
       return wrap;
@@ -536,7 +564,7 @@ window.DATA = /*DATA*/null;
     },
   };
 
-  // The link's view, else the one last shown here, else the backlog's routes.
+  // The link's view, else the one last shown here, else the routes.
   const known = (t) => { const [k, id] = parse(t); return PANES[k].tabs.some(([x]) => x === id); };
   let start = (location.hash || '').slice(1);
   if (!known(start)) { try { start = localStorage.getItem('byway-routemap-tab') || ''; } catch { start = ''; } }
