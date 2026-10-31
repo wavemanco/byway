@@ -8,6 +8,7 @@ import {
   decidingQuestion,
   evidenceHeadline,
   fitText,
+  imageAvailability,
   profileNeeds,
   runStatusLabel,
   showAnswerNote,
@@ -115,6 +116,20 @@ describe('labels', () => {
     expect(profileNeeds({ usable: true, missing: [] })).toBeNull();
     expect(profileNeeds({ usable: false, missing: ['anthropic'] })).toBe('Needs a key for Anthropic');
     expect(profileNeeds({ usable: false, missing: ['anthropic', 'google', 'openai'] })).toBe('Needs a key for Anthropic, Google and OpenAI');
+  });
+
+  it('says whether a profile can make images, naming the key its image model needs (B-179)', () => {
+    const profile = (image?: ModelProfile['image']): ModelProfile => ({
+      id: 'p',
+      label: 'P',
+      tiers: { big: { provider: 'anthropic', model: 'a' }, mid: { provider: 'anthropic', model: 'b' } },
+      ...(image ? { image } : {}),
+    });
+    expect(imageAvailability({ images: true, profile: profile({ provider: 'google', model: 'i' }) })).toBe('Images: available');
+    expect(imageAvailability({ images: false, profile: profile({ provider: 'google', model: 'i' }) })).toBe('Images need a Google key');
+    expect(imageAvailability({ images: false, profile: profile({ provider: 'openai', model: 'i' }) })).toBe('Images need an OpenAI key');
+    expect(imageAvailability({ images: false, profile: profile() })).toBe('Images: not available');
+    expect(imageAvailability(undefined)).toBe('Images: not available');
   });
 
   it('describes recommendation fit', () => {

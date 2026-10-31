@@ -7,7 +7,7 @@
  *   profile's `otherFamily` model when its key is present; otherwise a fresh session of the same family reviews, and the
  *   step says so. In demo mode that is the demo profile's mock stand-in, which the gateway serves there.
  */
-import type { ModelRef, ProfileStatus } from '@byway/contracts';
+import type { ModelRef, ProfileStatus, ProviderId } from '@byway/contracts';
 import { DEMO_PROFILE_ID } from '@byway/gateway';
 import type { RunRef } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
@@ -23,6 +23,11 @@ function statusOf(deps: Pick<RunnerDeps, 'gateway'>, run: Pick<RunRef, 'profileI
 export function mediaStatus(deps: Pick<RunnerDeps, 'gateway'>, run: Pick<RunRef, 'profileId'>): Pick<ProfileStatus, 'images' | 'video'> {
   const status = statusOf(deps, run);
   return { images: status?.images ?? false, video: status?.video ?? false };
+}
+
+/** The provider the run's profile makes images with, or undefined when it has no image model (B-179's skip note). */
+export function imageProvider(deps: Pick<RunnerDeps, 'gateway'>, run: Pick<RunRef, 'profileId'>): ProviderId | undefined {
+  return statusOf(deps, run)?.profile.image?.provider;
 }
 
 /** The model a different-family critic runs on, or undefined when the profile has none usable (then: same family). */

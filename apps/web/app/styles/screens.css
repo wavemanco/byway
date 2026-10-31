@@ -738,6 +738,11 @@
   font-size: var(--text-sm);
 }
 
+.profile-images {
+  margin-top: var(--s-1);
+  font-size: var(--text-sm);
+}
+
 .inline-form {
   display: flex;
   align-items: center;

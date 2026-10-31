@@ -7,7 +7,7 @@
 import type { BudgetDetails, DeclineRecord, GatewayError, ProviderId } from '@byway/contracts';
 import type { Redactor } from './redact.ts';
 
-const PROVIDER_NAMES: Record<ProviderId, string> = { anthropic: 'Anthropic', openai: 'OpenAI', google: 'Google', openrouter: 'OpenRouter', fal: 'fal.ai', mock: 'The demo' };
+export const PROVIDER_NAMES: Record<ProviderId, string> = { anthropic: 'Anthropic', openai: 'OpenAI', google: 'Google', openrouter: 'OpenRouter', fal: 'fal.ai', mock: 'The demo' };
 /** A provider's name inside a sentence: the demo is no company, so it takes no capital there. */
 const nameInSentence = (p: ProviderId): string => (p === 'mock' ? 'the demo' : (PROVIDER_NAMES[p] ?? p));
 

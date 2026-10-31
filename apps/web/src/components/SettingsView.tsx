@@ -6,7 +6,7 @@ import { useId, useState } from 'react';
 import { formatUsd, parseBudgetInput } from '../view/format.ts';
 import type { PricesChecked } from '../view/prices.ts';
 import type { WorkspaceSpend } from '../view/history.ts';
-import { profileNeeds, videoAvailability } from '../view/labels.ts';
+import { imageAvailability, profileNeeds, videoAvailability } from '../view/labels.ts';
 import type { AnswerWaitGroup } from '../view/waits.ts';
 import { AnswerWaits } from './AnswerWaits.tsx';
 import { patch } from './api.ts';
@@ -159,7 +159,7 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
       <section className="settings-section" aria-labelledby={`${ids}-profile`}>
         <h2 id={`${ids}-profile`}>Model profile</h2>
         <p className="section-note">Which models do the AI steps. Judgment (critique, picking, checks) uses the larger model; drafting uses the other.</p>
-        <fieldset className="profiles" aria-describedby={`${ids}-video`}>
+        <fieldset className="profiles" aria-describedby={`${ids}-video ${ids}-images`}>
           <legend className="sr-only">Model profile</legend>
           {profiles.map(({ profile, ...status }) => {
             const needs = profileNeeds(status);
@@ -190,6 +190,10 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
         <p id={`${ids}-video`} className="profile-video">
           {videoAvailability(chosen)}
           {mode === 'demo' && !chosen?.video ? <span className="muted">. Demo runs show labelled placeholder clips instead.</span> : null}
+        </p>
+        <p id={`${ids}-images`} className="profile-images">
+          {imageAvailability(chosen)}
+          {mode === 'demo' && !chosen?.images ? <span className="muted">. Demo runs show sample images instead.</span> : null}
         </p>
       </section>
 

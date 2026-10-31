@@ -156,6 +156,9 @@ async function build(env: Record<string, string>): Promise<void> {
 const webPortInUseMessage = (port: number): string => `Port ${port} on 127.0.0.1 is already in use: is byway already running? Stop it, or choose another port with PORT.`;
 
 async function main(): Promise<void> {
+  // A runner that pipes this output and goes away (a killed `pnpm e2e`) leaves a broken pipe. A write to it must not end
+  // byway before its stop has stopped the engine: the engine would run on with nobody to stop it (B-124).
+  for (const out of [process.stdout, process.stderr]) out.on('error', () => undefined);
   const { mode, demo } = parseServeArgs(process.argv.slice(2), process.env);
   const webPort = port('PORT', 3000);
   const temporalPort = port('BYWAY_TEMPORAL_PORT', 7233);
@@ -304,6 +307,8 @@ async function main(): Promise<void> {
   });
   // Started by a runner that has gone away: nobody can stop us any more, so stop now.
   process.on('disconnect', () => void stop(0));
+  // Or one that went while byway was starting, before that listener was there (B-124).
+  if (process.connected === false) void stop(0);
   web.on('exit', (code) => {
     if (!stopping) {
       console.error(`next ${mode} exited${code === null ? '' : ` with code ${code}`}.`);
