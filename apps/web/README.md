@@ -29,7 +29,7 @@ Next sees it and is the only port listening.
 | `src/components/` | Client and shared components; `run/panels/` holds one "Your turn" panel per checkpoint kind |
 | `app/styles/` | Tokens (light and dark), base, components, screens, run |
 | `test/` | Unit tests (vitest), the guard tests (`guard-claims`, `guard-boundaries`, `guard-disabled`, `guard-sandbox`) and fixtures: the real services on a temp folder with a fake Runner |
-| `e2e/` | The Playwright suite: C1, C3, C4, C5 and C6a from a typed problem to the Result screen in demo mode, the keyboard and focus checks (`keyboard.spec.ts`), and Settings' switch for the page renderer's OS sandbox (`renderer-sandbox.spec.ts`) |
+| `e2e/` | The Playwright suite: C1, C3, C4, C5 and C6a from a typed problem to the Result screen in demo mode, the keyboard and focus checks (`keyboard.spec.ts`), Settings' switch for the page renderer's OS sandbox (`renderer-sandbox.spec.ts`), and Settings' answer waits (`answer-waits.spec.ts`) |
 
 ## How the app gets its services
 

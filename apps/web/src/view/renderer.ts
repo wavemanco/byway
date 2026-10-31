@@ -16,6 +16,9 @@ import type { RendererSettings } from '@byway/contracts';
 export const OFF_RISK =
   'With the sandbox off, a malicious page or image, together with a bug in Chromium, could run as you on this computer, next to your API keys and spending records. byway shows a banner on every screen while it is off.';
 
+/** Settings' second way out when the sandbox cannot start, in the words the owner chose on 2026-10-31 (D2 (b)). */
+export const SANDBOX_OFF_WAY_OUT = 'If none of this is possible, you can turn the sandbox off above; it asks first and says what that risks.';
+
 export interface RendererBanner {
   kind: 'off' | 'cannot-start';
   text: string;
@@ -88,7 +91,9 @@ export function rendererFindings(s: RendererSettings): { found: RendererFinding 
   if (!check) return { found: null, offerOn: false };
   if (check.sandbox === 'fails') {
     const found: RendererFinding = { tone: 'caution', text: "At byway's last start-up, the OS sandbox could not start on this computer.", ...(check.why ? { why: check.why } : {}), ...(check.fix ? { fix: check.fix } : {}) };
-    return { found: s.osSandbox ? { ...found, after: 'Until it can, byway cannot draw pages.' } : found, offerOn: false };
+    // The second way out is named here, beside the switch, and nowhere a run is refused (D2 (b), the owner's "One sentence
+    // in Settings (Recommended)", 2026-10-31; ADR-0105).
+    return { found: s.osSandbox ? { ...found, after: `Until it can, byway cannot draw pages. ${SANDBOX_OFF_WAY_OUT}` } : found, offerOn: false };
   }
   if (check.sandbox === 'starts') {
     return s.osSandbox

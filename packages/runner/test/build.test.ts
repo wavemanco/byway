@@ -40,9 +40,12 @@ import { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE, workflowBundleHash } from '..
  * owner's "Shot 1 only with video" and "Yes, check it first") change it on purpose, from bb8de3c5… to f5cb3d64…, though
  * no workflow code changed: @byway/prompts' id lists gain the two prompts the anchor step's activity calls, and the
  * bundle inlines those lists, which no workflow code reads, because esbuild cannot tell their `.map` and `Object.values`
- * calls are pure (backlog row B-176). Runs waiting under an older bundle end plainly (ADR-0078).
+ * calls are pure (backlog row B-176). B-176's fix marks them pure, so the bundle drops ids.ts whole, and with it the media and
+ * tell-domain lists of @byway/protocol it alone brought in, and changes once more,
+ * on purpose, from f5cb3d64… to 1d8d5728…, with no workflow code changed; after it, a new prompt id leaves the hash alone
+ * (the test "holds none of @byway/prompts' id lists" below). Runs waiting under an older bundle end plainly (ADR-0078).
  */
-const PINNED_WORKFLOW_HASH = 'f5cb3d649d2552972936e54215ce99825dad2e19d6463383ac0fc9df3e13c154';
+const PINNED_WORKFLOW_HASH = '1d8d5728c3f4d04af92e7926493d7b342e99e4913a1cac2c11199e94895c034d';
 
 describe('the workflow bundle', () => {
   it('inlines the workspace and leaves only the Temporal workflow SDK external', async () => {
@@ -76,10 +79,13 @@ describe('the workflow bundle', () => {
   /**
    * ADR-0092: the protocol's rule and exception tables are admission data the workflow never reads. @byway/protocol is
    * side-effect free, so they stay out of the bundle and editing them (a new rule such as ST12) does not change the
-   * bundle's hash, which would end every run open at the upgrade (ADR-0078).
+   * bundle's hash, which would end every run open at the upgrade (ADR-0078). Since B-176 the bundle takes nothing from
+   * it: its media and tell-domain lists came in only through @byway/prompts' id lists, which no workflow code reads.
    */
-  it('takes from @byway/protocol only what workflow code reads; rule and exception edits leave its hash alone', async () => {
+  it('takes from @byway/protocol only what workflow code reads, now nothing; rule and exception edits leave its hash alone', async () => {
     const out = (name: string) => DEFAULT_WORKFLOWS_BUNDLE.replace(/workflows\.js$/, `${name}-${process.pid}.js`);
+    /** The edits esbuild really made, so a file the build stopped reading cannot pass by not being edited. */
+    const made: string[] = [];
     /** Rewrite one @byway/protocol source as esbuild reads it. */
     const editing = (file: string, from: string, to: string): Plugin => ({
       name: 'edit-on-load',
@@ -87,6 +93,7 @@ describe('the workflow bundle', () => {
         b.onLoad({ filter: new RegExp(`protocol[\\\\/]src[\\\\/]${file}\\.ts$`) }, (args) => {
           const source = readFileSync(args.path, 'utf8');
           if (!source.includes(from)) throw new Error(`${file}.ts no longer holds ${JSON.stringify(from)}`);
+          made.push(file);
           return { contents: source.replace(from, to), loader: 'ts' };
         });
       },
@@ -95,19 +102,18 @@ describe('the workflow bundle', () => {
     // A rule added to the catalogue, as ST12 was, and an exception's wording changed.
     const rules = await buildWorkflows({ outfile: out('proto-rules'), plugins: [editing('rules', '  PR1: r(', "  ST99: r('ST12', 'invariant', 'A new rule', 'ADR-0092'),\n  PR1: r(")] });
     const exceptions = await buildWorkflows({ outfile: out('proto-exc'), plugins: [editing('exceptions', "families: ['C1'],", "families: ['C1', 'C1x'],")] });
-    // The control: a change to something workflow code does read moves the hash, so the edits above were really made.
-    const tells = await buildWorkflows({ outfile: out('proto-tells'), plugins: [editing('blocks', "'fiction',", "'fiction-x',")] });
     try {
       const code = readFileSync(base, 'utf8');
       const protocolFiles = [...code.matchAll(/\/\/ \.\.\/protocol\/src\/([\w-]+)\.ts/g)].map((m) => m[1]);
-      expect(new Set(protocolFiles)).toEqual(new Set(['blocks', 'media']));
+      expect(protocolFiles).toEqual([]);
       expect(code).not.toMatch(/\bvar RULES\b/);
       expect(code).not.toMatch(/\bvar EXCEPTIONS\b/);
+      // The control: both edits were really made in the builds whose hashes are compared.
+      expect(made).toEqual(['rules', 'exceptions']);
       expect(workflowBundleHash(rules)).toBe(workflowBundleHash(base));
       expect(workflowBundleHash(exceptions)).toBe(workflowBundleHash(base));
-      expect(workflowBundleHash(tells)).not.toBe(workflowBundleHash(base));
     } finally {
-      for (const f of [base, rules, exceptions, tells]) rmSync(f, { force: true });
+      for (const f of [base, rules, exceptions]) rmSync(f, { force: true });
     }
   }, 60_000);
 
@@ -142,6 +148,37 @@ describe('the workflow bundle', () => {
       expect(workflowBundleHash(read)).not.toBe(workflowBundleHash(base));
     } finally {
       for (const f of [base, table, rule, read]) rmSync(f, { force: true });
+    }
+  }, 60_000);
+
+  /**
+   * B-176: @byway/prompts' id lists are for the renderer, the catalog and the tests; no workflow code reads them. Marked
+   * pure, they stay out of the bundle, so a new prompt id an activity calls (as F12 (b)'s did) leaves its hash alone and
+   * ends no run open at the upgrade (ADR-0078).
+   */
+  it('holds none of @byway/prompts’ id lists: a new prompt id leaves its hash alone', async () => {
+    const out = (name: string) => DEFAULT_WORKFLOWS_BUNDLE.replace(/workflows\.js$/, `${name}-${process.pid}.js`);
+    /** Rewrite one @byway/prompts source as esbuild reads it. */
+    const editing = (file: string, from: string, to: string): Plugin => ({
+      name: 'edit-on-load',
+      setup(b) {
+        b.onLoad({ filter: new RegExp(`prompts[\\\\/]src[\\\\/]${file}\\.ts$`) }, (args) => {
+          const source = readFileSync(args.path, 'utf8');
+          if (!source.includes(from)) throw new Error(`${file}.ts no longer holds ${JSON.stringify(from)}`);
+          return { contents: source.replace(from, to), loader: 'ts' };
+        });
+      },
+    });
+    const base = await buildWorkflows({ outfile: out('ids-base') });
+    const added = await buildWorkflows({ outfile: out('ids-added'), plugins: [editing('ids', "'product.c5.shot-frames'] as const", "'product.c5.shot-frames', 'product.c5.new-check'] as const")] });
+    // The control: a change to something workflow code does read moves the hash, so the edit above was really made.
+    const read = await buildWorkflows({ outfile: out('ids-read'), plugins: [editing('slots', 'export function labelOf(i: number): string {', 'export function labelOf(i: number): string {\n  if (i < 0) return "";')] });
+    try {
+      expect(readFileSync(base, 'utf8')).not.toMatch(/\/\/ \.\.\/prompts\/src\/ids\.ts/);
+      expect(workflowBundleHash(added)).toBe(workflowBundleHash(base));
+      expect(workflowBundleHash(read)).not.toBe(workflowBundleHash(base));
+    } finally {
+      for (const f of [base, added, read]) rmSync(f, { force: true });
     }
   }, 60_000);
 

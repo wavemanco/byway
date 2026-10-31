@@ -109,18 +109,24 @@ export const ACTIVITY_PROMPT_IDS = ['product.c5.anchor-check', 'product.c5.shot-
 /** Advisor calls: the purpose and the prompt id are the same. */
 export const ADVISOR_PROMPT_IDS = ['advisor.intake', 'advisor.compose', 'advisor.compose.repair'] as const;
 
-/** Tell catalogs: one per medium (the default for a sweep) and one per catalog domain of 01 TELLS. */
-export const TELLS_MEDIUM_IDS = MEDIA.map((m) => `tells.${m}`);
-export const TELLS_DOMAIN_IDS = TELLS_DOMAINS.map((d) => `tells.${d}`);
+/*
+ * The lists below are built by calls, which esbuild keeps in the workflow bundle unless they are marked pure, though no
+ * workflow code reads them; kept, a new prompt id would change the bundle and end every run open at an upgrade
+ * (ADR-0078, B-176). build.test.ts holds them out.
+ */
 
-export const PROMPT_IDS: readonly string[] = [
-  ...RECIPE_PROMPT_IDS,
-  ...Object.values(HELPER_PROMPTS),
-  ...ACTIVITY_PROMPT_IDS,
-  ...ADVISOR_PROMPT_IDS,
-  ...TELLS_MEDIUM_IDS,
-  ...TELLS_DOMAIN_IDS,
-];
+/** Tell catalogs: one per medium (the default for a sweep) and one per catalog domain of 01 TELLS. */
+export const TELLS_MEDIUM_IDS = /* @__PURE__ */ MEDIA.map((m) => `tells.${m}`);
+export const TELLS_DOMAIN_IDS = /* @__PURE__ */ TELLS_DOMAINS.map((d) => `tells.${d}`);
+
+export const PROMPT_IDS: readonly string[] = /* @__PURE__ */ ([] as string[]).concat(
+  RECIPE_PROMPT_IDS,
+  /* @__PURE__ */ Object.values(HELPER_PROMPTS),
+  ACTIVITY_PROMPT_IDS,
+  ADVISOR_PROMPT_IDS,
+  TELLS_MEDIUM_IDS,
+  TELLS_DOMAIN_IDS,
+);
 
 /**
  * The catalogs a TELLS sweep's `tells` slot is filled from: the step's `knobs.domains` when it names them (C3 sweeps
