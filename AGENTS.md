@@ -12,9 +12,10 @@ after any context compression, and update its "Where we are" in the same commit 
 ADR-0107's Later note of that day). Keep its rows in the form its section "How this file is kept" sets (the format test
 holds it), and publish the Route Map only from it: `node scripts/route-map.ts <out.html>`.
 
-byway's records say what is decided and what is open: `docs/playbook.md` (people and roles, the outside actions and
-the standing duties), `docs/backlog.md` (open work, each row with its trigger) and `docs/adr/` (the decisions, with
-`docs/adr/README.md` as their index).
+byway's records say what is decided and what is open: `docs/playbook.md` (what happens outside the repository: people
+and roles, outside actions, the budget, the standing duties and the milestones), `docs/backlog.md` (work done in the
+repository, each row with its trigger; its opening states the line between the two) and `docs/adr/` (the decisions,
+with `docs/adr/README.md` as their index).
 
 The owner's working rules are in the ADRs, not in the playbook: ADR-0062 (code first: people, outside actions and
 pricing go to the playbook and the backlog), ADR-0107 (an adversarial check, in larger blocks, for a chunk of code

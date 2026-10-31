@@ -66,7 +66,8 @@ const BAD: { name: string; docs: () => Docs; rules: Rule[] }[] = [
   { name: 'a playbook row number with a letter', rules: ['id-form'], docs: () => inPlaybook('| PB-03 |', '| PB-03 (a) |') },
   { name: 'B alone as an umbrella code', rules: ['id-form'], docs: () => inBacklog('| B-006 |', '| B (a) |') },
   { name: 'a word of prose as an umbrella code', rules: ['id-form'], docs: () => inBacklog('| B-006 |', '| Owner (a) |') },
-  { name: "a backlog ID in the playbook", rules: ['id-form'], docs: () => inPlaybook('| PB-03 |', '| B-010 |') },
+  // A backlog ID in the playbook is a row that moved and kept its ID (2026-10-31); a number of the wrong length is still wrong.
+  { name: 'a playbook row number of three digits', rules: ['id-form'], docs: () => inPlaybook('| PB-03 |', '| PB-003 |') },
   { name: 'an ID used twice in one file', rules: ['id-unique'], docs: () => inBacklog('| B-007 |', '| B-001 |') },
   { name: 'an ID used in both files', rules: ['id-unique'], docs: () => inPlaybook('| D9 (a) | **Funding, patents and legal entity** (D9) |', '| D1 (a) | **Funding, patents and legal entity** (D1) |') },
   { name: 'an umbrella code its row does not name', rules: ['id-umbrella'], docs: () => inBacklog("| ST9 (a) | ST9's threshold", '| ST9 (a) | The threshold') },
@@ -129,7 +130,10 @@ describe('the backlog format, on fixtures', () => {
     for (const id of ['B-001 (a)', 'PB-02 (a)', 'B-12 (a)', 'B (a)', 'PB (a)', 'ADR-0064 (a)', 'ADR (a)', 'Owner (a)', 'Follow-up (a)', 'Compute-matched (a)', 'h1c (a)', 'F01', 'F01 (A)', 'F01(a)', 'F01 (abc)', 'B-7', 'B-BoN'])
       expect(idForm(BACKLOG, id), id).toBe(false);
     expect(idForm(BACKLOG, 'B-001')).toBe(true);
-    expect(idForm(PLAYBOOK, 'B-001')).toBe(false);
+    // A row that moved to the other file keeps its ID (2026-10-31), so either number form is a row ID of either file.
+    expect(idForm(PLAYBOOK, 'B-001')).toBe(true);
+    expect(idForm(BACKLOG, 'PB-01')).toBe(true);
+    expect(idForm(PLAYBOOK, 'B-01')).toBe(false);
     expect(idsIn('B-BoN (a), H1c (b) and F01 (a) wait on B-001 and PB-02; not B-Skill + B-BoN, a Follow-up (a), Owner (b), X-F01, nor the B-001 (a) that is B-001.')).toEqual(['B-BoN (a)', 'H1c (b)', 'F01 (a)', 'B-001', 'PB-02']);
     // A code inside a longer one is not read apart: X-F01 (a) is not F01 (a).
     expect(idsIn('Only X-F01 (a).')).toEqual(['X-F01 (a)']);

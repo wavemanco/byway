@@ -103,9 +103,12 @@ const ID_IN_TEXT = new RegExp(String.raw`(?<![\w-])(?:B-\d{3}|PB-\d{2}|${CODE} \
 
 export const idsIn = (text: string): string[] => [...new Set(text.match(ID_IN_TEXT) ?? [])];
 
-/** Whether `id` has the form of a row ID of `file`. */
+/**
+ * Whether `id` has the form of a row ID of `file`: a new row takes its file's form, and a row that moved to the other file
+ * keeps its ID, so either number form is a row ID of either file (the owner's "Keep its ID (Recommended)", 2026-10-31).
+ */
 export function idForm(file: DocFile, id: string): boolean {
-  if (ID_FORM[file].test(id)) return true;
+  if (ID_FORM[file].test(id) || ID_FORM[file === BACKLOG ? PLAYBOOK : BACKLOG].test(id)) return true;
   const code = UMBRELLA_ID.exec(id)?.groups?.code;
   return code !== undefined && isUmbrellaCode(code);
 }
@@ -224,7 +227,7 @@ const isReview = (s: string) => s.startsWith('Review checklist');
 const isDone = (s: string) => s.startsWith('Done since');
 // The section that states the format itself: its table lists the columns, not pending rows.
 const isFormat = (s: string) => s.startsWith('How this file is kept');
-const PLAYBOOK_PENDING = ['1. People and roles', '2. Outside actions', '3. Milestones'];
+const PLAYBOOK_PENDING = ['1. People and roles', '2. Outside actions', '3. Milestones', '4. Budget'];
 
 /** Whether a `##` section of `file` holds pending rows (the backlog format's "Where pending items live"). */
 export function pendingSection(file: DocFile, section: string): boolean {
