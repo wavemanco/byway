@@ -33,8 +33,9 @@ test("Settings: a model's answer wait saves at once, is announced, and is still 
   const saved = page.waitForRequest((req) => new URL(req.url()).pathname === '/api/waits' && req.method() === 'PATCH');
   await select.selectOption(String(to));
   const sent = (await saved).postDataJSON() as { provider: string; model: string; minutes: number };
+  // Kept before any check, so the wait is put back whatever fails next.
+  changed = { provider: sent.provider, model: sent.model, minutes: before };
   expect(sent).toMatchObject({ model, minutes: to });
-  changed = { provider: sent.provider, model, minutes: before };
 
   await expect(section.locator('p[role="status"]')).toHaveText(`${model} now waits ${to} minutes, from its next call.`);
   await expect(select).toHaveValue(String(to));
