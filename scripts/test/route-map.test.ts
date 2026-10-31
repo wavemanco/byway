@@ -134,12 +134,6 @@ function holds(D: RouteMapData, docs: Docs) {
     expect(p.counts.total).toBe(p.counts.closed + p.counts.open);
     expect(p.counts.open).toBe(D.items.filter((i) => i.file === p.file).length);
     expect(p.counts.closed).toBe(p.done.length);
-    expect(p.routes.map((r) => r.id)).toEqual(D.routes.map((r) => r.id));
-    for (const r of p.routes) {
-      expect([...r.stops].sort(), r.id).toEqual(mine(D.routes.find((x) => x.id === r.id)!.stops).sort());
-      const at = new Map(r.stops.map((id, k) => [id, k]));
-      for (const id of r.stops) for (const w of items.get(id)!.waitsOn) if (at.has(w) && w !== id) expect(at.get(w)!, `${w} before ${id} on ${r.id}`).toBeLessThan(at.get(id)!);
-    }
     expect(p.landNow.flatMap((g) => g.ids)).toEqual(mine(D.landNow.flatMap((g) => g.ids)));
     expect(p.queue).toEqual({ smallChoice: mine(D.queue.smallChoice), needYou: mine(D.queue.needYou) });
     expect(p.waiting.flatMap((w) => w.ids).sort()).toEqual(mine(D.waiting.flatMap((w) => w.ids)).sort());
@@ -153,7 +147,7 @@ function holds(D: RouteMapData, docs: Docs) {
  * and the text of every view, so a script error on some data, which would leave the page blank, fails here. It shows
  * the pane `pane` first, as a click on its button would.
  */
-function renderAll(html: string, pane: 'backlog' | 'playbook' = 'backlog'): { opened: Set<string>; text: Map<string, string>; filtered: Map<string, string>; table: string[]; drawer: Map<string, string>; errors: string[]; markers: string; went: { n: string; label: string; tab: string; view: string }[]; header: string } {
+function renderAll(html: string, pane: 'routes' | 'backlog' | 'playbook' = 'backlog'): { opened: Set<string>; text: Map<string, string>; filtered: Map<string, string>; table: string[]; drawer: Map<string, string>; errors: string[]; markers: string; went: { n: string; label: string; tab: string; view: string }[]; header: string } {
   type Node = El | { nodeType: 3; data: string };
   class El {
     nodeType = 1;
@@ -203,6 +197,9 @@ function renderAll(html: string, pane: 'backlog' | 'playbook' = 'backlog'): { op
   const button = byId.get('panes')!.children.find((b) => b.id === `pane-${pane}`);
   if (!button) throw new Error(`no button for the pane ${pane}`);
   button.fire('click');
+  // The header and the markers as the pane shows them, before any marker switches to another pane.
+  const markersText = byId.get('markers')!.textContent;
+  const header = ['panes', 'plate', 'heading', 'lede'].map((id) => byId.get(id)!.textContent).join(' | ');
   const text = new Map<string, string>();
   // The view after each select is set to each of its options, by "<label>=<value>".
   const filtered = new Map<string, string>();
@@ -229,13 +226,12 @@ function renderAll(html: string, pane: 'backlog' | 'playbook' = 'backlog'): { op
   for (const m of markers)
     try {
       m.fire('click');
-      const tab = tabs.find((t) => t.attrs['aria-selected'] === 'true')?.id ?? '';
+      const tab = byId.get('tabs')!.children.find((t) => t.attrs['aria-selected'] === 'true')?.id ?? '';
       went.push({ n: m.children[0]!.textContent, label: m.children[1]!.textContent, tab, view: views.textContent });
     } catch (err) {
       errors.push(`marker: ${String(err)}`);
     }
-  const header = ['panes', 'plate', 'heading', 'lede'].map((id) => byId.get(id)!.textContent).join(' | ');
-  return { opened, text, filtered, table, drawer, errors, markers: byId.get('markers')!.textContent, went, header };
+  return { opened, text, filtered, table, drawer, errors, markers: markersText, went, header };
 }
 
 describe('the Route Map, on the format fixtures', () => {
@@ -308,7 +304,7 @@ describe('the Route Map, on the format fixtures', () => {
     for (const i of mine) expect(opened.has(i.id), i.id).toBe(true);
     for (const id of opened) expect(mine.some((i) => i.id === id) || named.has(id), id).toBe(true);
     expect([...new Set([...opened, ...renderAll(html, 'playbook').opened])].sort()).toEqual(D.items.map((i) => i.id).sort());
-    expect([...text.keys()]).toEqual(['tab-routes', 'tab-land', 'tab-queue', 'tab-waiting', 'tab-items', 'tab-launch', 'tab-review', 'tab-done']);
+    expect([...text.keys()]).toEqual(['tab-land', 'tab-queue', 'tab-waiting', 'tab-items', 'tab-launch', 'tab-review', 'tab-done']);
     expect(markers).toContain('Rows in all = closed + open (16 = 3 + 13)');
     expect(markers).toContain('The open rows by Land now (13 = 2 + 2 + 9)');
     expect(text.get('tab-items')).toContain('13 of the 13 open rows');
@@ -330,7 +326,6 @@ describe('the Route Map, on the format fixtures', () => {
       ['no: needs something not there today', '9', 'tab-waiting'],
       ['need you (Who is owner or both)', '4', 'tab-items'],
       ['wait on another open row', '5', 'tab-items'],
-      ['on the first-live-use route', '4', 'tab-routes'],
       ['no milestone (wait for their trigger)', '1', 'tab-items'],
       ['Launch checklist lines open, of 4', '3', 'tab-launch'],
       ['Review checklist lines open, of 4', '3', 'tab-review'],
@@ -363,7 +358,7 @@ describe('the Route Map, on the format fixtures', () => {
     // The drawer names both, and every view shows each row's priority.
     expect(drawer.get('PB-03')).toContain('Prioritylow');
     expect(drawer.get('PB-03')).toContain('Trigger typedate');
-    expect(text.get('tab-routes')).toContain('high B-001');
+    expect(renderAll(html, 'routes').text.get('tab-routes')).toContain('highBacklog B-001');
     expect(text.get('tab-land')).toContain('B-001highAn adapter error');
     expect(text.get('tab-queue')).toContain('high F01 (a)');
     expect(text.get('tab-waiting')).toContain('D1 (a)mediumD1 Baseline set');
@@ -375,7 +370,7 @@ describe('the Route Map, on the format fixtures', () => {
     expect(header).toContain('Backlog13 open rows · docs/backlog.mdPlaybook5 open rows · docs/playbook.md');
     expect(header).toContain('byway · playbook');
     expect(header).toContain('Of its 5 open rows, 0 can land now, 1 wait on one small choice of yours and 4 need something');
-    expect([...text.keys()]).toEqual(['tab-routes', 'tab-land', 'tab-queue', 'tab-waiting', 'tab-items', 'tab-done']);
+    expect([...text.keys()]).toEqual(['tab-land', 'tab-queue', 'tab-waiting', 'tab-items', 'tab-done']);
     expect(markers).toContain('Rows in all = closed + open (5 = 0 + 5)');
     expect(markers).toContain('The open rows by Land now (5 = 0 + 1 + 4)');
     expect(markers).not.toContain('Checklist lines');
@@ -388,7 +383,6 @@ describe('the Route Map, on the format fixtures', () => {
       ['no: needs something not there today', '4', 'tab-waiting'],
       ['need you (Who is owner or both)', '5', 'tab-items'],
       ['wait on another open row', '1', 'tab-items'],
-      ['on the first-live-use route', '1', 'tab-routes'],
       ['no milestone (wait for their trigger)', '0', 'tab-items'],
     ]);
     for (const w of went.filter((x) => x.tab === 'tab-items')) expect(w.view, w.label).toContain(`${w.n} of the 5 open rows`);
@@ -399,6 +393,27 @@ describe('the Route Map, on the format fixtures', () => {
     // Its rows, and the backlog's rows they wait on or that wait on them (B-003 waits on PB-02).
     for (const id of ['PB-01', 'PB-02', 'PB-03', 'D9 (a)', 'D24 (a)', 'B-003']) expect(opened.has(id), id).toBe(true);
     expect(text.get('tab-items')).toContain('Trigger typeTrigger type: owner-decisionTrigger type: milestoneTrigger type: dateWaits on');
+  });
+
+  it('has a Routes pane across both files: each stop tagged with its file and when it is picked up, after what it waits on in either file (the owner, 2026-10-31)', () => {
+    const { text, errors, markers, went, header, opened } = renderAll(html, 'routes');
+    expect(errors).toEqual([]);
+    expect([...text.keys()]).toEqual(['tab-routes']);
+    expect(header).toContain('Routes18 open rows · both filesBacklog13 open rows · docs/backlog.mdPlaybook5 open rows · docs/playbook.md');
+    expect(header).toContain('byway · routes');
+    expect(markers).toContain("Open rows = the backlog's + the playbook's (18 = 13 + 5)");
+    // Each file's count opens that file's pane, at All open rows.
+    expect(went.map((w) => [w.label, w.n, w.tab])).toEqual([['in the backlog', '13', 'tab-items'], ['in the playbook', '5', 'tab-items']]);
+    expect(went[0]!.view).toContain('13 of the 13 open rows');
+    expect(went[1]!.view).toContain('5 of the 5 open rows');
+    const routes = text.get('tab-routes')!;
+    // first-live-use: B-003 (backlog) waits on PB-02 (playbook), so it comes after it, and each says its file and when.
+    expect(routes).toContain('5 open rows (4 in the backlog, 1 in the playbook)');
+    const at = (s: string) => routes.indexOf(s);
+    for (const s of ['highBacklog B-001', 'highPlaybook PB-02', 'highBacklog B-003', 'When: Before the first live run (Launch checklist).']) expect(at(s), s).toBeGreaterThan(-1);
+    expect(at('highPlaybook PB-02')).toBeLessThan(at('highBacklog B-003'));
+    // Every row on a route opens from it, whichever file holds it.
+    for (const r of D.routes) for (const id of r.stops) expect(opened.has(id), id).toBe(true);
   });
 
   it("puts a closed playbook row's entry in the playbook's pane", () => {
