@@ -22,7 +22,7 @@ import { GatewayError, type CompletionRequest, type CompletionResult, type Decli
 import { PROFILES, waitedError, waitedWords } from '@byway/gateway';
 import { createPromptRenderer } from '@byway/prompts';
 import { steps } from '@byway/recipe';
-import { adviceNote, assetStep, NO_BRIEF_NOTE, NO_CHOSEN_NOTE, NO_IMAGE_CHOSEN_NOTE, NO_IMAGE_MADE_NOTE, NO_SLOTS_NOTE } from '../src/activities/asset.ts';
+import { adviceNote, ANCHOR_CLEAN_NOTE, ANCHOR_UNREAD_NOTE, anchorKeptNote, anchorRemadeNote, assetStep, NO_BRIEF_NOTE, NO_CHOSEN_NOTE, NO_IMAGE_CHOSEN_NOTE, NO_IMAGE_MADE_NOTE, NO_SLOTS_NOTE, SHOT_FRAMES_PROMPT } from '../src/activities/asset.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { ContractMissed, StepError, toFailure } from '../src/activities/failures.ts';
 import { memoGateway, PaidNotKept } from '../src/activities/memo.ts';
@@ -152,7 +152,7 @@ async function runAsset(medium: Medium, step: StepSpec, artifactText: string, ga
 
 const json = async (id: string) => JSON.parse(await store.artifacts.getText(id)) as { storyboard?: { shot: number; imageArtifactId?: string }[]; options?: { imageArtifactId?: string }[] };
 
-describe('one slot identity on media (C5 anchor frames)', () => {
+describe('one slot identity on media (a still per storyboard shot)', () => {
   const frames = perShot;
 
   it('a shot number with spaces around it attaches to its shot', async () => {
@@ -172,33 +172,35 @@ describe('one slot identity on media (C5 anchor frames)', () => {
     expect((await json((result as AssetResult).artifactId!)).storyboard![0]!.imageArtifactId).toBeDefined();
   });
 
-  it('a brief list missing shot 1 is asked again before anything is bought; still missing, the rest is bought, the note names shot 1, and there is no anchor', async () => {
+  it('a brief list missing shot 1 is asked again before anything is bought; still missing, the rest is bought and the note names shot 1', async () => {
     const g = fake([briefsOf('2', '3'), briefsOf('2', '3')]);
     const { result, notes, skipped } = await runAsset('media', frames(), storyboard(), g);
     const briefCalls = g.completions.filter((c) => c.purpose === 'asset.briefs:media');
     expect(briefCalls).toHaveLength(2);
     expect(JSON.stringify(briefCalls[1]!.messages)).toMatch(/shot 1/);
     expect(g.images).toHaveLength(2);
+    // A step that makes no anchor says nothing of one (C5's anchor step does: see below).
     expect((result as AssetResult).anchor).toBeUndefined();
     expect(skipped).toEqual([undefined]);
-    expect(notes[0]).toMatch(/shot 1/);
-    expect(notes[0]).toMatch(/No frame was made for shot 1, so the video chain has no start frame\./);
+    expect(notes).toEqual(['Not every image was made: no image brief was written for shot 1.']);
   });
 
-  it('when shot 1’s image is refused on both tries, there is no anchor and the note names shot 1', async () => {
+  it('when shot 1’s image is refused on both tries (shot 1 gets at least two), the note names shot 1', async () => {
     const g = fake([briefsOf('1', '2', '3')], (req) => req.prompt.endsWith('for 1'));
-    const { result, notes } = await runAsset('media', frames(), storyboard(), g);
+    const { notes } = await runAsset('media', frames(), storyboard(), g);
     expect(g.images.filter((r) => r.prompt.endsWith('for 1'))).toHaveLength(2);
-    expect((result as AssetResult).anchor).toBeUndefined();
-    expect(notes[0]).toMatch(/the image for shot 1 could not be made/);
-    expect(notes[0]).toMatch(/No frame was made for shot 1/);
+    expect(notes).toEqual(['Not every image was made: the image for shot 1 could not be made.']);
   });
 
-  it('out of order, the anchor is still shot 1’s frame', async () => {
+  it('out of order, each image still attaches to its own shot', async () => {
     const g = fake([briefsOf('3', '1', '2')]);
-    const { result } = await runAsset('media', frames(), storyboard(), g);
+    const { result, run } = await runAsset('media', frames(), storyboard(), g);
     const sb = await json((result as AssetResult).artifactId!);
-    expect((result as AssetResult).anchor).toBe(sb.storyboard!.find((s) => s.shot === 1)!.imageArtifactId);
+    // Bought in the plan's order (shots by number), attached by shot number.
+    expect(g.images.map((r) => r.prompt)).toEqual(['An image for 1', 'An image for 2', 'An image for 3']);
+    const announced = (await store.events(run.runId)).filter((e) => e.type === 'artifact');
+    const imageOf = (alt: string) => announced.find((e) => e.data.label === `Image: ${alt}`)!.data.artifactId as string;
+    expect(sb.storyboard!.map((s) => s.imageArtifactId)).toEqual([imageOf('Alt 1'), imageOf('Alt 2'), imageOf('Alt 3')]);
   });
 
   it('a storyboard that cannot be read fails the step before any call', async () => {
@@ -223,6 +225,164 @@ describe('one slot identity on media (C5 anchor frames)', () => {
     expect(result).toMatchObject({ skipped: true });
     expect(skipped).toEqual([true]);
     expect(notes).toEqual([`${NO_BRIEF_NOTE} Briefs for “4” and “5”, which the storyboard has no shots for, were left out.`]);
+  });
+});
+
+/**
+ * C5's anchor step (the owner's "Shot 1 only" and "Yes, check it first", 2026-10-30; F12 (b), F10 (b); ADR-0090's Later
+ * notes): it makes shot 1's still alone, the frame the relay chain starts from, checks it for objective defects before any
+ * clip, and makes it again once, naming them, when the check finds any.
+ */
+describe('C5’s anchor step: shot 1’s still only, checked before any clip', () => {
+  const anchorStep = () => spec('c5', 'anchor-frames');
+  const checks = (g: Fake) => g.completions.filter((c) => c.purpose === 'check:media');
+  const imageIn = (c: CompletionRequest) => c.messages.flatMap((m) => m.content).flatMap((p) => (p.type === 'image' ? [p.artifactId] : []));
+  const DEFECTS = '- The cup has six handles.\n- The label text is garbled.';
+  const NAMED = 'The cup has six handles; The label text is garbled';
+  beforeEach(() => {
+    anchorChecks = [];
+  });
+
+  it('buys shot 1’s still alone, whatever else the answer names, and says nothing of the rest; it is the anchor, on shot 1, and the check saw it', async () => {
+    const g = fake([briefsOf('1', '2', '3')]);
+    const { result, notes, skipped } = await runAsset('media', anchorStep(), storyboard(), g);
+    expect(g.completions.filter((c) => c.purpose === 'asset.briefs:media')).toHaveLength(1);
+    expect(g.images.map((r) => r.prompt)).toEqual(['An image for 1']);
+    const r = result as AssetResult;
+    const sb = await json(r.artifactId!);
+    expect(r.anchor).toBeDefined();
+    expect(sb.storyboard!.map((s) => s.imageArtifactId)).toEqual([r.anchor, undefined, undefined]);
+    expect(checks(g)).toHaveLength(1);
+    expect(imageIn(checks(g)[0]!)).toEqual([r.anchor]);
+    // Shown what shot 1 should be, never the storyboard's source.
+    expect(JSON.stringify(checks(g)[0]!.messages)).toContain('Shot 1: Shot 1 shows the cup');
+    expect(JSON.stringify(checks(g)[0]!.messages)).not.toContain('Less waste.');
+    expect(skipped).toEqual([undefined]);
+    expect(notes).toEqual([ANCHOR_CLEAN_NOTE]);
+    // The brief, the still and the check.
+    expect(r.costUsd).toBeCloseTo(0.01 + 0.04 + 0.01, 9);
+  });
+
+  it('its prompt asks for shot 1’s still alone', () => {
+    const rendered = library.render('product.c5.anchor-frames', { medium: 'media', artifact: storyboard() });
+    expect(rendered.images).toBe('each');
+    expect(rendered.user).toContain('Write one image brief, for shot 1');
+  });
+
+  it('out of order, it is still shot 1’s still', async () => {
+    const g = fake([briefsOf('3', '1', '2')]);
+    const { result, notes } = await runAsset('media', anchorStep(), storyboard(), g);
+    expect(g.images.map((r) => r.prompt)).toEqual(['An image for 1']);
+    expect((await json((result as AssetResult).artifactId!)).storyboard![0]!.imageArtifactId).toBe((result as AssetResult).anchor);
+    expect(notes).toEqual([ANCHOR_CLEAN_NOTE]);
+  });
+
+  it('an answer without shot 1 is asked again, naming it; still without it, nothing is bought or checked, and no shot is said to be missing from the storyboard', async () => {
+    const g = fake([briefsOf('2', '3'), briefsOf('2', '3')]);
+    const { result, notes, skipped } = await runAsset('media', anchorStep(), storyboard(), g);
+    const briefCalls = g.completions.filter((c) => c.purpose === 'asset.briefs:media');
+    expect(briefCalls).toHaveLength(2);
+    expect(JSON.stringify(briefCalls[1]!.messages)).toContain('There is none for shot 1.');
+    expect(JSON.stringify(briefCalls[1]!.messages)).not.toMatch(/is not a shot of this work/);
+    expect(g.images).toHaveLength(0);
+    expect(checks(g)).toHaveLength(0);
+    expect(result).toMatchObject({ skipped: true });
+    expect(skipped).toEqual([true]);
+    expect(notes).toEqual([NO_BRIEF_NOTE]);
+  });
+
+  it('a brief for a shot the storyboard does not have is still named as left out', async () => {
+    const g = fake([briefsOf('1', '2', '9')]);
+    const { notes } = await runAsset('media', anchorStep(), storyboard(), g);
+    expect(g.images).toHaveLength(1);
+    expect(notes).toEqual([`${ANCHOR_CLEAN_NOTE} The brief for “9”, which the storyboard has no shot for, was left out.`]);
+  });
+
+  it('when its still is refused on both tries, nothing is checked, there is no anchor, and the step is skipped', async () => {
+    const g = fake([briefsOf('1')], () => true);
+    const { result, notes } = await runAsset('media', anchorStep(), storyboard(), g);
+    expect(g.images).toHaveLength(2);
+    expect(checks(g)).toHaveLength(0);
+    expect(result).toMatchObject({ skipped: true });
+    expect((result as AssetResult).anchor).toBeUndefined();
+    expect(notes).toEqual([NO_IMAGE_MADE_NOTE]);
+  });
+
+  it('defects: made again once, with the defects named; the new still is the anchor and shot 1’s, the first stays among the step’s outputs', async () => {
+    anchorChecks = [DEFECTS];
+    const g = fake([briefsOf('1', '2', '3')]);
+    const { result, notes, run } = await runAsset('media', anchorStep(), storyboard(), g);
+    expect(g.images.map((r) => r.prompt)).toEqual(['An image for 1', `An image for 1\n\nAvoid these defects, which an earlier frame had: ${NAMED}`]);
+    expect(checks(g)).toHaveLength(1);
+    const r = result as AssetResult;
+    // Both are announced (the events are kept once per name), the second as made again.
+    const events = (await store.events(run.runId)).filter((e) => e.type === 'artifact');
+    expect(events.map((e) => e.data.label)).toEqual(['Image: Alt 1', 'Image (made again): Alt 1', 'Custom imagery']);
+    const announced = events.slice(0, 2).map((e) => e.data.artifactId as string);
+    expect(new Set(announced).size).toBe(2);
+    expect(r.anchor).toBe(announced[1]);
+    expect((await json(r.artifactId!)).storyboard![0]!.imageArtifactId).toBe(announced[1]);
+    const finished = (await store.events(run.runId)).filter((e) => e.type === 'step-finished');
+    expect(finished[0]!.data.outputArtifactIds).toEqual([announced[0], announced[1], r.artifactId]);
+    expect(notes).toEqual([anchorRemadeNote(NAMED)]);
+    // The brief, two stills and the check.
+    expect(r.costUsd).toBeCloseTo(0.01 + 0.04 * 2 + 0.01, 9);
+  });
+
+  it('defects, and the still made again is refused: the first is used, and the note says so', async () => {
+    anchorChecks = [DEFECTS];
+    const g = fake([briefsOf('1')], (req) => req.prompt.includes('Avoid these defects'));
+    const { result, notes, run } = await runAsset('media', anchorStep(), storyboard(), g);
+    // One more still, once: the step has no tries-per-slot knob.
+    expect(g.images).toHaveLength(2);
+    const first = (await store.events(run.runId)).find((e) => e.type === 'artifact' && e.data.label === 'Image: Alt 1')!.data.artifactId as string;
+    expect((result as AssetResult).anchor).toBe(first);
+    expect(notes).toEqual([anchorKeptNote(NAMED)]);
+  });
+
+  it('a check whose answer cannot be read, twice, leaves the still as it was made and does not fail the step', async () => {
+    anchorChecks = ['It looks fine to me.', 'Probably fine.'];
+    const g = fake([briefsOf('1')]);
+    const { result, notes } = await runAsset('media', anchorStep(), storyboard(), g);
+    expect(checks(g)).toHaveLength(2);
+    expect(g.images).toHaveLength(1);
+    const r = result as AssetResult;
+    expect(r.anchor).toBeDefined();
+    expect(notes).toEqual([ANCHOR_UNREAD_NOTE]);
+    // The brief, the still and both check answers.
+    expect(r.costUsd).toBeCloseTo(0.01 + 0.04 + 0.01 * 2, 9);
+  });
+
+  it('with no video model, a still per shot from the per-shot prompt, as before: they are the ad’s pictures, and nothing is checked (the owner’s “Shot 1 only with video”)', async () => {
+    const g = fake([briefsOf('1', '2', '3')]);
+    g.profileStatus = () => [{ profile: PROFILES.find((p) => p.id === 'demo')!, usable: true, missing: [], images: true, video: false, otherFamily: false }];
+    const { result, notes } = await runAsset('media', anchorStep(), storyboard(), g);
+    const briefCalls = g.completions.filter((c) => c.purpose === 'asset.briefs:media');
+    expect(briefCalls.map((c) => c.prompt?.id)).toEqual([SHOT_FRAMES_PROMPT]);
+    expect(g.images.map((r) => r.prompt)).toEqual(['An image for 1', 'An image for 2', 'An image for 3']);
+    expect(checks(g)).toHaveLength(0);
+    const r = result as AssetResult;
+    const sb = await json(r.artifactId!);
+    expect(sb.storyboard!.every((s) => typeof s.imageArtifactId === 'string')).toBe(true);
+    expect(r.anchor).toBe(sb.storyboard![0]!.imageArtifactId);
+    expect(notes).toEqual([undefined]);
+    expect(library.render(SHOT_FRAMES_PROMPT, { medium: 'media', artifact: storyboard() }).user).toContain('Write one image brief per shot');
+  });
+
+  it('run again under its memo, it asks and buys nothing more, the check and the still made again included', async () => {
+    anchorChecks = [DEFECTS];
+    const g = fake([briefsOf('1')]);
+    const run = await newRun('media');
+    const artifact = (await store.artifacts.putText(storyboard(), 'application/json')).id;
+    const step = anchorStep();
+    const call = { key: `${run.runId}/${step.id}/-/1`, stepId: step.id, stage: 'D2' as const };
+    const deps = () => ({ gateway: memoGateway(g, store, { runId: run.runId, key: call.key }), store, prompts: library });
+    const first = await assetStep(deps(), { run, call, step, ports: { artifact } });
+    const asked = { completions: g.completions.length, images: g.images.length };
+    expect(asked).toEqual({ completions: 2, images: 2 });
+    const again = await assetStep(deps(), { run, call, step, ports: { artifact } });
+    expect({ completions: g.completions.length, images: g.images.length }).toEqual(asked);
+    expect(again).toEqual(first);
   });
 });
 
@@ -253,12 +413,10 @@ describe('an image the model declined (ADR-0102)', () => {
     const { result, notes } = await runAsset('media', frames(), storyboard(), g);
     // Shot 1 gets at least two tries for any other failure; a decline the gateway already asked again gets none.
     expect(g.images.filter((r) => r.prompt.endsWith('for 1'))).toHaveLength(1);
-    expect((result as AssetResult).anchor).toBeUndefined();
     expect(notes[0]).toMatch(/the image for shot 1 could not be made/);
     expect(notes[0]).toContain(
       'Google’s model gemini-nano-banana-2.1 declined the image for shot 1 (reason given: IMAGE_SAFETY). byway asked it once more, and it declined again. Both attempts were billed: $0.0672 in all.',
     );
-    expect(notes[0]).toMatch(/No frame was made for shot 1/);
     // The brief call at $0.01, the two images made at $0.04 each, and the declined image's two attempts at $0.0672.
     expect((result as AssetResult).costUsd).toBeCloseTo(0.01 + 0.04 * 2 + 0.0672, 9);
   });
@@ -287,14 +445,11 @@ describe('an image whose wait ran out (the waits design; MONEY-1)', () => {
 
   it('on media, shot 1’s frame (at least two tries for any other failure) is asked for once, the other shots are made, and the note says the wait ran out and where to change it', async () => {
     const g = fake([briefsOf('1', '2', '3')], (req) => (req.prompt.endsWith('for 1') ? waited() : false));
-    const { result, notes, skipped } = await runAsset('media', perShot(), storyboard(), g);
+    const { notes, skipped } = await runAsset('media', perShot(), storyboard(), g);
     expect(g.images.filter((r) => r.prompt.endsWith('for 1'))).toHaveLength(1);
     expect(g.images).toHaveLength(3);
-    expect((result as AssetResult).anchor).toBeUndefined();
     expect(skipped).toEqual([undefined]);
-    expect(notes).toEqual([
-      `Not every image was made: the image for shot 1 could not be made. The image for shot 1 was not asked for again: ${words} No frame was made for shot 1, so the video chain has no start frame.`,
-    ]);
+    expect(notes).toEqual([`Not every image was made: the image for shot 1 could not be made. The image for shot 1 was not asked for again: ${words}`]);
     expect(notes[0]).toMatch(/did not answer within 15 minutes, the wait chosen in Settings, .* change 'How long to wait for an answer' in Settings\./);
   });
 
@@ -368,7 +523,6 @@ describe('a brief answer that covers every slot and names some the work does not
     expect(g.images).toHaveLength(3);
     const sb = await json((result as AssetResult).artifactId!);
     expect(sb.storyboard!.every((s) => typeof s.imageArtifactId === 'string')).toBe(true);
-    expect((result as AssetResult).anchor).toBe(sb.storyboard![0]!.imageArtifactId);
     expect(skipped).toEqual([undefined]);
     expect(notes).toEqual(['The brief for “4”, which the storyboard has no shot for, was left out.']);
   });
@@ -398,8 +552,8 @@ describe('a short answer keeps every usable brief across the two tries (round 2)
     expect(g.completions).toHaveLength(2);
     expect(g.images.map((r) => r.prompt)).toEqual(['An image for 2', 'An image for 3']);
     expect(skipped).toEqual([undefined]);
-    expect((result as AssetResult).anchor).toBeUndefined();
-    expect(notes).toEqual(['Not every image was made: no image brief was written for shot 1. No frame was made for shot 1, so the video chain has no start frame.']);
+    expect((result as AssetResult).artifactId).toBeDefined();
+    expect(notes).toEqual(['Not every image was made: no image brief was written for shot 1.']);
   });
 
   it('short, then only what was missing: together they cover every shot, so all are bought and nothing is said missing', async () => {
@@ -407,7 +561,7 @@ describe('a short answer keeps every usable brief across the two tries (round 2)
     const { result, notes } = await runAsset('media', frames(), storyboard(), g);
     expect(g.images.map((r) => r.prompt).sort()).toEqual(['An image for 1', 'An image for 2', 'An image for 3']);
     const sb = await json((result as AssetResult).artifactId!);
-    expect((result as AssetResult).anchor).toBe(sb.storyboard![0]!.imageArtifactId);
+    expect(sb.storyboard!.every((s) => typeof s.imageArtifactId === 'string')).toBe(true);
     expect(notes).toEqual([undefined]);
   });
 
@@ -555,7 +709,7 @@ describe('an image whose result byway could not keep stops the run, naming its s
     const g = fake([briefsOf('1', '2', '3')]);
     const run = await newRun('media');
     const artifact = (await store.artifacts.putText(storyboard(), 'application/json')).id;
-    const step = spec('c5', 'anchor-frames');
+    const step = perShot();
     const call = { key: `${run.runId}/${step.id}/-/1`, stepId: step.id, stage: 'D2' as const };
     // The second image's memo cannot be written: that image was paid for, and byway cannot keep it.
     let imageSaves = 0;
@@ -940,6 +1094,16 @@ describe('the slot plan on its own', () => {
     expect(kept).toMatchObject({ ok: true, value: { missing: [], unknown: [], dropped: ['c', 'd'] } });
     expect(kept.ok && kept.value.briefs.map((b) => b.slot)).toEqual(['b', 'a']);
     expect(checkBriefs({ ok: true, value: ['1', '2', '3', '4'].map(brief) }, eachPlan('media', storyboard(), 'Frames')!)).toMatchObject({ ok: true, value: { unknown: ['4'], dropped: [] } });
+  });
+
+  it('a plan’s other shots (C5’s anchor step makes shot 1’s still alone) are left out without a word, however written; a shot the work does not have is still unknown', () => {
+    const brief = (slot: string) => ({ slot, prompt: 'p', alt: '', size: '1024x1024' as const });
+    const anchorOnly = { kind: 'each', medium: 'media', expected: ['1'], first: '1', others: ['2', '3'] } as const;
+    const r = checkBriefs({ ok: true, value: ['Shot 2', '1', '03', '9'].map(brief) }, anchorOnly);
+    expect(r).toMatchObject({ ok: true, value: { missing: [], unknown: ['9'], dropped: [] } });
+    expect(r.ok && r.value.briefs.map((b) => b.slot)).toEqual(['1']);
+    // Without shot 1 it is a miss that names only shot 1.
+    expect(checkBriefs({ ok: true, value: [brief('2')] }, anchorOnly)).toMatchObject({ ok: false, problem: 'Write one brief per storyboard shot (slot = the shot number): 1. There is none for shot 1.', usable: { briefs: [], missing: ['1'], unknown: [] } });
   });
 
   it('a short answer is a miss that carries what it did give; a malformed one carries nothing', () => {

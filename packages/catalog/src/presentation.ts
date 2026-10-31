@@ -293,7 +293,7 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Custom imagery',
-        explainer: 'The AI makes the frame the first shot starts from, and checks it for visible defects before any clip is made, making it again once if one shows. Each later shot starts from the clip before it.',
+        explainer: 'With a video model, the AI makes the frame the first shot starts from, and checks it for visible defects before any clip is made, making it again once if one shows; each later shot starts from the clip before it. Without one, it makes a still for every shot, which are then the ad’s pictures.',
         covers: ['anchor-frames'],
       },
       {

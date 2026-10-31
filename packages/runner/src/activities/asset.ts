@@ -36,7 +36,7 @@ import { parseHtml, parseMarkdown, parseOptions, parseStoryboard, serializeJson,
 import { imagesSlot, labelled, labelOf } from '@byway/prompts/pure';
 import { parseBriefs, parseCheck } from '../parse.ts';
 import type { AssetInput, AssetResult } from '../types.ts';
-import { askModel, usageMissingNote } from './call.ts';
+import { askModel, usageMissingNote, type ModelAnswer } from './call.ts';
 import { mediaStatus } from './availability.ts';
 import type { RunnerDeps } from './deps.ts';
 import { ContractMissed, StepError } from './failures.ts';
@@ -132,9 +132,12 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   // On media and options the work decides the slots, read before anything is asked or bought.
   const planned = eachPlan(medium, current, what);
   // C5's anchor frames: only shot 1's still starts the relay chain (every later link starts from the clip before it), so
-  // only it is made (the owner's "Shot 1 only", 2026-10-30, F12 (b); ADR-0090's Later note).
-  const anchorOnly = medium === 'media' && step.produces.includes('anchor');
-  const each: SlotPlan | undefined = anchorOnly && planned?.kind === 'each' && planned.first !== undefined ? { ...planned, expected: [planned.first] } : planned;
+  // in a run that can make clips only it is made, and the critics see the later shots by their clips (render.ts). With
+  // no video model there is no clip, so a still per shot is the ad's pictures, from a prompt that asks for one per shot
+  // (the owner's "Shot 1 only with video", 2026-10-31, F12 (b); ADR-0090's Later note). The relay asks the same question.
+  const anchorStep = medium === 'media' && step.produces.includes('anchor');
+  const anchorOnly = anchorStep && mediaStatus(deps, run).video;
+  const each: SlotPlan | undefined = anchorOnly && planned?.kind === 'each' && planned.first !== undefined ? { ...planned, expected: [planned.first], others: planned.expected.filter((s) => s !== planned.first) } : planned;
   // Mood boards follow the chosen options: with none marked, nothing is asked or bought (B-049).
   if (each?.kind === 'each' && each.medium === 'options' && !each.expected.length) return skip(NO_CHOSEN_NOTE);
 
@@ -142,7 +145,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const built = await buildPrompt(reader, { medium, problemId: run.problemId, step, ports });
   built.slots.artifact = current;
   if (medium === 'options') built.slots.options = optionLabels(current, each);
-  const promptId = step.prompt && deps.prompts.has(step.prompt) ? step.prompt : 'helper.asset.briefs';
+  const promptId = anchorStep && !anchorOnly ? SHOT_FRAMES_PROMPT : step.prompt && deps.prompts.has(step.prompt) ? step.prompt : 'helper.asset.briefs';
   let plan: SlotPlan | undefined = each;
   const briefs = await askModel<SlotBriefs>(deps, reader, {
     run,
@@ -337,14 +340,15 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
  * wait ran out, that it may have billed the work and where to wait longer, go in the step's note (waitedSentences). The
  * memo keeps that outcome as it keeps a decline (B-045), so the step run again gets it back and asks nothing.
  */
-async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, tries: number, refused: { costUsd: number; usageMissing: number }): Promise<{ made: MadeImage; costUsd: number; usageMissing?: true } | { declined: DeclineRecord } | { waited: string } | undefined> {
+async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, tries: number, refused: { costUsd: number; usageMissing: number }, again = false): Promise<{ made: MadeImage; costUsd: number; usageMissing?: true } | { declined: DeclineRecord } | { waited: string } | undefined> {
   const { run, call, step } = input;
   const medium = run.medium;
   for (let attempt = 1; attempt <= tries; attempt++) {
     try {
       const img = await deps.gateway.image({ workspaceId: run.workspaceId, runId: run.runId, stepId: step.id, purpose: `asset:${medium}`, profileId: run.profileId, prompt: brief.prompt, size: brief.size });
       const alt = brief.alt || `Image for ${brief.slot}`;
-      await announce(deps, run.runId, call, img.artifactId, img.mediaType, { label: `Image: ${oneLine(alt).slice(0, 80)}`, name: `image/${brief.slot}`, ...(medium === 'media' ? { shot: Number(brief.slot) } : {}) });
+      // A slot's image made again (the anchor check's) is announced under its own name: the events are kept once per name.
+      await announce(deps, run.runId, call, img.artifactId, img.mediaType, { label: `Image${again ? ' (made again)' : ''}: ${oneLine(alt).slice(0, 80)}`, name: `image/${brief.slot}${again ? '/again' : ''}`, ...(medium === 'media' ? { shot: Number(brief.slot) } : {}) });
       return { made: { slot: brief.slot, alt, artifactId: img.artifactId }, costUsd: img.costUsd, ...(img.usageMissing ? { usageMissing: true as const } : {}) };
     } catch (e) {
       if (!(e instanceof GatewayError) || STOPS_THE_STEP.has(e.code) || e.billed === true || isHeldKeyError(e)) throw e;
@@ -486,10 +490,14 @@ function optionLabels(artifact: string, plan: SlotPlan | undefined): string {
     .join('\n\n');
 }
 
+/** The briefs of C5's anchor step in a run with no video model: a still per shot, the ad's only pictures (F12 (b)). */
+export const SHOT_FRAMES_PROMPT = 'product.c5.shot-frames';
+
 /** What the anchor check says: no defect; defects, and the frame made again; defects, and no new frame (F10 (b)). */
 export const ANCHOR_CLEAN_NOTE = 'Shot 1’s start frame was checked for visible defects before any clip was made: none were found.';
 export const anchorRemadeNote = (defects: string): string =>
   `Shot 1’s start frame showed visible defects before any clip was made (${defects}), so it was made again once, with the defects named; the new frame was not checked again.`;
+export const ANCHOR_UNREAD_NOTE = 'Shot 1’s start frame could not be checked for visible defects: the check’s answer could not be read, even when the AI was asked again, so the frame is used as it was made.';
 export const anchorKeptNote = (defects: string): string =>
   `Shot 1’s start frame showed visible defects before any clip was made (${defects}). Making it again did not give a frame, so the first one is used.`;
 
@@ -511,24 +519,32 @@ async function checkAnchor(
   // Shown what shot 1 should be and the image, never the storyboard's source (port rule 1), as the shot check is.
   const board = parseStoryboard(storyboard);
   const shot = board.ok ? board.value.storyboard.find((s) => String(s.shot) === anchor.slot) : undefined;
-  const answer = await askModel(deps, reader, {
-    run,
-    call,
-    promptId: 'product.c5.anchor-check',
-    slots: { view: shot ? `Shot ${shot.shot}: ${shot.description}` : `Shot ${anchor.slot}` },
-    images: [{ caption: 'The frame shot 1 will start from', artifactIds: [anchor.artifactId] }],
-    purpose: 'check:media',
-    tier: 'big',
-    what: 'Start frame check',
-    maxOutputTokens: 4_000,
-    parse: (text) => parseCheck(text),
-  });
+  let answer: ModelAnswer<{ clean: boolean; defects: string }>;
+  try {
+    answer = await askModel(deps, reader, {
+      run,
+      call,
+      promptId: 'product.c5.anchor-check',
+      slots: { view: shot ? `Shot ${shot.shot}: ${shot.description}` : `Shot ${anchor.slot}` },
+      images: [{ caption: 'The frame shot 1 will start from', artifactIds: [anchor.artifactId] }],
+      purpose: 'check:media',
+      tier: 'big',
+      what: 'Start frame check',
+      maxOutputTokens: 4_000,
+      parse: (text) => parseCheck(text),
+    });
+  } catch (e) {
+    // An answer that could not be read leaves the frame as it was made: the step does not fail over its check, after the frame was bought.
+    if (!(e instanceof ContractMissed)) throw e;
+    return { costUsd: e.costUsd, usageMissing: e.usageMissing, note: ANCHOR_UNREAD_NOTE };
+  }
   let costUsd = answer.costUsd;
   let usageMissing = answer.usageMissing ?? 0;
   if (answer.value.clean) return { costUsd, usageMissing, note: ANCHOR_CLEAN_NOTE };
-  const defects = oneLine(answer.value.defects.replace(/^\s*[-*•]\s+/gm, '').split('\n').join('; '));
+  // "- A hand has six fingers.\n- The label is garbled." as "A hand has six fingers; The label is garbled".
+  const defects = oneLine(answer.value.defects.split('\n').map((l) => l.replace(/^\s*[-*•]\s+/, '').replace(/[.;]\s*$/, '')).join('; '));
   const refused = { costUsd: 0, usageMissing: 0 };
-  const again = await makeImage(deps, input, { ...brief, prompt: `${brief.prompt}\n\nAvoid these defects, which an earlier frame had: ${defects}` }, tries, refused);
+  const again = await makeImage(deps, input, { ...brief, prompt: `${brief.prompt}\n\nAvoid these defects, which an earlier frame had: ${defects}` }, tries, refused, true);
   costUsd += refused.costUsd;
   usageMissing += refused.usageMissing;
   if (!again || 'declined' in again || 'waited' in again) return { costUsd, usageMissing, note: anchorKeptNote(defects) };

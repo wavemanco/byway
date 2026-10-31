@@ -100,10 +100,11 @@ export const HELPER_PROMPTS = {
 } as const;
 
 /**
- * Calls an activity makes inside a step that has its own prompt: C5's check of the frame its chain starts from, made by
- * the anchor-frames step before any clip (F10 (b); ADR-0090's Later note of 2026-10-30).
+ * Calls an activity makes inside a step that has its own prompt, both by C5's anchor-frames step: the check of the frame
+ * its chain starts from, before any clip (F10 (b)), and, in a run with no video model, the briefs for a still per shot in
+ * place of its own prompt's shot 1 alone (F12 (b)); ADR-0090's Later notes of 2026-10-30 and 2026-10-31.
  */
-export const ACTIVITY_PROMPT_IDS = ['product.c5.anchor-check'] as const;
+export const ACTIVITY_PROMPT_IDS = ['product.c5.anchor-check', 'product.c5.shot-frames'] as const;
 
 /** Advisor calls: the purpose and the prompt id are the same. */
 export const ADVISOR_PROMPT_IDS = ['advisor.intake', 'advisor.compose', 'advisor.compose.repair'] as const;

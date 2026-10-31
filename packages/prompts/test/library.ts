@@ -4,7 +4,7 @@ import { PROTOCOL_CONFIGS } from '@byway/catalog';
 import { PROMPT_SLOTS, type PromptSlot } from '@byway/contracts';
 import type { Medium } from '@byway/protocol';
 import { steps, type Recipe, type Step } from '@byway/recipe';
-import { createPromptRenderer, DEFAULT_TEMPLATES_DIR, parseTemplateFile, type Template } from '../src/index.ts';
+import { ACTIVITY_PROMPT_IDS, createPromptRenderer, DEFAULT_TEMPLATES_DIR, parseTemplateFile, type Template } from '../src/index.ts';
 
 /** Shared fixtures for the template tests: the package's own library, its raw files and the catalog's prompt steps. */
 
@@ -48,7 +48,11 @@ for (const { step } of PROMPT_STEPS) {
 /** The medium a template works in: its variant suffix, else the medium of the recipe that uses it. */
 export function mediumOf(t: Template): Medium | undefined {
   if (t.medium) return t.medium;
-  return PROMPT_STEPS.find((p) => p.step.prompt === t.id)?.medium;
+  const step = PROMPT_STEPS.find((p) => p.step.prompt === t.id);
+  if (step) return step.medium;
+  // A prompt an activity calls inside a step (ACTIVITY_PROMPT_IDS) is in its configuration's medium: product.c5.*, C5's.
+  const configuration = /^product\.[^.]+\./.exec(t.id)?.[0];
+  return (ACTIVITY_PROMPT_IDS as readonly string[]).includes(t.id) && configuration ? PROMPT_STEPS.find((p) => p.step.prompt?.startsWith(configuration))?.medium : undefined;
 }
 
 /** A recognizable value for every slot, so a test can see where each one lands in the rendered text. */

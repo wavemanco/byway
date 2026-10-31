@@ -208,12 +208,20 @@ export function c2c5Scenarios(use: () => Harness): void {
         expect(ofType(view, 'step-finished', 'matte').every((e) => e.data.skipped === true)).toBe(true);
 
         // The storyboard carries each shot's frame and the clips; your script survived every machine write.
-        const sb = (await json(view.run.outputArtifactId!)) as { storyboard: { shot: number; imageArtifactId?: string; clipArtifactId?: string }[]; voiceover: string; headline?: string; tagline?: string };
+        const sb = (await json(view.run.outputArtifactId!)) as { storyboard: { shot: number; imageArtifactId?: string; clipArtifactId?: string; middleFrameArtifactId?: string }[]; voiceover: string; headline?: string; tagline?: string };
         expect(sb.voiceover).toBe(script);
         expect(sb.headline).toBe(headline);
         expect(sb.tagline).toBe(tagline);
-        expect(sb.storyboard.every((s) => s.imageArtifactId)).toBe(true);
+        // With a video model only shot 1's still is made (F12 (b), the owner's "Shot 1 only with video"); every shot has its clip.
+        expect(sb.storyboard.filter((s) => s.imageArtifactId).map((s) => s.shot)).toEqual([1]);
         expect(sb.storyboard.filter((s) => s.clipArtifactId).map((s) => s.shot)).toEqual([1, 2, 3, 4, 5]);
+        // The launch gate's critic sees the later shots by their clips: it is shown a frame from the middle of shot 2's.
+        const middle2 = sb.storyboard.find((s) => s.shot === 2)!.middleFrameArtifactId!;
+        expect(middle2).toBeDefined();
+        const gateShown = h.succeeded(run.id).filter((c) => c.stepId === 'gate-critic').flatMap((c) => (c.request as CompletionRequest).messages.flatMap((m) => m.content.flatMap((p) => (p.type === 'image' ? [p.artifactId] : []))));
+        expect(gateShown).toContain(middle2);
+        // Shot 1's still was checked before any clip, once a pass (F10 (b)).
+        expect(h.succeeded(run.id).filter((c) => c.stepId === 'anchor-frames' && c.purpose === 'check:media')).toHaveLength(2);
         // Clip and frame artifacts are announced with their shot.
         expect(ofType(view, 'artifact').filter((e) => /^Clip for shot/.test(e.data.label as string)).map((e) => e.data.shot)).toEqual([1, 2, 3, 4, 5, 1, 2, 3, 4, 5]);
         // Under the types the gateway stored: the demo's SVG placeholder clips, and their frames.

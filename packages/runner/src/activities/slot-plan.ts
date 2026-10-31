@@ -5,6 +5,7 @@
  *   declare `images: each` say so). A slot is a shot number ("1", " 1 ", "Shot 1") or an option label ("a", "Option A").
  *   Coverage is checked before anything is bought: a missing slot is a miss, naming any unknown ones too; an answer that
  *   covers every slot is used, and briefs for slots the work does not have are left out (the step's note says so).
+ *   C5's anchor step plans shot 1 alone (asset.ts), and a brief for one of the other shots is left out without a word.
  * - `free`: on prose and web pages, between the counts the step's prompt declares (`images: min-max`), at most the
  *   step's `slots` knob. A slot is a name (trimmed); duplicates collapse, the last one kept. Briefs beyond the most it
  *   makes are left out, and the step's note names them.
@@ -21,8 +22,13 @@ import { StepError } from './failures.ts';
 /** The most mood boards an options step makes: one for each chosen option, and C2 chooses 1 to 3 (03 C2; B-049). */
 export const MOOD_BOARDS_MAX = 3;
 
+/**
+ * `others`: shots the work has that the step makes no image for (C5's anchor frames make shot 1's only, F12 (b)). A
+ * brief for one is left out without a word: it is a shot of the work, so the note's "the storyboard has no shot for"
+ * would be false.
+ */
 export type SlotPlan =
-  | { kind: 'each'; medium: 'media' | 'options'; expected: readonly string[]; first?: string; over?: readonly string[] }
+  | { kind: 'each'; medium: 'media' | 'options'; expected: readonly string[]; first?: string; over?: readonly string[]; others?: readonly string[] }
   | { kind: 'free'; min: number; max: number };
 
 /**
@@ -63,10 +69,15 @@ export function freePlan(declared: ImageCount | undefined, slotsKnob: number | u
 
 /** A slot's one identity in a plan: a shot number, an option label or a trimmed name; undefined when not in the plan. */
 export function slotId(plan: SlotPlan, raw: string): string | undefined {
-  const t = raw.trim();
-  if (plan.kind === 'free') return t;
-  const id = plan.medium === 'media' ? (/^(?:shot\s*)?(\d+)$/i.exec(t)?.[1] ?? '').replace(/^0+(?=\d)/, '') : t.replace(/^option\s+/i, '').toUpperCase();
+  if (plan.kind === 'free') return raw.trim();
+  const id = slotKey(plan, raw);
   return id && plan.expected.includes(id) ? id : undefined;
+}
+
+/** A shot number or an option label as written, in its one form, whether or not the plan has it ('' when neither). */
+function slotKey(plan: Extract<SlotPlan, { kind: 'each' }>, raw: string): string {
+  const t = raw.trim();
+  return plan.medium === 'media' ? (/^(?:shot\s*)?(\d+)$/i.exec(t)?.[1] ?? '').replace(/^0+(?=\d)/, '') : t.replace(/^option\s+/i, '').toUpperCase();
 }
 
 /** A brief under its slot's identity. */
@@ -107,8 +118,10 @@ export function checkBriefs(parsed: Parsed<ImageBrief[]>, plan: SlotPlan, earlie
   const unknown: string[] = [...(earlier?.unknown ?? [])];
   for (const b of parsed.value) {
     const id = slotId(plan, b.slot);
-    if (id === undefined) unknown.push(b.slot.trim());
-    else {
+    if (id === undefined) {
+      if (plan.kind === 'each' && plan.others?.includes(slotKey(plan, b.slot))) continue;
+      unknown.push(b.slot.trim());
+    } else {
       // The last brief for a slot is the one kept, in the place it was last given.
       byId.delete(id);
       byId.set(id, { ...b, slot: id });

@@ -57,6 +57,7 @@ export const TEMPLATE_SLOTS: TemplateSlots = {
   'product.c5.render-in-scene': { '*': ['artifact', 'brief'] },
   'product.c5.seed-territory': { '*': ['problem', 'seed'] },
   'product.c5.shot-check': { '*': ['view'] },
+  'product.c5.shot-frames': { '*': ['artifact'] },
   'product.c5.tells-sweep': { '*': ['view', 'tells'] },
   'product.c5.vanilla-build': { '*': ['problem'] },
   'product.c5.vanilla-flag': { '*': ['view', 'options'] },

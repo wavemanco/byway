@@ -23,7 +23,8 @@ export function operatorScenarios(use: () => Harness): void {
   describe('relay with a check-clean repair loop', () => {
     it('regenerates a link that has a defect, from the same start frame, until the check is clean; links run in order', async () => {
       let checks = 0;
-      h.responders['check:media'] = () => (++checks === 1 ? '- Garbled lettering on the cup in shot 1.' : 'No defects.');
+      // The shot checks only: the check of shot 1's still before any clip (F10 (b)) finds it clean.
+      h.responders['check:media'] = (ctx) => (ctx.promptId === 'product.c5.anchor-check' ? 'No defects.' : ++checks === 1 ? '- Garbled lettering on the cup in shot 1.' : 'No defects.');
       try {
         const run = await h.start(shortAd, { problem: { text: 'A 10-second ad for a reusable cup' } });
         const view = await h.drive(run.id);
