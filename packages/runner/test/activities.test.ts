@@ -13,7 +13,7 @@ import { askModel } from '../src/activities/call.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { cancelRun, failRun } from '../src/activities/lifecycle.ts';
 import { recordResolution } from '../src/activities/human.ts';
-import { assetStep, NO_IMAGES_NOTE } from '../src/activities/asset.ts';
+import { assetStep, NO_IMAGES_NOTE, noImagesNote } from '../src/activities/asset.ts';
 import { ArtifactReader } from '../src/activities/prompting.ts';
 import { DEFAULT_RELAY_WAITS, NO_VIDEO_NOTE, relayLink } from '../src/activities/relay.ts';
 import { createActivities } from '../src/activities/index.ts';
@@ -248,6 +248,20 @@ describe('which profile says whether images and video exist', () => {
     expect(await relayLink(deps, { run, call: call(run, 'clip'), step: relaySpec, ports: { artifact: doc }, shot: 1, waits: DEFAULT_RELAY_WAITS })).toMatchObject({ skipped: true });
     const notes = (await store.events(run.runId)).filter((e) => e.type === 'step-finished').map((e) => e.data.note);
     expect(notes).toEqual([NO_IMAGES_NOTE, NO_VIDEO_NOTE]);
+  });
+
+  it('with keys, a profile whose image model has no key: the note names its provider (B-179)', async () => {
+    const run = await newRun('no-google');
+    const noGoogle: ModelProfile = { ...NO_MEDIA, id: 'no-google', image: { provider: 'google', model: 'gemini-nano-banana-2.1' } };
+    const deps: RunnerDeps = { gateway: scripted([], { demo: false, statuses: [status(DEMO, true), status(noGoogle, false)] }), store, prompts: fakePrompts() };
+    const doc = (await store.artifacts.putText('# Memo\n', 'text/markdown')).id;
+    expect(await assetStep(deps, { run, call: call(run, 'art'), step: assetSpec, ports: { artifact: doc } })).toMatchObject({ skipped: true });
+    const notes = (await store.events(run.runId)).filter((e) => e.type === 'step-finished').map((e) => e.data.note);
+    expect(notes).toEqual(["No Google key is configured for this profile's images, so no images were made; the work passes through unchanged."]);
+    expect(noImagesNote('openai')).toBe("No OpenAI key is configured for this profile's images, so no images were made; the work passes through unchanged.");
+    expect(noImagesNote('mock')).toBe(NO_IMAGES_NOTE);
+    // A profile with no image model (B-180).
+    expect(noImagesNote(undefined)).toBe('This profile has no image model, so no images were made; the work passes through unchanged.');
   });
 
   it('in demo mode, the demo profile, whatever profile the run names (contracts v4 Gateway.demo)', async () => {

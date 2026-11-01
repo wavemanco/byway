@@ -6,7 +6,7 @@ import { useId, useState } from 'react';
 import { formatUsd, parseBudgetInput } from '../view/format.ts';
 import type { PricesChecked } from '../view/prices.ts';
 import type { WorkspaceSpend } from '../view/history.ts';
-import { profileNeeds, videoAvailability } from '../view/labels.ts';
+import { imageAvailability, profileNeeds, videoAvailability } from '../view/labels.ts';
 import type { AnswerWaitGroup } from '../view/waits.ts';
 import { AnswerWaits } from './AnswerWaits.tsx';
 import { patch } from './api.ts';
@@ -19,7 +19,7 @@ import { SINGLE_KEY_SHORTCUTS, useViewerFlag } from './viewerFlags.ts';
 const PROVIDERS: Record<ProviderId, { name: string; does: string; env?: string }> = {
   anthropic: { name: 'Anthropic', does: 'Claude models for drafting and judgment', env: 'ANTHROPIC_API_KEY' },
   openai: { name: 'OpenAI', does: 'GPT models and image generation', env: 'OPENAI_API_KEY' },
-  google: { name: 'Google', does: 'Gemini models', env: 'GEMINI_API_KEY' },
+  google: { name: 'Google', does: 'Gemini models and image generation', env: 'GEMINI_API_KEY' },
   openrouter: { name: 'OpenRouter', does: 'Other model families, one pinned provider each', env: 'OPENROUTER_API_KEY' },
   fal: { name: 'fal.ai', does: 'Image and video generation for Ad Video Chain', env: 'FAL_KEY' },
   mock: { name: 'Sample outputs', does: 'Built in. Answers every step with sample outputs at no cost' },
@@ -159,7 +159,7 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
       <section className="settings-section" aria-labelledby={`${ids}-profile`}>
         <h2 id={`${ids}-profile`}>Model profile</h2>
         <p className="section-note">Which models do the AI steps. Judgment (critique, picking, checks) uses the larger model; drafting uses the other.</p>
-        <fieldset className="profiles" aria-describedby={`${ids}-video`}>
+        <fieldset className="profiles" aria-describedby={`${ids}-video ${ids}-images`}>
           <legend className="sr-only">Model profile</legend>
           {profiles.map(({ profile, ...status }) => {
             const needs = profileNeeds(status);
@@ -189,7 +189,12 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
         </fieldset>
         <p id={`${ids}-video`} className="profile-video">
           {videoAvailability(chosen)}
-          {mode === 'demo' && !chosen?.video ? <span className="muted">. Demo runs show labelled placeholder clips instead.</span> : null}
+          {/* The profile choices are described by both lines: a hidden full stop keeps them two sentences when read out. */}
+          {mode === 'demo' && !chosen?.video ? <span className="muted">. Demo runs show labelled placeholder clips instead.</span> : <span className="sr-only">.</span>}
+        </p>
+        <p id={`${ids}-images`} className="profile-images">
+          {imageAvailability(chosen)}
+          {mode === 'demo' && !chosen?.images ? <span className="muted">. Demo runs show sample images instead.</span> : <span className="sr-only">.</span>}
         </p>
       </section>
 

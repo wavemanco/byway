@@ -3,7 +3,7 @@
  * goes through `createGateway(...)`, which implements the `Gateway` contract from @byway/contracts.
  */
 export { createGateway, ModelGateway, type BudgetDetails, type BudgetError, type CapsSource, type GatewayOptions } from './gateway.ts';
-export { cleanReason, declineAdvice, declineStory, MAX_REASON_CHARS, notMadeProblem } from './declines.ts';
+export { cleanReason, declineAdvice, declineStory, MAX_REASON_CHARS, notMadeProblem, PROVIDER_NAMES } from './declines.ts';
 export { configuredProviders, isConfigured, KEY_VARS, loadEnvFile, namesFromEnvFile, parseEnv, withoutSecrets, type Env, type EnvLoadReport } from './env.ts';
 export { DEMO_PROFILE_ID, OPENROUTER_PINS, PROFILES, profileStatus, tierProviders, type ProfileStatus } from './profiles.ts';
 export { PRICES, PRICES_CHECKED, priceFor, tokenCost, type LongContextTier, type PriceRow } from './prices.ts';

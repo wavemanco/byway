@@ -22,6 +22,15 @@ export function videoAvailability(status: Pick<ProfileStatus, 'video' | 'profile
   return `Video clips need a ${name} key`;
 }
 
+/** Settings: whether the profile can make images (ProfileStatus.images), under the video line (B-179). */
+export function imageAvailability(status: Pick<ProfileStatus, 'images' | 'profile'> | undefined): string {
+  if (status?.images) return 'Images: available';
+  const provider = status?.profile.image?.provider;
+  if (!provider || provider === 'mock') return 'Images: not available';
+  const name = PROVIDER_NAMES[provider];
+  return `Images need ${/^[AEIOU]/.test(name) ? 'an' : 'a'} ${name} key`;
+}
+
 /** Settings: what a profile still needs before it can run, or null when it can. */
 export function profileNeeds(status: Pick<ProfileStatus, 'usable' | 'missing'>): string | null {
   if (status.usable || status.missing.length === 0) return null;

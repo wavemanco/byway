@@ -29,8 +29,8 @@
  * of advice for the person to its briefs. The step's note shows it, as the AI's suggestion, with the image it came with;
  * it never changes how many images are made, and with no image made it is not shown.
  */
-import { GatewayError, type DeclineRecord, type Medium } from '@byway/contracts';
-import { declineStory, isHeldKeyError, waitedOf } from '@byway/gateway';
+import { GatewayError, type DeclineRecord, type Medium, type ProviderId } from '@byway/contracts';
+import { declineStory, isHeldKeyError, PROVIDER_NAMES, waitedOf } from '@byway/gateway';
 import { C5_CHAIN_LINKS } from '@byway/catalog';
 import { audioAsset } from '@byway/recipe/semantics';
 import { parseHtml, parseMarkdown, parseOptions, parseStoryboard, serializeJson, textView, type Parsed } from '../formats.ts';
@@ -38,7 +38,7 @@ import { imagesSlot, labelled, labelOf } from '@byway/prompts/pure';
 import { parseBriefs, parseCheck } from '../parse.ts';
 import type { AssetInput, AssetResult } from '../types.ts';
 import { askModel, usageMissingNote, type ModelAnswer } from './call.ts';
-import { mediaStatus } from './availability.ts';
+import { imageProvider, mediaStatus } from './availability.ts';
 import type { RunnerDeps } from './deps.ts';
 import { ContractMissed, StepError } from './failures.ts';
 import { memoized, PaidNotKept } from './memo.ts';
@@ -51,7 +51,11 @@ import { announce, checkedWriter, restoredNote, runSeeds, storeText } from './wr
 /** Image failures that stop the asset step instead of trying the image again (a billed failure does too: see below). */
 const STOPS_THE_STEP: ReadonlySet<GatewayError['code']> = new Set(['budget-exceeded', 'accounting-fault', 'no-credentials', 'unknown-profile', 'in-flight']);
 
-export const NO_IMAGES_NOTE = 'No image provider key is configured, so no images were made; the work passes through unchanged.';
+/** A profile with no image model (B-180, the owner's words of 2026-10-31). */
+export const NO_IMAGES_NOTE = 'This profile has no image model, so no images were made; the work passes through unchanged.';
+/** The skip note, naming the provider of the profile's image model when its key is missing (B-179, the owner's words of 2026-10-31). */
+export const noImagesNote = (provider: ProviderId | undefined): string =>
+  provider && provider !== 'mock' ? `No ${PROVIDER_NAMES[provider]} key is configured for this profile's images, so no images were made; the work passes through unchanged.` : NO_IMAGES_NOTE;
 export const NO_AUDIO_NOTE = 'No voice-over audio provider is configured';
 /** Every brief was bought and every image failed. */
 export const NO_IMAGE_MADE_NOTE = 'No image could be generated for this step; the work passes through unchanged.';
@@ -119,7 +123,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     return { costUsd: 0, skipped: true };
   };
   if (isAudioAsset(step)) return skip(NO_AUDIO_NOTE);
-  if (!mediaStatus(deps, run).images) return skip(NO_IMAGES_NOTE);
+  if (!mediaStatus(deps, run).images) return skip(noImagesNote(imageProvider(deps, run)));
   if (!ports.artifact) throw new StepError(`The ${what} step has no work to make images for.`);
 
   const reader = new ArtifactReader(deps);
