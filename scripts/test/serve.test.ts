@@ -132,7 +132,7 @@ describe("serve.ts's port checks, before anything is built or opened (BUILD-2)",
  * the next run stops it and removes the data directory it was left in (scripts/e2e-leftovers.ts, tested in
  * e2e-leftovers.test.ts). Each data directory is named for its run's process.
  */
-describe('a killed e2e run leaves no engine running for long, and the next run removes its data directory (B-124)', () => {
+describe("a killed e2e run's engine is stopped, by byway itself on Linux and macOS and by the next run on Windows, and the next run removes its data directory (B-124)", () => {
   const e2e = codeLines(read('scripts/e2e.ts'));
 
   it("serve.ts ignores errors on its own output from main's first line", () => {

@@ -260,6 +260,8 @@ describe('which profile says whether images and video exist', () => {
     expect(notes).toEqual(["No Google key is configured for this profile's images, so no images were made; the work passes through unchanged."]);
     expect(noImagesNote('openai')).toBe("No OpenAI key is configured for this profile's images, so no images were made; the work passes through unchanged.");
     expect(noImagesNote('mock')).toBe(NO_IMAGES_NOTE);
+    // A profile with no image model (B-180).
+    expect(noImagesNote(undefined)).toBe('This profile has no image model, so no images were made; the work passes through unchanged.');
   });
 
   it('in demo mode, the demo profile, whatever profile the run names (contracts v4 Gateway.demo)', async () => {

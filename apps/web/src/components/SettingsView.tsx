@@ -19,7 +19,7 @@ import { SINGLE_KEY_SHORTCUTS, useViewerFlag } from './viewerFlags.ts';
 const PROVIDERS: Record<ProviderId, { name: string; does: string; env?: string }> = {
   anthropic: { name: 'Anthropic', does: 'Claude models for drafting and judgment', env: 'ANTHROPIC_API_KEY' },
   openai: { name: 'OpenAI', does: 'GPT models and image generation', env: 'OPENAI_API_KEY' },
-  google: { name: 'Google', does: 'Gemini models', env: 'GEMINI_API_KEY' },
+  google: { name: 'Google', does: 'Gemini models and image generation', env: 'GEMINI_API_KEY' },
   openrouter: { name: 'OpenRouter', does: 'Other model families, one pinned provider each', env: 'OPENROUTER_API_KEY' },
   fal: { name: 'fal.ai', does: 'Image and video generation for Ad Video Chain', env: 'FAL_KEY' },
   mock: { name: 'Sample outputs', does: 'Built in. Answers every step with sample outputs at no cost' },

@@ -51,8 +51,9 @@ import { announce, checkedWriter, restoredNote, runSeeds, storeText } from './wr
 /** Image failures that stop the asset step instead of trying the image again (a billed failure does too: see below). */
 const STOPS_THE_STEP: ReadonlySet<GatewayError['code']> = new Set(['budget-exceeded', 'accounting-fault', 'no-credentials', 'unknown-profile', 'in-flight']);
 
-export const NO_IMAGES_NOTE = 'No image provider key is configured, so no images were made; the work passes through unchanged.';
-/** The skip note, naming the provider of the profile's image model when it has one (B-179, the owner's words of 2026-10-31). */
+/** A profile with no image model (B-180, the owner's words of 2026-10-31). */
+export const NO_IMAGES_NOTE = 'This profile has no image model, so no images were made; the work passes through unchanged.';
+/** The skip note, naming the provider of the profile's image model when its key is missing (B-179, the owner's words of 2026-10-31). */
 export const noImagesNote = (provider: ProviderId | undefined): string =>
   provider && provider !== 'mock' ? `No ${PROVIDER_NAMES[provider]} key is configured for this profile's images, so no images were made; the work passes through unchanged.` : NO_IMAGES_NOTE;
 export const NO_AUDIO_NOTE = 'No voice-over audio provider is configured';

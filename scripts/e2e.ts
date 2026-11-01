@@ -4,9 +4,9 @@
  * (apps/web/.next-e2e), so a byway you are running from this checkout is not rebuilt under you (DEV-1). Stand-in
  * provider keys are set, and the suite fails if any of them shows up in a request, a response or the build folder
  * (apps/web/e2e/keys.ts; SEC-3). When the suite ends it stops byway the clean way (the same path as Ctrl+C) and removes
- * the data directory. A run that is killed reaches neither, and on Windows the Temporal server byway's engine started
- * runs on: the next run stops it and removes the data directory it was left in (e2e-leftovers.ts; B-124). Arguments are
- * passed to `playwright test`.
+ * the data directory. A run that is killed reaches neither. On Linux and macOS its byway outlives it and stops itself;
+ * on Windows the Temporal server byway's engine started runs on. The next run stops such a server and removes the data
+ * directories killed runs left (e2e-leftovers.ts; B-124). Arguments are passed to `playwright test`.
  *
  * It also builds the runner's workflow bundle into a file of its own (packages/runner/dist/e2e-<pid>.js, serve.ts's
  * BYWAY_WORKFLOWS_BUNDLE), removed at the end, so the two byways share no file there either. The bundle is the same code
