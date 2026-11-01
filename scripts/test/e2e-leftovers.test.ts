@@ -56,14 +56,27 @@ const held = (file: string): boolean => {
     return true;
   }
 };
+const removed = (dir: string): boolean => {
+  try {
+    rmSync(dir, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
+};
 async function until(ok: () => boolean, ms: number): Promise<boolean> {
   for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) if (ok()) return true;
   return ok();
 }
 
-afterEach(() => {
-  for (const child of started.splice(0)) if (child.exitCode === null && child.signalCode === null) child.kill();
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+// Each child is waited for, and its files with it, so a failed test leaves no folder behind either.
+afterEach(async () => {
+  for (const child of started.splice(0)) {
+    if (child.exitCode !== null || child.signalCode !== null) continue;
+    child.kill();
+    await exited(child, 10_000);
+  }
+  for (const dir of dirs.splice(0)) await until(() => removed(dir), 10_000);
 });
 
 describe('the next e2e run stops what a killed one left, and removes its data directory (B-124)', () => {
