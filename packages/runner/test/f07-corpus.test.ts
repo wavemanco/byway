@@ -171,7 +171,7 @@ describe("the generators' baseline on Playwright 1.63.0 (F07 (a)) is the one tak
   });
 });
 
-describe('compare-gen.mjs passes a generator run only when every count and every listed edit is the baseline’s', () => {
+describe('compare-gen.mjs passes a generator run only when every count, every list and every listed edit is the baseline’s', () => {
   const work = mkdtempSync(path.join(tmpdir(), 'byway-f07-gen-'));
   afterAll(() => rmSync(work, { recursive: true, force: true }));
   const compare = (dir: string) => {
@@ -183,37 +183,81 @@ describe('compare-gen.mjs passes a generator run only when every count and every
     cpSync(BASELINE, dir, { recursive: true });
     return dir;
   };
+  type Tally = { n: number; done?: boolean; stats: Record<string, number> };
+  const tallyOf = (file: string) => JSON.parse(readFileSync(file, 'utf8')) as Tally;
+  const listOf = (file: string) => readFileSync(file, 'utf8').split('\n').filter(Boolean);
+  const writeList = (file: string, entries: string[]) => writeFileSync(file, entries.map((l) => `${l}\n`).join(''));
+  const bump = (t: Tally, key: string, by: number) => (t.stats[key] = (t.stats[key] ?? 0) + by);
 
-  it('passes the baseline itself', () => {
+  it('passes the baseline itself, whose lists hold what its tallies count', () => {
     const r = compare(BASELINE);
-    expect(r.summary).toBe("12 jobs in the baseline: 0 missing; 0 counts and 0 edits different (0 of them the same outcome, the oracle's verdict alone differing)");
+    expect(r.summary).toBe("12 jobs in the baseline: 0 missing; 0 counts, 0 lists and 0 edits different (0 of them the same outcome, the oracle's verdict alone differing)");
     expect(r.status).toBe(0);
   });
 
-  it('fails a run where the arbiter stored an edit the baseline refused, or a count moved', () => {
+  it('fails a run where the arbiter did not refuse an edit the baseline refused, naming the edit and the counts', () => {
     const dir = copy('stored');
     const refusals = path.join(dir, 'gen', 'lv-edge-12103.refusals.jsonl');
-    writeFileSync(refusals, readFileSync(refusals, 'utf8').split('\n').slice(1).join('\n'));
-    const stored = compare(dir);
-    expect(stored.out).toMatch(/^DIFFERENT gen\/lv-edge-12103 answer .*\n {2}baseline: REFUSED: byway could not put line \d+ .*\n {2}now: {6}STORED ok$/m);
-    expect(stored.summary).toMatch(/; 0 counts and 1 edits different \(0 of them/);
-    expect(stored.status).toBe(1);
+    const [first, ...rest] = listOf(refusals);
+    writeList(refusals, rest);
     const tally = path.join(dir, 'gen', 'lv-edge-12103.json');
-    const t = JSON.parse(readFileSync(tally, 'utf8')) as { stats: Record<string, number> };
-    t.stats.stored = (t.stats.stored ?? 0) + 1;
+    const t = tallyOf(tally);
+    bump(t, 'arbiterRefused', -1);
+    bump(t, `arbiterRefused, write judged ${(JSON.parse(first!) as { oracle: string }).oracle}`, -1);
+    bump(t, 'stored', 1);
+    bump(t, 'stored, judged ok', 1);
     writeFileSync(tally, JSON.stringify(t));
-    expect(compare(dir).out).toMatch(/^COUNT gen\/lv-edge-12103 stored baseline: \d+ now: \d+$/m);
+    const r = compare(dir);
+    expect(r.out).toMatch(/^DIFFERENT gen\/lv-edge-12103 answer .*\n {2}baseline: REFUSED: byway could not put line \d+ .*\n {2}now: {6}NOT LISTED \(stored and judged right, changed nothing, or refused by the reader or placement\)$/m);
+    expect(r.out).toMatch(/^COUNT gen\/lv-edge-12103 stored baseline: 656 now: 657$/m);
+    expect(r.summary).toMatch(/; 4 counts, 0 lists and 1 edits different \(0 of them/);
+    expect(r.status).toBe(1);
   });
 
-  it('fails a run with a job missing or stopped early, and stops on a folder that does not exist', () => {
+  it('fails a run where only a count moved, or only the oracle judged a listed write otherwise', () => {
+    const counted = copy('count');
+    const tally = path.join(counted, 'gen', 'links-12108.json');
+    const t = tallyOf(tally);
+    bump(t, 'nothing', 1);
+    writeFileSync(tally, JSON.stringify(t));
+    const count = compare(counted);
+    expect(count.out).toMatch(/^COUNT gen\/links-12108 nothing baseline: \d+ now: \d+$/m);
+    expect(count.summary).toMatch(/; 1 counts, 0 lists and 0 edits different/);
+    expect(count.status).toBe(1);
+    const judged = copy('verdict');
+    const list = path.join(judged, 'genv', 'r12-13102.judged.jsonl');
+    const [head, ...more] = listOf(list);
+    const e = JSON.parse(head!) as { v: string };
+    e.v = e.v === 'SPLIT' ? 'GLUED' : 'SPLIT';
+    writeList(list, [JSON.stringify(e), ...more]);
+    const verdict = compare(judged);
+    expect(verdict.out).toMatch(/^VERDICT DIFFERS genv\/r12-13102 answer /m);
+    expect(verdict.summary).toMatch(/; 0 counts, 0 lists and 1 edits different \(1 of them/);
+    expect(verdict.status).toBe(1);
+  });
+
+  it('names a throw listed with no answer, and a list longer than its tally counts', () => {
+    const dir = copy('threw');
+    writeList(path.join(dir, 'genv', 'r12-13202.threw.jsonl'), [JSON.stringify({ html: '<p>x</p>', harness: 'Error: boom' })]);
+    const r = compare(dir);
+    expect(r.out).toContain('LIST genv/r12-13202 now: .threw.jsonl has 1 lines, its tally counts 0');
+    expect(r.out).toMatch(/^DIFFERENT genv\/r12-13202 answer null\n {2}baseline: NOT LISTED .*\n {2}now: {6}THREW: Error: boom$/m);
+    expect(r.summary).toMatch(/; 0 counts, 1 lists and 1 edits different/);
+    expect(r.status).toBe(1);
+  });
+
+  it('fails a run with a job missing, stopped early or of another size, and stops on a folder that does not exist', () => {
     const dir = copy('missing');
     rmSync(path.join(dir, 'genv', 'r12-edge-13101.json'));
-    const tally = path.join(dir, 'gen', 'glue-12107.json');
-    writeFileSync(tally, JSON.stringify({ ...(JSON.parse(readFileSync(tally, 'utf8')) as object), n: 125, done: undefined }));
+    const stopped = path.join(dir, 'gen', 'glue-12107.json');
+    writeFileSync(stopped, JSON.stringify({ ...tallyOf(stopped), n: 125, done: undefined }));
+    const short = path.join(dir, 'gen', 'atk-12102.json');
+    writeFileSync(short, JSON.stringify({ ...tallyOf(short), n: 299 }));
     const r = compare(dir);
     expect(r.out).toContain('MISSING genv/r12-edge-13101');
     expect(r.out).toContain('MISSING gen/glue-12107 (stopped after 125 of 300 pages)');
-    expect(r.summary).toMatch(/^12 jobs in the baseline: 2 missing;/);
+    expect(r.out).toContain('MISSING gen/atk-12102 (finished after 299 of 300 pages)');
+    expect(r.summary).toMatch(/^12 jobs in the baseline: 3 missing;/);
     expect(r.status).toBe(1);
     expect(compare(path.join(work, 'no-such-folder')).status).toBe(2);
   });
