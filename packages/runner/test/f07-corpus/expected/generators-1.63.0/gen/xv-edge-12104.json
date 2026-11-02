@@ -1,0 +1,948 @@
+{
+ "seed": "12104",
+ "mode": "xv",
+ "n": 300,
+ "done": true,
+ "seconds": 852,
+ "stats": {
+  "pages": 300,
+  "deckLines": 2739,
+  "linesOffered": 2386,
+  "linesNotOffered": 353,
+  "edits": 900,
+  "stored": 598,
+  "stored, judged ok": 567,
+  "refusedOther": 187,
+  "R: line N: this link cannot be removed in this step (it carries id, which other parts of the page may use) and wo": 24,
+  "R: line N: this link cannot be removed in this step (it carries id, which other parts of the page may use; it hol": 1,
+  "R: line N cannot be changed in this step: a link on the page (to …) is left open or holds another link, around a ": 131,
+  "nothing": 105,
+  "R: line N: words cannot be added on this side of the link here, because the link continues on the next or previou": 6,
+  "R: line N: this link cannot be removed in this step and would be left empty; keep some words for it, or leave the": 14,
+  "stored, judged DIFF:link": 2,
+  "stored, judged PRE": 19,
+  "stored, judged DIFF:chars": 10,
+  "R: line N: this button cannot be removed in this step and would be left empty; keep some words for it, or leave t": 6,
+  "R: line N: this link cannot be removed in this step (it holds words a browser hides) and would be left empty; kee": 2,
+  "R: line N: words cannot be added between these two links here: the page leaves the first one open, so a browser s": 1,
+  "arbiterRefused": 10,
+  "arbiterRefused, write judged DIFF:gap": 6,
+  "R: line N: words cannot be added after the link \"…\" on this line: the page leaves that link open, so a browser ma": 2,
+  "arbiterRefused, write judged ok": 2,
+  "arbiterRefused, write judged DIFF:chars": 2
+ },
+ "ex": {
+  "stored:DIFF:link": [
+   {
+    "html": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><img src=\"i.png\" alt=\"Logo\">\n here? &nbsp; more: \n<div> <footer> <small>  menu<u><main> menu, Callprice?</main><a href=\"/c\" id=\"k\"> now. more. opentoday! Name! sale  caf&eacute; x. sale? </u>\n  bread?</small><dt><em> Intro caf&eacute;! Intro.\n Call </em>  <ins></a><em> ok🚀 now, Order ok🚀 \n  Intro? 🎉. R&amp;D: </em>\n   today?</ins></dt><a href=\"/a\"><dt>more Order. Order Spring? x:</dt>— now menu,\n<font face=\"Arial\">R&amp;D<sub>Fresh, $20 late,    Spring: R&amp;D.  🎉. bread\n  </sub> caf&eacute; </font></a></footer></div>\n</body></html>",
+    "answer": [
+     "T",
+     "here?   more:",
+     "",
+     "menu, Callprice?",
+     "now. 🎉 opentoday! Name! sale café x. sale? bread? ",
+     "Intro café! Intro. Call",
+     "ok🚀 now, Order ok🚀 Intro? 🎉. R&D: a b",
+     "more 🎉 Order Spring? x: ",
+     "— now menu, R&D",
+     "R&DFresh, $20 late, Spring: R&D. 🎉. bread café"
+    ],
+    "offered": [
+     "T",
+     "here?   more:",
+     "menu",
+     "menu, Callprice?",
+     "now. more. opentoday! Name! sale café x. sale? bread?",
+     "Intro café! Intro. Call",
+     "ok🚀 now, Order ok🚀 Intro? 🎉. R&D: today?",
+     "more Order. Order Spring? x:",
+     "— now menu,",
+     "R&DFresh, $20 late, Spring: R&D. 🎉. bread café"
+    ],
+    "written": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><img src=\"i.png\" alt=\"Logo\">\n here? &nbsp; more: \n<div> <footer> <small>  <u><main> menu, Callprice?</main><a href=\"/c\" id=\"k\"> now. 🎉 opentoday! Name! sale  café x. sale? </u>bread?</small><dt><em> Intro caf&eacute;! Intro.\n Call </em>  <ins></a><em> ok🚀 now, Order ok🚀 \n  Intro? 🎉. R&amp;D: </em>a b</ins></dt><a href=\"/a\"><dt>more 🎉 Order Spring? x:</dt>— now menu, R&amp;D\n<font face=\"Arial\">R&amp;D<sub>Fresh, $20 late,    Spring: R&amp;D.  🎉. bread\n  </sub> caf&eacute; </font></a></footer></div>\n</body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><img src=\"i.png\" alt=\"Logo\">\n here? &nbsp; more: \n<div> <footer> <small>  menu<u><main> menu, Callprice?</main><a href=\"/c\" id=\"k\"> now. more. opentoday! Name! sale  caf&eacute; x. sale? </u>\n  bread?</small><dt><em> Intro caf&eacute;! Intro.\n Call </em>  <ins></a><em> ok🚀 now, Order ok🚀 \n  Intro? 🎉. R&amp;D: </em>\n   today?</ins></dt><a href=\"/a\"><dt>more Order. Order Spring? x:</dt>— now menu,\n<font face=\"Arial\">R&amp;D<sub>Fresh, $20 late,    Spring: R&amp;D.  🎉. bread\n  </sub> caf&eacute; </font></a></footer></div>\n</body></html>",
+    "answer": [
+     "T",
+     "here?   more:",
+     "\"quoted\" ",
+     "menu, Callprice?",
+     " now. more. opentoday! Name! sale café x. sale? bread?) ",
+     "Intro café! Intro. Call",
+     " ok🚀 now, Order ok🚀 Intro? 🎉. R&D: today?)",
+     "more Order. Order Spring? x:",
+     "— now menu,",
+     ""
+    ],
+    "offered": [
+     "T",
+     "here?   more:",
+     "menu",
+     "menu, Callprice?",
+     "now. more. opentoday! Name! sale café x. sale? bread?",
+     "Intro café! Intro. Call",
+     "ok🚀 now, Order ok🚀 Intro? 🎉. R&D: today?",
+     "more Order. Order Spring? x:",
+     "— now menu,",
+     "R&DFresh, $20 late, Spring: R&D. 🎉. bread café"
+    ],
+    "written": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><img src=\"i.png\" alt=\"Logo\">\n here? &nbsp; more: \n<div> <footer> <small>  \"quoted\"<u><main> menu, Callprice?</main><a href=\"/c\" id=\"k\"> now. more. opentoday! Name! sale  café x. sale? </u>bread?)</small><dt><em> Intro caf&eacute;! Intro.\n Call </em>  <ins></a><em> ok🚀 now, Order ok🚀 \n  Intro? 🎉. R&amp;D: </em>today?)</ins></dt><a href=\"/a\"><dt>more Order. Order Spring? x:</dt>— now menu,\n<font face=\"Arial\"> </font></a></footer></div>\n</body></html>"
+   }
+  ],
+  "stored:PRE": [
+   {
+    "html": "<!doctype html><html><head><title>T</title>&nbsp;<meta name=\"x\"></head><body><span style=\"text-transform:uppercase\"> <span style=\"text-transform:uppercase\"><i style=\"opacity:0\">op</i></span><footer><nav>menu. $20daily —: Spring:</nav> <span style=\"text-transform:uppercase\">\n  <span style=\"display:contents\"><main> Order, late sale!   \nName!</main><a>more ok🚀!\n today  caf&eacute;. <article><abbr>caf&eacute;, x. menu?\ntoday! —:</abbr><aside>open open ok🚀:</aside> \n  🎉. Fresh. </article></span></a></span><a name=\"n\"><label>sale.</label> daily Intro menu!\n  <u><summary>Name. Spring $20:open  — ok🚀: </summary><mark>\n  open: —? R&amp;D</mark>  <article>late.now  Call?</article></a></footer></span>\nlate! today! Fresh\n<label><span class=\"sr\"> 🎉, here</span></label>\n</body></html>",
+    "answer": [
+     "T",
+     " 🎉",
+     "menu. $20daily —: Spring:",
+     "Order, late sale! Name!",
+     " more ok🚀! today café.!",
+     "café, x. menu? today! —:",
+     "open open ok🚀: x",
+     "🎉. Fresh.",
+     "sale.",
+     "Fresh daily Intro menu!",
+     "Name. Spring $20:open — ok🚀:!",
+     "open: —?R&D",
+     "late.now Call?",
+     "late! today! Fresh",
+     "🎉, here"
+    ],
+    "offered": [
+     "T",
+     " ",
+     "menu. $20daily —: Spring:",
+     "Order, late sale! Name!",
+     "more ok🚀! today café.",
+     "café, x. menu? today! —:",
+     "open open ok🚀:",
+     "🎉. Fresh.",
+     "sale.",
+     "daily Intro menu!",
+     "Name. Spring $20:open — ok🚀:",
+     "open: —? R&D",
+     "late.now Call?",
+     "late! today! Fresh",
+     "🎉, here"
+    ],
+    "written": "<!doctype html><html><head><title>T</title>🎉 <meta name=\"x\"></head><body><span style=\"text-transform:uppercase\"> <span style=\"text-transform:uppercase\"><i style=\"opacity:0\">op</i></span><footer><nav>menu. $20daily —: Spring:</nav> <span style=\"text-transform:uppercase\">\n  <span style=\"display:contents\"><main> Order, late sale!   \nName!</main><a>more ok🚀!\n today  café.! <article><abbr>caf&eacute;, x. menu?\ntoday! —:</abbr><aside>open open ok🚀: x</aside> \n  🎉. Fresh. </article></span></a></span><a name=\"n\"><label>sale.</label> Fresh daily Intro menu!\n  <u><summary>Name. Spring $20:open  — ok🚀:! </summary><mark>\n  open: —?R&amp;D</mark>  <article>late.now  Call?</article></a></footer></span>\nlate! today! Fresh\n<label><span class=\"sr\"> 🎉, here</span></label>\n</body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title>&nbsp;<meta name=\"x\"></head><body><a href=\"/c\" id=\"k\"> <i>\n  <span style=\"display:contents\"><a href=\"/c\" id=\"k\"><mark>🎉! now price</mark> R&amp;D:</a> <table><tr><td> <a href=\"/c\" id=\"k\">Spring ok🚀🎉:</a><nav>open, menu &nbsp;\n Call Name R&amp;D? x, &nbsp;! </nav>\n</h2></td></tr></table><sub>caf&eacute;! here!\n  <sub>  more: us Call?open. Fresh! x</sub></sub></span>\n  caf&eacute;! $20 daily <figcaption><li>late\n  <fieldset><image src=\"i.png\"><section><cite> menu: Fresh  Order Fresh, price. Fresh.</cite>&nbsp; Call Name</section></li></fieldset><blockquote><big></a> <b hidden>hid</b></big>bread! us Fresh,\n  </blockquote>Name</figcaption></a>\n<em> open </em><dd><i><s> <b> $20 us</b><table><tr><span><section>Gone</section></span><td><svg width=\"4\" height=\"4\"><desc>D</desc></svg></td></tr></table> <small><a href=\"/a\">more?\n  x today — price?</a> —: late,\n —! Intro? &nbsp;!</small></s>\n  <dt><u> <strong> sale? CallFresh today</strong>\n   sale!</u><footer><!-- c -->\n  <summary>us</summary></dt><abbr><p> bread.<em> sale: &nbsp;:more: Name, now—? ok🚀!</em></p><nobr>open? caf&eacute;. R&amp;D     today<small><figcaption>sale! —: now:bread</figcaption><span>bread? sale: Name?</small></span></abbr></nobr><span style=\"display:contents\"><a>\n<math><title/></math></a> &nbsp;! menu $20!</span></dd></body></html>",
+    "answer": [
+     "T",
+     "x",
+     "🎉! now price R&D:",
+     "Spring ok🚀🎉:",
+     "open, menu   Call Name R&D? x,  !",
+     " café! here! more: us a b Call?open. Fresh! x café! $20 daily",
+     "late",
+     "menu: Fresh Order Fresh, price. Fresh.  Call Name)",
+     "",
+     "Name",
+     "",
+     "($20 us",
+     "<b>",
+     "[more? x today — price?] —: late, —! Intro?  !",
+     "sale? CallFresh today sale!",
+     "us",
+     "",
+     "open? café. R&D today",
+     "sale! —: now:bread",
+     "bread? sale: Name?",
+     "! menu $20!."
+    ],
+    "offered": [
+     "T",
+     " ",
+     "🎉! now price R&D:",
+     "Spring ok🚀🎉:",
+     "open, menu   Call Name R&D? x,  !",
+     "café! here! more: us Call?open. Fresh! x café! $20 daily",
+     "late",
+     "menu: Fresh Order Fresh, price. Fresh.  Call Name",
+     "bread! us Fresh,",
+     "Name",
+     "open",
+     "$20 us",
+     "Gone",
+     "[more? x today — price?] —: late, —! Intro?  !",
+     "sale? CallFresh today sale!",
+     "us",
+     "bread. sale:  :more: Name, now—? ok🚀!",
+     "open? café. R&D today",
+     "sale! —: now:bread",
+     "bread? sale: Name?",
+     " ! menu $20!"
+    ],
+    "written": "<!doctype html><html><head><title>T</title>x <meta name=\"x\"></head><body><a href=\"/c\" id=\"k\"> <i>\n  <span style=\"display:contents\"><a href=\"/c\" id=\"k\"><mark>🎉! now price</mark> R&amp;D:</a> <table><tr><td> <a href=\"/c\" id=\"k\">Spring ok🚀🎉:</a><nav>open, menu &nbsp;\n Call Name R&amp;D? x, &nbsp;! </nav>\n</h2></td></tr></table><sub>café! here! <sub>more: us a b Call?open. Fresh! x</sub></sub></span>\n  café! $20 daily <figcaption><li>late\n  <fieldset><image src=\"i.png\"><section><cite> menu: Fresh  Order Fresh, price. Fresh.</cite>  Call Name)</section></li></fieldset><blockquote><big></a> <b hidden>hid</b></big>\n  </blockquote>Name</figcaption></a>\n<dd><i><s> <b> ($20 us</b><table><tr><span><section>&lt;b&gt;</section></span><td><svg width=\"4\" height=\"4\"><desc>D</desc></svg></td></tr></table> <small><a href=\"/a\">more?\n  x today — price?</a> —: late,\n —! Intro? &nbsp;!</small></s>\n  <dt><u> <strong> sale? CallFresh today</strong>\n   sale!</u><footer><!-- c -->\n  <summary>us</summary></dt><abbr><nobr>open? caf&eacute;. R&amp;D     today<small><figcaption>sale! —: now:bread</figcaption><span>bread? sale: Name?</small></span></abbr></nobr><span style=\"display:contents\"><a>\n<math><title/></math></a> ! menu $20!.</span></dd></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title>&nbsp;<meta name=\"x\"></head><body><blockquote> R&amp;D! daily.\n<strong>\n<i> <div><sup> x! price. sale?sale. Fresh more, </sup>Call Spring Fresh\n  <fieldset>\n  menu: Spring.</fieldset></div>late? caf&eacute;,<i class=\"icon\"></i> <h3> <font style=\"display:inline-block\"><mark><table><tr><td> Order? $20 sale:late? — —!</td></tr></table></mark>  menu 🎉 now.menu Call: Intro? </font><aside>\n<hr><span></span><dd><font face=\"Arial\"><i>Fresh Call. Call Spring, Call Name!</i></font></dd></h3></aside></blockquote><cite><strong> more? Order,Intro. daily R&amp;D <strong>\n  \nopen? R&amp;D? 🎉x: Name! 🎉? </div></cite>\n<a href=\"/c\" id=\"k\"><sub>&nbsp;, ok🚀 ok🚀!</sub></body></html>",
+    "answer": [
+     "T",
+     "Big",
+     "R&D! daily. a b ",
+     "x! price. sale?sale. Fresh more, Call Spring Fresh",
+     "menu: Spring.",
+     "late? tom&jerry",
+     "Order? sale:late? — —!",
+     "menu 🎉 now.menu Call: x Intro?",
+     " Fresh Call. café Spring, Call Name!",
+     "more? Order,Intro. daily R&D open? R&D? 🎉x: Name! 🎉?",
+     " , ok🚀 ok🚀!"
+    ],
+    "offered": [
+     "T",
+     " ",
+     "R&D! daily.",
+     "x! price. sale?sale. Fresh more, Call Spring Fresh",
+     "menu: Spring.",
+     "late? café,",
+     "Order? $20 sale:late? — —!",
+     "menu 🎉 now.menu Call: Intro?",
+     "Fresh Call. Call Spring, Call Name!",
+     "more? Order,Intro. daily R&D open? R&D? 🎉x: Name! 🎉?",
+     " , ok🚀 ok🚀!"
+    ],
+    "written": "<!doctype html><html><head><title>T</title>Big<meta name=\"x\"></head><body><blockquote> R&amp;D! daily. a b\n<strong>\n<i> <div><sup> x! price. sale?sale. Fresh more, </sup>Call Spring Fresh\n  <fieldset>\n  menu: Spring.</fieldset></div>late? tom&amp;jerry<i class=\"icon\"></i> <h3> <font style=\"display:inline-block\"><mark><table><tr><td> Order? sale:late? — —!</td></tr></table></mark>  menu 🎉 now.menu Call: x Intro? </font><aside>\n<hr><span></span><dd><font face=\"Arial\"><i>Fresh Call. café Spring, Call Name!</i></font></dd></h3></aside></blockquote><cite><strong> more? Order,Intro. daily R&amp;D <strong>\n  \nopen? R&amp;D? 🎉x: Name! 🎉? </div></cite>\n<a href=\"/c\" id=\"k\"><sub>&nbsp;, ok🚀 ok🚀!</sub></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title>&nbsp;<meta name=\"x\"></head><body>more more. R&amp;D.\n<span style=\"display:contents\"><p> sale? Fresh</p>\n<sup><footer hidden> <a name=\"n\"> caf&eacute;. </a>today ok🚀? daily.<a><dd>\n   Fresh!   more?🎉 </dd></a></footer></sup></span><div><section><dd>\n<del><span style=\"text-transform:uppercase\">caf&eacute;:  </span> here</del><font face=\"Arial\"> <span style=\"display:contents\">Call. \n   open — Order—? sale? Call </font></dd> <section><h2><nav>$20!\n  more? sale daily:\n  Spring Spring!</nav></h2></section><image src=\"i.png\"></section><footer><tt> now, R&amp;D,<div>   —! more: today</div> <span style=\"text-transform:uppercase\">  </b></tt></footer></div>\n<section> <br>  $20\n</section></body></html>",
+    "answer": [
+     "T",
+     "Big",
+     "more more. R&D.",
+     "sale? Fresh)",
+     "café: here",
+     "Call. open — Order—? sale? Call",
+     "$20! more? sale daily: Spring Spring!",
+     "now, R&D,?",
+     "—! more: today",
+     "$20"
+    ],
+    "offered": [
+     "T",
+     " ",
+     "more more. R&D.",
+     "sale? Fresh",
+     "café: here",
+     "Call. open — Order—? sale? Call",
+     "$20! more? sale daily: Spring Spring!",
+     "now, R&D,",
+     "—! more: today",
+     "$20"
+    ],
+    "written": "<!doctype html><html><head><title>T</title>Big <meta name=\"x\"></head><body>more more. R&amp;D.\n<span style=\"display:contents\"><p> sale? Fresh)</p>\n<sup><footer hidden> <a name=\"n\"> caf&eacute;. </a>today ok🚀? daily.<a><dd>\n   Fresh!   more?🎉 </dd></a></footer></sup></span><div><section><dd>\n<del><span style=\"text-transform:uppercase\">caf&eacute;:  </span> here</del><font face=\"Arial\"> <span style=\"display:contents\">Call. \n   open — Order—? sale? Call </font></dd> <section><h2><nav>$20!\n  more? sale daily:\n  Spring Spring!</nav></h2></section><image src=\"i.png\"></section><footer><tt> now, R&amp;D,?<div>   —! more: today</div> <span style=\"text-transform:uppercase\">  </b></tt></footer></div>\n<section> <br>  $20\n</section></body></html>"
+   },
+   {
+    "html": "<!doctype html><title>T</title><span>\n&nbsp; </span><button type=\"button\"> </button><sup> \n  here!  <nobr><article> sale. —. </article></nobr><header><b> <sup>open. caf&eacute;  <a href=\"/c\" id=\"k\">\n  —? open daily. Order   Name Intro </a>late! Name open</sup></b> <button type=\"button\"> </button><strong> late! <s>&nbsp;: Spring<sup>Fresh: &nbsp;! now,caf&eacute; Spring caf&eacute;!\n  Order! </strong></header></sup><mark><small>open: —</small>more: menu.sale Fresh!\n</mark>\n<header><table><tr><td> &nbsp; now Name\n  <center>\n  <a href=\"/a\"><span style=\"display:none\">dn</span> <span style=\"display:inline-block\">   ok🚀 price menu,\nR&amp;D: Spring! more, Intro? bread</span></a>&nbsp;, Order, more:<a>\n  <h2>Order: Fresh, menu, menu open:</h2>  <summary> Intro x Call,\ndaily </summary> now &nbsp;! us:</a></center>$20, —: menu,</td></tr></table> <hr></header>\n",
+    "answer": [
+     "T",
+     "a b",
+     "here! R&D",
+     "sale. —. tom&jerry",
+     "open. café [—? open daily. Order Name Intro] late! Name open",
+     "",
+     "",
+     "",
+     "",
+     "Intro x Call, tom&jerry",
+     "now  !",
+     "$20, —: menu,"
+    ],
+    "offered": [
+     "T",
+     " ",
+     "here!",
+     "sale. —.",
+     "open. café [—? open daily. Order Name Intro] late! Name open",
+     "late!  : SpringFresh:  ! now,café Spring café! Order!",
+     "open: —more: menu.sale Fresh!",
+     "  now Name",
+     "Order: Fresh, menu, menu open:",
+     "Intro x Call, daily",
+     "now  ! us:",
+     "$20, —: menu,"
+    ],
+    "written": "<!doctype html><title>T</title><span>\na b </span><button type=\"button\"> </button><sup> \n  here! R&amp;D  <nobr><article> sale. —. tom&amp;jerry </article></nobr><header><b> <sup>open. caf&eacute;  <a href=\"/c\" id=\"k\">\n  —? open daily. Order   Name Intro </a>late! Name open</sup></b> <button type=\"button\"> </button><strong> <s><sup> </strong></header></sup>\n<header><table><tr><td> \n  <center>\n  <a href=\"/a\"><span style=\"display:none\">dn</span> <span style=\"display:inline-block\">   ok🚀 price menu,\nR&amp;D: Spring! more, Intro? bread</span></a>&nbsp;, Order, more:<a>\n    <summary> Intro x Call,\ntom&amp;jerry </summary> now  !</a></center>$20, —: menu,</td></tr></table> <hr></header>\n"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title>&nbsp;<meta name=\"x\"></head><body><abbr><blockquote> <details><summary>Sum</summary>Body</details><sub> price Spring.<article>R&amp;D,</article></blockquote></abbr>\n<sup>us! — &nbsp;\n  Name &nbsp;!</sup>\n<script>x()</script>\n<cite><center><sup>daily</sup> price Spring R&amp;D</cite></center><em><em>Call caf&eacute;? x?\n <a href=\"/c\" id=\"k\"></font><a href=\"/c\" id=\"k\"><u>price! now Intro? late late,</u></a></a><a href=\"/a\"><details><summary>Sum</summary>Body</details></a></em></em>\n</body></html>",
+    "answer": [
+     "T",
+     " a b",
+     "Sum",
+     "",
+     " \"quoted\"",
+     "us! —   Name  !? ",
+     "daily café price Spring R&D",
+     "Call café? x?",
+     "price! now Intro? late late,",
+     "Sum"
+    ],
+    "offered": [
+     "T",
+     " ",
+     "Sum",
+     "price Spring.",
+     "R&D,",
+     "us! —   Name  !",
+     "daily price Spring R&D",
+     "Call café? x?",
+     "price! now Intro? late late,",
+     "Sum"
+    ],
+    "written": "<!doctype html><html><head><title>T</title>a b<meta name=\"x\"></head><body><abbr><blockquote> <details><summary>Sum</summary>Body</details><sub> <article>\"quoted\"</article></blockquote></abbr>\n<sup>us! —  \n  Name  !?</sup>\n<script>x()</script>\n<cite><center><sup>daily</sup> café price Spring R&amp;D</cite></center><em><em>Call caf&eacute;? x?\n <a href=\"/c\" id=\"k\"></font><a href=\"/c\" id=\"k\"><u>price! now Intro? late late,</u></a></a><a href=\"/a\"><details><summary>Sum</summary>Body</details></a></em></em>\n</body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title>&nbsp;<meta name=\"x\"></head><body>—, 🎉:<div><article> <header><a name=\"n\"><del> —. &nbsp;\n</del><a href=\"/c\" id=\"k\"> R&amp;D bread? more,  now today ok🚀 daily</a><i class=\"icon\"></i></a></header></div><div style=\"display:inline-block\"><abbr></font><aside>\nopen Introopen, Call! bread!<center>&nbsp;,\n<label> — late! sale.  </label></aside></abbr></div>\n<article> more, x daily</article></body></html>",
+    "answer": [
+     "T",
+     " Fresh",
+     "🎉:",
+     "—.! ",
+     "R&D bread? more, now today ok🚀 daily",
+     "open Introopen, Call! bread!",
+     " ,",
+     "",
+     "more, x daily"
+    ],
+    "offered": [
+     "T",
+     " ",
+     "—, 🎉:",
+     "—.  ",
+     "R&D bread? more, now today ok🚀 daily",
+     "open Introopen, Call! bread!",
+     " ,",
+     "— late! sale.",
+     "more, x daily"
+    ],
+    "written": "<!doctype html><html><head><title>T</title>Fresh <meta name=\"x\"></head><body>🎉:<div><article> <header><a name=\"n\"><del> —.!\n</del><a href=\"/c\" id=\"k\"> R&amp;D bread? more,  now today ok🚀 daily</a><i class=\"icon\"></i></a></header></div><div style=\"display:inline-block\"><abbr></font><aside>\nopen Introopen, Call! bread!<center>&nbsp;,\n<label>   </label></aside></abbr></div>\n<article> more, x daily</article></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title>&nbsp;<meta name=\"x\"></head><body>—, 🎉:<div><article> <header><a name=\"n\"><del> —. &nbsp;\n</del><a href=\"/c\" id=\"k\"> R&amp;D bread? more,  now today ok🚀 daily</a><i class=\"icon\"></i></a></header></div><div style=\"display:inline-block\"><abbr></font><aside>\nopen Introopen, Call! bread!<center>&nbsp;,\n<label> — late! sale.  </label></aside></abbr></div>\n<article> more, x daily</article></body></html>",
+    "answer": [
+     "T",
+     " R&D",
+     "—, 🎉:",
+     "—.  ",
+     "R&D bread? more, now today ok🚀 daily",
+     "open Introopen, Call! bread!",
+     "",
+     "— late! sale.",
+     ""
+    ],
+    "offered": [
+     "T",
+     " ",
+     "—, 🎉:",
+     "—.  ",
+     "R&D bread? more, now today ok🚀 daily",
+     "open Introopen, Call! bread!",
+     " ,",
+     "— late! sale.",
+     "more, x daily"
+    ],
+    "written": "<!doctype html><html><head><title>T</title>R&amp;D <meta name=\"x\"></head><body>—, 🎉:<div><article> <header><a name=\"n\"><del> —. &nbsp;\n</del><a href=\"/c\" id=\"k\"> R&amp;D bread? more,  now today ok🚀 daily</a><i class=\"icon\"></i></a></header></div><div style=\"display:inline-block\"><abbr></font><aside>\nopen Introopen, Call! bread!<center>\n<label> — late! sale.  </label></aside></abbr></div>\n<article> </article></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title>&nbsp;<meta name=\"x\"></head><body><video>Fallback</video>bread!\n\n  Spring! $20. sale?</body></html>",
+    "answer": [
+     "T & <co>",
+     "\\\\\\[1\\\\\\]",
+     "bread! Spring! $20. sale?"
+    ],
+    "offered": [
+     "T",
+     " ",
+     "bread! Spring! $20. sale?"
+    ],
+    "written": "<!doctype html><html><head><title>T &amp; &lt;co&gt;</title>\\[1\\] <meta name=\"x\"></head><body><video>Fallback</video>bread!\n\n  Spring! $20. sale?</body></html>"
+   },
+   {
+    "html": "<html><head><title>T</title></head><body><a name=\"n\"><a><div> <s> <span style=\"display:contents\">here Intro: Spring.   Call!sale, </s></span><br></div><em style=\"display:contents\">dc</em></a><span style=\"display:inline-block\"><footer hidden><span hidden> secret</span>Intro 🎉, <ins> —<details><summary>Sum</summary>Body</details></span></footer></a>&nbsp;<article>  <i class=\"icon\"></i><a href=\"/b\"><center><a><h3> Call</h3> sale</center></a></article></a>\n</body></html>",
+    "answer": [
+     "T",
+     "",
+     "dc",
+     "\"quoted\"",
+     " ",
+     "(soon)"
+    ],
+    "offered": [
+     "T",
+     "here Intro: Spring. Call!sale,",
+     "dc",
+     " ",
+     "Call",
+     "sale"
+    ],
+    "written": "<html><head><title>T</title></head><body><a name=\"n\"><a><div> <s> <span style=\"display:contents\"> </s></span><br></div><em style=\"display:contents\">dc</em></a><span style=\"display:inline-block\"><footer hidden><span hidden> secret</span>Intro 🎉, <ins> —<details><summary>Sum</summary>Body</details></span></footer></a> \"quoted\"<article>  <i class=\"icon\"></i><a href=\"/b\"><center><a> (soon)</center></a></article></a>\n</body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title>&nbsp;<meta name=\"x\"></head><body><b>price R&amp;D,\n—! <a name=\"n\"> <u> Intro</u></a><article> <mark> <del>\n<sup> <address>daily us? Name: </address>&nbsp; </sup>  <blockquote>$20,  <address> open Order!\n  </address></blockquote></del>\n  <dt><b>  x! menu?</b> <b><center>\n  $20. x! x? Fresh! &nbsp;! late!\nR&amp;D?\n  us</b></center> x, Order, Order,</dt><s><dt> <mark>x\nsale. menu! R&amp;D? </mark></dt><sup><summary> ok🚀 menu? <video>Fallback</video></sup></s></mark><input></article></body></html>",
+    "answer": [
+     "T",
+     " ",
+     "price R&D, —! Intro.",
+     " daily us? Name:?",
+     " 🎉",
+     "$20,",
+     "open Order!",
+     "x! menu?",
+     "$20. x! x? Fresh!  ! late! R&D? us",
+     "",
+     "",
+     "menu? "
+    ],
+    "offered": [
+     "T",
+     " ",
+     "price R&D, —! Intro",
+     "daily us? Name:",
+     " ",
+     "$20,",
+     "open Order!",
+     "x! menu?",
+     "$20. x! x? Fresh!  ! late! R&D? us",
+     "x, Order, Order,",
+     "x sale. menu! R&D?",
+     "ok🚀 menu?"
+    ],
+    "written": "<!doctype html><html><head><title>T</title>&nbsp;<meta name=\"x\"></head><body><b>price R&amp;D,\n—! <a name=\"n\"><u>Intro.</u></a><article> <mark> <del>\n<sup> <address>daily us? Name:? </address>🎉 </sup>  <blockquote>$20,  <address> open Order!\n  </address></blockquote></del>\n  <dt><b>  x! menu?</b> <b><center>\n  $20. x! x? Fresh! &nbsp;! late!\nR&amp;D?\n  us</b></center> </dt><s><dt> </dt><sup><summary> menu? <video>Fallback</video></sup></s></mark><input></article></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title>&nbsp;<meta name=\"x\"></head><body><b>price R&amp;D,\n—! <a name=\"n\"> <u> Intro</u></a><article> <mark> <del>\n<sup> <address>daily us? Name: </address>&nbsp; </sup>  <blockquote>$20,  <address> open Order!\n  </address></blockquote></del>\n  <dt><b>  x! menu?</b> <b><center>\n  $20. x! x? Fresh! &nbsp;! late!\nR&amp;D?\n  us</b></center> x, Order, Order,</dt><s><dt> <mark>x\nsale. menu! R&amp;D? </mark></dt><sup><summary> ok🚀 menu? <video>Fallback</video></sup></s></mark><input></article></body></html>",
+    "answer": [
+     "T",
+     "Big",
+     "",
+     "daily Name:",
+     " x",
+     " ",
+     "\"quoted\" Order!",
+     "x! menu?",
+     "$20. x! x? Fresh!  ! late! R&D? 🎉",
+     "x, Order, Order,",
+     "x sale. menu! R&D?)",
+     "ok🚀 menu?"
+    ],
+    "offered": [
+     "T",
+     " ",
+     "price R&D, —! Intro",
+     "daily us? Name:",
+     " ",
+     "$20,",
+     "open Order!",
+     "x! menu?",
+     "$20. x! x? Fresh!  ! late! R&D? us",
+     "x, Order, Order,",
+     "x sale. menu! R&D?",
+     "ok🚀 menu?"
+    ],
+    "written": "<!doctype html><html><head><title>T</title>Big <meta name=\"x\"></head><body><b><a name=\"n\"></a><article> <mark> <del>\n<sup> <address>daily Name: </address>x </sup>  <blockquote>  <address> \"quoted\" Order!\n  </address></blockquote></del>\n  <dt><b>  x! menu?</b> <b><center>\n  $20. x! x? Fresh!  ! late!\nR&amp;D?\n  🎉</b></center> x, Order, Order,</dt><s><dt> <mark>x\nsale. menu! R&amp;D?) </mark></dt><sup><summary> ok🚀 menu? <video>Fallback</video></sup></s></mark><input></article></body></html>"
+   }
+  ],
+  "stored:DIFF:chars": [
+   {
+    "html": "<!doctype html><title>T</title><em><table><tbody><tr><td> <li> <nav><a name=\"n\"> caf&eacute;.\nprice<i> bread ok🚀, </i>  today! price</nav></a></li></td></tr></table><svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg></em>\nSpring: here,\n",
+    "answer": [
+     "T & <co>",
+     "café. price bread ok🚀, today! price",
+     ""
+    ],
+    "offered": [
+     "T",
+     "café. price bread ok🚀, today! price",
+     "Spring: here,"
+    ],
+    "written": "<!doctype html><title>T &amp; &lt;co&gt;</title><em><table><tbody><tr><td> <li> <nav><a name=\"n\"> caf&eacute;.\nprice<i> bread ok🚀, </i>  today! price</nav></a></li></td></tr></table><svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg></em>\n\n"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><summary><svg width=\"4\" height=\"4\"><title/></svg></summary>\n Fresh price,caf&eacute;? Spring menu.<svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg><del><address hidden><a><font style=\"display:inline-block\">\n$20<a href=\"/b\"> <main> <dt>today! &nbsp;? us!\n  sale,menu! $20</dt><i class=\"icon\"></i></main><sup> <svg width=\"4\" height=\"4\"><title>Tip</svg>\n  open?<dd>bread🎉 </dd></sup><br></a> sale Fresh? </address></body></html>",
+    "answer": [
+     "T",
+     ""
+    ],
+    "offered": [
+     "T",
+     "Fresh price,café? Spring menu."
+    ],
+    "written": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><summary><svg width=\"4\" height=\"4\"><title/></svg></summary>\n <svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg><del><address hidden><a><font style=\"display:inline-block\">\n$20<a href=\"/b\"> <main> <dt>today! &nbsp;? us!\n  sale,menu! $20</dt><i class=\"icon\"></i></main><sup> <svg width=\"4\" height=\"4\"><title>Tip</svg>\n  open?<dd>bread🎉 </dd></sup><br></a> sale Fresh? </address></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><summary><svg width=\"4\" height=\"4\"><title/></svg></summary>\n Fresh price,caf&eacute;? Spring menu.<svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg><del><address hidden><a><font style=\"display:inline-block\">\n$20<a href=\"/b\"> <main> <dt>today! &nbsp;? us!\n  sale,menu! $20</dt><i class=\"icon\"></i></main><sup> <svg width=\"4\" height=\"4\"><title>Tip</svg>\n  open?<dd>bread🎉 </dd></sup><br></a> sale Fresh? </address></body></html>",
+    "answer": [
+     "T",
+     ""
+    ],
+    "offered": [
+     "T",
+     "Fresh price,café? Spring menu."
+    ],
+    "written": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><summary><svg width=\"4\" height=\"4\"><title/></svg></summary>\n <svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg><del><address hidden><a><font style=\"display:inline-block\">\n$20<a href=\"/b\"> <main> <dt>today! &nbsp;? us!\n  sale,menu! $20</dt><i class=\"icon\"></i></main><sup> <svg width=\"4\" height=\"4\"><title>Tip</svg>\n  open?<dd>bread🎉 </dd></sup><br></a> sale Fresh? </address></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><aside> <span style=\"display:inline-block\"> $20 open</span></aside>\n<p> <big><address> Intro Fresh </address>open, now. sale?</big>\n  <svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg></p>\nus? Spring!\n<figcaption>daily: Fresh: </figcaption>\n</body></html>",
+    "answer": [
+     "T",
+     "$20 open",
+     "Intro a b",
+     "open, now. Big sale?",
+     "us? Spring!",
+     "daily: Fresh:"
+    ],
+    "offered": [
+     "T",
+     "$20 open",
+     "Intro Fresh",
+     "open, now. sale?",
+     "us? Spring!",
+     "daily: Fresh:"
+    ],
+    "written": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><aside> <span style=\"display:inline-block\"> $20 open</span></aside>\n<p> <big><address> Intro a b </address>open, now. Big sale?</big>\n  <svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg></p>\nus? Spring!\n<figcaption>daily: Fresh: </figcaption>\n</body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><div style=\"display:inline-block\"><big>   bread:\n  \nName</big>today </div>\n<span style=\"display:contents\"><sup>\n  Order Call? sale  now: x? R&amp;D! <a href=\"/a\"><div style=\"display:inline-block\"> </li><font style=\"display:inline-block\"> &nbsp;</font><a>  us, Name,</a></div> <span style=\"display:contents\"> Order. us, Intro<small> &nbsp;&nbsp; Intro, $20,&nbsp;:</small>  Spring:\n<span style=\"display:contents\"><span class=\"sr\"> sr words</span></span></a></sup><h3><table><tbody><tr><span><section>Gone</section></span><td> <mark><a>Name, us Order.Spring,</a></mark><u> <mark> —\n<table><tbody><tr><br><td> menu, Order:</td></tr></table></mark><a href=\"/b\"><i class=\"icon\"></i>\n  <table><tr><td>\ntoday  &nbsp;? Order:</td></tr></table><sup>now</sup></a><abbr>Intro &nbsp; price?now: caf&eacute;.<tt>more \ncaf&eacute;! more: here:</tt></u><footer> \n  Order,</footer></td><td>\n  now! now, daily,<section><span style=\"display:none\">dn</span> now\n  bread,</section> 🎉: us</td></tr></table></h3>\n Spring Fresh\n</body></html>",
+    "answer": [
+     "T",
+     "",
+     " today.",
+     "Order Call? sale now: x? R&D! café ",
+     " ",
+     "",
+     "",
+     "Name, us Order.Spring, —",
+     "menu, Order:",
+     "today Big  ? Order:",
+     "[now]Intro   price?now: café.)",
+     "more café! more: here:",
+     "",
+     " Fresh now, daily,",
+     "🎉: us",
+     "Spring Fresh"
+    ],
+    "offered": [
+     "T",
+     "bread: Name",
+     "today",
+     "Order Call? sale now: x? R&D!",
+     " ",
+     "us, Name,",
+     "Gone",
+     "Name, us Order.Spring, —",
+     "menu, Order:",
+     "today  ? Order:",
+     "[now]Intro   price?now: café.",
+     "more café! more: here:",
+     "Order,",
+     "now! now, daily,",
+     "🎉: us",
+     "Spring Fresh"
+    ],
+    "written": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><div style=\"display:inline-block\"><big>   </big> today. </div>\n<span style=\"display:contents\"><sup>\n  Order Call? sale  now: x? R&amp;D! café <a href=\"/a\"><div style=\"display:inline-block\"> </li><font style=\"display:inline-block\"> &nbsp;</font><a>  </a></div> <span style=\"display:contents\"> Order. us, Intro<small> &nbsp;&nbsp; Intro, $20,&nbsp;:</small>  Spring:\n<span style=\"display:contents\"><span class=\"sr\"> sr words</span></span></a></sup><h3><table><tbody><tr><span><section></section></span><td> <mark><a>Name, us Order.Spring,</a></mark><u> <mark> —\n<table><tbody><tr><br><td> menu, Order:</td></tr></table></mark><a href=\"/b\"><i class=\"icon\"></i>\n  <table><tr><td>\ntoday Big  ? Order:</td></tr></table><sup>now</sup></a><abbr>Intro   price?now: café.)<tt>more \ncaf&eacute;! more: here:</tt></u><footer> \n  </footer></td><td>\n  Fresh now, daily,<section><span style=\"display:none\">dn</span> now\n  bread,</section> 🎉: us</td></tr></table></h3>\n Spring Fresh\n</body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body> bread Fresh.\n<span></span> here, \n<a href=\"/b\">price, Spring, bread, today<span style=\"white-space:pre\"><video>Fallback</video><em><span style=\"display:contents\"> <h3 hidden>—. price  today. Name: </h3><cite>  us Intro us, x caf&eacute; late! </span></cite> bread:\n  <sup> <svg width=\"4\" height=\"4\"></svg> <summary hidden> now x? bread  Call Call: today,Intro</summary> <article>\nR&amp;D. Fresh —Intro  </article></sup>now &nbsp;</span></em></a>\n<label> $20? — Spring. <svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg><p style=\"white-space:pre-line\"> <strong><span hidden> secret</span><del><span class=\"sr\">$20 today now </span><a href=\"/c\" id=\"k\"> here, </a><a name=\"n\">🎉 Spring,\n  ok🚀, ok🚀!</a></del> \n$20, &nbsp;! menu:  🎉? —! Name:</p></strong></label></body></html>",
+    "answer": [
+     "T",
+     "bread Fresh. here, [price, Spring, \"quoted\" bread, today] ",
+     "us Intro us, x café late! bread:",
+     "(R&D. Fresh —Intro",
+     "\"quoted\"",
+     "$20? — Spring.",
+     "$20,  ! menu: 🎉? —! Name:"
+    ],
+    "offered": [
+     "T",
+     "bread Fresh. here, [price, Spring, bread, today]",
+     "us Intro us, x café late! bread:",
+     "R&D. Fresh —Intro",
+     "now  ",
+     "$20? — Spring.",
+     "$20,  ! menu: 🎉? —! Name:"
+    ],
+    "written": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body> bread Fresh. <span></span>here, <a href=\"/b\">price, Spring, \"quoted\" bread, today <span style=\"white-space:pre\"><video>Fallback</video><em><span style=\"display:contents\"> <h3 hidden>—. price  today. Name: </h3><cite>  us Intro us, x caf&eacute; late! </span></cite> bread:\n  <sup> <svg width=\"4\" height=\"4\"></svg> <summary hidden> now x? bread  Call Call: today,Intro</summary> <article>\n(R&amp;D. Fresh —Intro  </article></sup>\"quoted\"</span></em></a>\n<label> $20? — Spring. <svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg><p style=\"white-space:pre-line\"> <strong><span hidden> secret</span><del><span class=\"sr\">$20 today now </span><a href=\"/c\" id=\"k\"> here, </a><a name=\"n\">🎉 Spring,\n  ok🚀, ok🚀!</a></del> \n$20, &nbsp;! menu:  🎉? —! Name:</p></strong></label></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><span> </span>\n<fieldset>  <svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg>today —</fieldset>\n</body></html>",
+    "answer": [
+     "T & <co>",
+     ""
+    ],
+    "offered": [
+     "T",
+     "today —"
+    ],
+    "written": "<!doctype html><html><head><title>T &amp; &lt;co&gt;</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><span> </span>\n<fieldset>  <svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg></fieldset>\n</body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body>\n  late. ok🚀?<em></b></em>\n<span><div><label><span><span style=\"text-transform:uppercase\">\n   here. Order, x $20: today </span></span><svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg>\n<footer><span> </span>  sale\n  <nobr>here, Spring?Name Intro.menu $20?</nobr></footer>\n  $20! x bread  <label>\n<b> <math><title><table><tbody><tr><br><td>\nIntrosale! x, $20? daily?</td><td>sale, now bread?bread: bread Call</td></tr></table><code><math><title>  <header>\n  us! today.\n menu Intro!here more</code>Spring, R&amp;D.</label></b></div></label><img src=\"i.png\" alt=\"Logo\"></span>\n<a>more? R&amp;D, open:</body></html>",
+    "answer": [
+     "T",
+     "late. ok🚀?.",
+     "here. Order, $20: today",
+     "sale",
+     "here, Spring?Name Intro.menu $20?",
+     " $20! x bread 🎉",
+     "Introsale! x, $20? daily?",
+     "(sale, now bread?bread: bread Call",
+     "more? open:"
+    ],
+    "offered": [
+     "T",
+     "late. ok🚀?",
+     "here. Order, x $20: today",
+     "sale",
+     "here, Spring?Name Intro.menu $20?",
+     "$20! x bread",
+     "Introsale! x, $20? daily?",
+     "sale, now bread?bread: bread Call",
+     "more? R&D, open:"
+    ],
+    "written": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body>\n  late. ok🚀?.<em></b></em>\n<span><div><label><span><span style=\"text-transform:uppercase\">\n   here. Order, $20: today </span></span><svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg>\n<footer><span> </span>  sale\n  <nobr>here, Spring?Name Intro.menu $20?</nobr></footer>\n  $20! x bread 🎉  <label>\n<b> <math><title><table><tbody><tr><br><td>\nIntrosale! x, $20? daily?</td><td>(sale, now bread?bread: bread Call</td></tr></table><code><math><title>  <header>\n  us! today.\n menu Intro!here more</code>Spring, R&amp;D.</label></b></div></label><img src=\"i.png\" alt=\"Logo\"></span>\n<a>more? open:</body></html>"
+   },
+   {
+    "html": "<!doctype html><title>T</title>late,<ins><table><tbody><tr><td> <mark><span style=\"display:inline-block\"><nav>\n  here? Namesale.</span><span><math><title>Mt</title></math>Name!  R&amp;D</span></mark><span style=\"display:inline-block\"> Call 🎉\n\n  <s>  <dd>R&amp;D: $20 now.\n   R&amp;D, open</dd></span></td><td><a href=\"/a\">\n  bread.\n  daily. here: here? 🎉? here. us!</a><svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg></td></tr></table>",
+    "answer": [
+     "T",
+     "late,",
+     "here? Namesale.",
+     "Name! R&D Call 🎉",
+     "R&D: $20 \"quoted\" now. R&D, open",
+     "bread. daily. here: here? 🎉? here. us!"
+    ],
+    "offered": [
+     "T",
+     "late,",
+     "here? Namesale.",
+     "Name! R&D Call 🎉",
+     "R&D: $20 now. R&D, open",
+     "bread. daily. here: here? 🎉? here. us!"
+    ],
+    "written": "<!doctype html><title>T</title>late,<ins><table><tbody><tr><td> <mark><span style=\"display:inline-block\"><nav>\n  here? Namesale.</span><span><math><title>Mt</title></math>Name!  R&amp;D</span></mark><span style=\"display:inline-block\"> Call 🎉\n\n  <s>  <dd>R&amp;D: $20 \"quoted\" now.\n   R&amp;D, open</dd></span></td><td><a href=\"/a\">\n  bread.\n  daily. here: here? 🎉? here. us!</a><svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg></td></tr></table>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><a name=\"n\"><svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg></a>\n<span hidden> secret</span>\n<strong>sale? Call.<a href=\"/b\"><h2>late   ok🚀? &nbsp;,</h2></a>—? &nbsp;!</strong>\n<p style=\"white-space:pre-line\"><mark><br><footer> <span><figcaption>here.</figcaption></span></footer></mark>late today. Order! \nSpring —.</p>\n</body></html>",
+    "answer": [
+     "T",
+     "",
+     "late ok🚀?  ,",
+     "",
+     "here.",
+     "late today. Order! Spring —."
+    ],
+    "offered": [
+     "T",
+     "sale? Call.",
+     "late ok🚀?  ,",
+     "—?  !",
+     "here.",
+     "late today. Order! Spring —."
+    ],
+    "written": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><a name=\"n\"><svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg></a>\n<span hidden> secret</span>\n<strong><a href=\"/b\"><h2>late   ok🚀? &nbsp;,</h2></a></strong>\n<p style=\"white-space:pre-line\"><mark><br><footer> <span><figcaption>here.</figcaption></span></footer></mark>late today. Order! \nSpring —.</p>\n</body></html>"
+   }
+  ],
+  "arbiterRefused:DIFF:gap": [
+   {
+    "html": "<html><head><title>T</title></head><body><a name=\"n\"><a><div> <s> <span style=\"display:contents\">here Intro: Spring.   Call!sale, </s></span><br></div><em style=\"display:contents\">dc</em></a><span style=\"display:inline-block\"><footer hidden><span hidden> secret</span>Intro 🎉, <ins> —<details><summary>Sum</summary>Body</details></span></footer></a>&nbsp;<article>  <i class=\"icon\"></i><a href=\"/b\"><center><a><h3> Call</h3> sale</center></a></article></a>\n</body></html>",
+    "answer": [
+     "T",
+     "",
+     "dc",
+     " ",
+     "Call",
+     ""
+    ],
+    "offered": [
+     "T",
+     "here Intro: Spring. Call!sale,",
+     "dc",
+     " ",
+     "Call",
+     "sale"
+    ],
+    "m": "byway could not put line 2 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"dc Call\". Change line 2 again, or leave it as it was offered. As first offered, line 2 read \"here Intro: Spring. Call!sale,\".",
+    "written": "<html><head><title>T</title></head><body><a name=\"n\"><a><div> <s> <span style=\"display:contents\"> </s></span><br></div><em style=\"display:contents\">dc</em></a><span style=\"display:inline-block\"><footer hidden><span hidden> secret</span>Intro 🎉, <ins> —<details><summary>Sum</summary>Body</details></span></footer></a>&nbsp;<article>  <i class=\"icon\"></i><a href=\"/b\"><center><a><h3> Call</h3> </center></a></article></a>\n</body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><fieldset><a><i><a href=\"/a\"> &nbsp; more Spring:<span style=\"display:none\">dn</span><small> 🎉\n  </small>  caf&eacute;! Fresh <abbr><a href=\"/a\">Intro.x more?   🎉 here more:</a></abbr></a></i><div style=\"display:inline-block\"><a>  late\nok🚀. ok🚀. today, </a></div>\n</body></html>",
+    "answer": [
+     "T",
+     " (late ok🚀. ok🚀. today,"
+    ],
+    "offered": [
+     "T",
+     "late ok🚀. ok🚀. today,"
+    ],
+    "m": "byway could not put line 2 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…sh Intro.x more? 🎉 here more:(late ok🚀. ok🚀. today,\". Change line 2 again, or leave it as it was offered. As first offered, line 2 read \"late ok🚀. ok🚀. today,\".",
+    "written": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><fieldset><a><i><a href=\"/a\"> &nbsp; more Spring:<span style=\"display:none\">dn</span><small> 🎉\n  </small>  caf&eacute;! Fresh <abbr><a href=\"/a\">Intro.x more?   🎉 here more:</a></abbr></a></i><div style=\"display:inline-block\"><a>  (late\nok🚀. ok🚀. today, </a></div>\n</body></html>"
+   },
+   {
+    "html": "<html><head><title>T</title></head><body>sale? x<s><a href=\"/c\" id=\"k\"><a name=\"n\"><button type=\"button\"> </button><a href=\"/b\"> daily x\n  <font style=\"display:inline-block\"> Spring:\n  </font></a></a><cite>ok🚀. us, priceFresh! now.<math><title/></math></cite></a>\n</body></html>",
+    "answer": [
+     "T",
+     "sale? x",
+     "(daily x ",
+     "Spring: Fresh ",
+     "ok🚀. us, priceFresh! now."
+    ],
+    "offered": [
+     "T",
+     "sale? x",
+     "daily x",
+     "Spring:",
+     "ok🚀. us, priceFresh! now."
+    ],
+    "m": "byway could not put line 4 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…ale? x / (daily x / Spring: Freshok🚀. us, priceFresh! now.\". Change line 4 again, or leave it as it was offered. As first offered, line 4 read \"Spring:\".",
+    "written": "<html><head><title>T</title></head><body>sale? x<s><a href=\"/c\" id=\"k\"><a name=\"n\"><button type=\"button\"> </button><a href=\"/b\"> (daily x\n  <font style=\"display:inline-block\"> Spring: Fresh\n  </font></a></a><cite>ok🚀. us, priceFresh! now.<math><title/></math></cite></a>\n</body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><s> today? <a>bread price </a></s><s> <span class=\"sr\"> <fieldset> <footer>\nIntro. &nbsp;? late!daily. </footer><main> <details><summary>Sum</summary>Body</details><blockquote>caf&eacute;? more. Order Fresh.</blockquote></main></fieldset> <s> <script>x()</script></s>\nName. &nbsp;</span></s>\n<code> open, Order. 🎉.  <a href=\"/a\"><header><figcaption> </br> late. here! $20:</figcaption>Fresh! us, $20!<dd><image src=\"i.png\"></dd></header></a><hr></code>\n<dd>more. 🎉!<a>  <svg width=\"4\" height=\"4\"><desc>D</desc></svg><sub><svg width=\"4\" height=\"4\"><desc>D</desc></svg> daily? Fresh<sup><b hidden>hid</b> open Spring! caf&eacute;! </font></sub><font style=\"display:inline-block\"><a href=\"/a\"> <summary>🎉 — price,  menu. ok🚀.more? ok🚀 menu!  <input></a></font></a></dd><i><figcaption>$20: now: now,<table><tr><td><h3>  <nobr> $20: R&amp;D Call: Spring</nobr><i> late menu now, Fresh:  open Fresh. ok🚀!</i><a href=\"/b\">sale: 🎉 Spring! late:  R&amp;D</a></h3><code>—</code><span style=\"display:inline-block\"><video>Fallback</video><a href=\"/b\">$20? sale! hereSpring? late! R&amp;D: here</a><dt>price. Call. breadOrder! now: price here, sale</dt></span></td><td><u> <nobr>Spring! R&amp;D? menu? Intro? open, $20 today,</nobr> <strong>\n  more 🎉: x?</strong></u></td></tr></table><aside>ok🚀, ok🚀: now.<math><title><b>Mb</b></title></math><p> open more <main>Fresh Call? Name, x</main></p></figcaption></aside></i></body></html>",
+    "answer": [
+     "T & <co>",
+     "today? bread price",
+     "late. here! $20:",
+     "Fresh! us, $20!",
+     " (more. 🎉! ",
+     "daily? Fresh open Spring! café!",
+     "🎉 — price, menu. ok🚀.more? ok🚀 menu!",
+     "$20: now: now,",
+     " ($20: R&D Call: Spring",
+     "late menu now, Fresh: open Fresh. ok🚀![sale: 🎉 Spring! late: R&D]",
+     "— café",
+     "$20? sale! hereSpring? late! R&D: here",
+     "price. Call. breadOrder! now: price here, sale",
+     "",
+     "more 🎉: a b x?",
+     "ok🚀, now. ",
+     "Mb",
+     "open more",
+     "Fresh Call? Name, x"
+    ],
+    "offered": [
+     "T",
+     "today? bread price",
+     "late. here! $20:",
+     "Fresh! us, $20!",
+     "more. 🎉!",
+     "daily? Fresh open Spring! café!",
+     "🎉 — price, menu. ok🚀.more? ok🚀 menu!",
+     "$20: now: now,",
+     "$20: R&D Call: Spring",
+     "late menu now, Fresh: open Fresh. ok🚀![sale: 🎉 Spring! late: R&D]",
+     "—",
+     "$20? sale! hereSpring? late! R&D: here",
+     "price. Call. breadOrder! now: price here, sale",
+     "Spring! R&D? menu? Intro? open, $20 today,",
+     "more 🎉: x?",
+     "ok🚀, ok🚀: now.",
+     "Mb",
+     "open more",
+     "Fresh Call? Name, x"
+    ],
+    "m": "byway could not put line 16 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…, sale / more 🎉: a b x? / ok🚀, now.Mb / open more / Fresh Call? Name…\". Change line 16 again, or leave it as it was offered. As first offered, line 16 read \"ok🚀, ok🚀: now.\".",
+    "written": "<!doctype html><html><head><title>T &amp; &lt;co&gt;</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><s> today? <a>bread price </a></s><s> <span class=\"sr\"> <fieldset> <footer>\nIntro. &nbsp;? late!daily. </footer><main> <details><summary>Sum</summary>Body</details><blockquote>caf&eacute;? more. Order Fresh.</blockquote></main></fieldset> <s> <script>x()</script></s>\nName. &nbsp;</span></s>\n<code> open, Order. 🎉.  <a href=\"/a\"><header><figcaption> </br> late. here! $20:</figcaption>Fresh! us, $20!<dd><image src=\"i.png\"></dd></header></a><hr></code>\n<dd>(more. 🎉!<a>  <svg width=\"4\" height=\"4\"><desc>D</desc></svg><sub><svg width=\"4\" height=\"4\"><desc>D</desc></svg> daily? Fresh<sup><b hidden>hid</b> open Spring! caf&eacute;! </font></sub><font style=\"display:inline-block\"><a href=\"/a\"> <summary>🎉 — price,  menu. ok🚀.more? ok🚀 menu!  <input></a></font></a></dd><i><figcaption>$20: now: now,<table><tr><td><h3>  <nobr> ($20: R&amp;D Call: Spring</nobr><i> late menu now, Fresh:  open Fresh. ok🚀!</i><a href=\"/b\">sale: 🎉 Spring! late:  R&amp;D</a></h3><code>— café</code><span style=\"display:inline-block\"><video>Fallback</video><a href=\"/b\">$20? sale! hereSpring? late! R&amp;D: here</a><dt>price. Call. breadOrder! now: price here, sale</dt></span></td><td><u> <nobr></nobr> <strong>\n  more 🎉: a b x?</strong></u></td></tr></table><aside>ok🚀, now.<math><title><b>Mb</b></title></math><p> open more <main>Fresh Call? Name, x</main></p></figcaption></aside></i></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><span style=\"text-transform:uppercase\"><span style=\"float:right\">fl</span></span><h2> <nav><h3><table><tr><td><span style=\"white-space:pre\">\n  here price, menu</span></td></tr></table><tt><img src=\"i.png\" alt=\"\"></tt><a href=\"/b\"> <span></span>us: today? late!&nbsp;. today R&amp;D:</a></h3>  <mark>Spring  <sub><a><span style=\"display:inline-block\">—, &nbsp;:\n</span>  menu us Spring.<a href=\"/a\"><del> R&amp;D! Order price\n  caf&eacute;?bread? &nbsp;. Order</del> <nobr> x! late us? R&amp;D price: </nobr>bread:</a>daily Spring!</mark> sale. </h2></nav>\n<table><tbody><tr><td>Fresh: <article>us? bread, more Order,<abbr><math><title></abbr></article>\nSpring us  </td><td> <header> —? &nbsp;.</header>late? x,</div></td></tr></table>\nok🚀? now $20\n<em style=\"display:contents\">dc</em></body></html>",
+    "answer": [
+     "T",
+     "fl",
+     "here price, menu",
+     "us: today? late! . today R&D:",
+     "x —,  : menu us Spring.",
+     "R&D! Order price café?bread?  . Order.",
+     "",
+     "",
+     "🎉",
+     "",
+     "Spring us",
+     "—?  .",
+     "late? x,",
+     ""
+    ],
+    "offered": [
+     "T",
+     "fl",
+     "here price, menu",
+     "us: today? late! . today R&D:",
+     "Spring —,  : menu us Spring.",
+     "R&D! Order price café?bread?  . Order",
+     "x! late us? R&D price:",
+     "[bread:]daily Spring! sale.",
+     "Fresh:",
+     "us? bread, more Order,",
+     "Spring us",
+     "—?  .",
+     "late? x,",
+     "ok🚀? now $20 dc"
+    ],
+    "m": "byway could not put line 5 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…ay? late! . today R&D: / x / —,  :menu us Spring. R&D! Order pr…\". Change line 5 again, or leave it as it was offered. As first offered, line 5 read \"Spring —,  : menu us Spring.\".",
+    "written": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body><span style=\"text-transform:uppercase\"><span style=\"float:right\">fl</span></span><h2> <nav><h3><table><tr><td><span style=\"white-space:pre\">\n  here price, menu</span></td></tr></table><tt><img src=\"i.png\" alt=\"\"></tt><a href=\"/b\"> <span></span>us: today? late!&nbsp;. today R&amp;D:</a></h3>  <mark>x  <sub><a><span style=\"display:inline-block\">—,  : </span>menu us Spring.<a href=\"/a\"><del> R&amp;D! Order price\n  café?bread?  . Order.</del> <nobr>  </nobr></a></mark> </h2></nav>\n<table><tbody><tr><td>🎉 <article><abbr><math><title></abbr></article>\nSpring us  </td><td> <header> —? &nbsp;.</header>late? x,</div></td></tr></table>\n<em style=\"display:contents\"></em></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body>\nopen? open!\n<video>Fallback</video>\n<strong><h2>Intro x Intro\n  </a></h2><h3> us <u>  Spring —: —</u></h3><dd>\n  <span>now: ok🚀: Fresh! \n<img src=\"i.png\" alt=\"Logo\"></span><span><aside hidden> <a href=\"/c\" id=\"k\"> now: Intro? sale? open $20</a> </h2><small><cite>caf&eacute;:Intro!&nbsp;: </cite>\n  <span style=\"display:contents\">Fresh? today, more! <mark>\nus! 🎉.\n R&amp;D caf&eacute;.  </mark>—: Intro,</span></span></aside></dd></strong><p><img src=\"i.png\" alt=\"\"><figcaption><div> <a>  <table><tr><td> late! Name\n  </td><td>  Spring</td></tr></table>\nlate? today<svg width=\"4\" height=\"4\"><desc>D</desc></svg></a> more:  —! Name,</figcaption>\n  <table><tr><td><span style=\"text-transform:uppercase\"> Spring! </td><td></p><footer> <strong>here Order, open<nav>us  $20 </strong>  Fresh?<div style=\"display:inline-block\"><a href=\"/b\">🎉 here menu. Name: here  </a><a> menu: caf&eacute; $20 Call</a> <blockquote> late &nbsp;! sale sale today: sale</blockquote></div></footer><i> <a href=\"/a\">  late:<em style=\"display:contents\">dc</em></a><h3></p></h3>  bread &nbsp;: ok🚀,</i></td></tr></table></p><a>  <svg width=\"4\" height=\"4\"><title>Tip</title></svg> sale Call <small><header><a>here.</a> <fieldset><b>late! here?open bread?\n  </b><button type=\"button\">ok🚀 sale price</header>  <div> <a><font style=\"display:inline-block\">daily! open:   menu:  Fresh. Name</font>\nsale? 🎉 —. sale, </a> <small>R&amp;D:\n  </small></div></a></small>\n</body></html>",
+    "answer": [
+     "T",
+     "open?",
+     "Intro x (soon)",
+     "us Spring —: —",
+     "",
+     "late! Name today!",
+     "Spring",
+     "late? \"quoted\" today",
+     "",
+     "🎉 Spring!",
+     "here Order, open",
+     "us $20 Fresh?",
+     "[🎉 here menu. Name: here] menu: café $20 Call",
+     "",
+     "late:dc",
+     "café bread  : ok🚀, ",
+     "sale Call?",
+     "here.",
+     "late! here?open bread?",
+     "",
+     "daily! open: menu: Fresh. Name",
+     "sale? 🎉 —. sale, R&D:"
+    ],
+    "offered": [
+     "T",
+     "open? open!",
+     "Intro x Intro",
+     "us Spring —: —",
+     "now: ok🚀: Fresh!",
+     "late! Name",
+     "Spring",
+     "late? today",
+     "more: —! Name,",
+     "Spring!",
+     "here Order, open",
+     "us $20 Fresh?",
+     "[🎉 here menu. Name: here] menu: café $20 Call",
+     "late  ! sale sale today: sale",
+     "late:dc",
+     "bread  : ok🚀,",
+     "sale Call",
+     "here.",
+     "late! here?open bread?",
+     "ok🚀 sale price",
+     "daily! open: menu: Fresh. Name",
+     "sale? 🎉 —. sale, R&D:"
+    ],
+    "m": "byway could not put line 10 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…ere Order, open / us $20 Fresh?🎉 here menu. Name: here menu:…\". Change line 10 again, or leave it as it was offered. As first offered, line 10 read \"Spring!\".",
+    "written": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body>\nopen?\n<video>Fallback</video>\n<strong><h2>Intro x (soon)\n  </a></h2><h3> us <u>  Spring —: —</u></h3><dd>\n  <span> \n<img src=\"i.png\" alt=\"Logo\"></span><span><aside hidden> <a href=\"/c\" id=\"k\"> now: Intro? sale? open $20</a> </h2><small><cite>caf&eacute;:Intro!&nbsp;: </cite>\n  <span style=\"display:contents\">Fresh? today, more! <mark>\nus! 🎉.\n R&amp;D caf&eacute;.  </mark>—: Intro,</span></span></aside></dd></strong><p><img src=\"i.png\" alt=\"\"><figcaption><div> <a>  <table><tr><td> late! Name today!\n  </td><td>  Spring</td></tr></table>\nlate? \"quoted\" today<svg width=\"4\" height=\"4\"><desc>D</desc></svg></a> </figcaption>\n  <table><tr><td><span style=\"text-transform:uppercase\"> 🎉 Spring! </td><td></p><footer> <strong>here Order, open<nav>us  $20 </strong>  Fresh?<div style=\"display:inline-block\"><a href=\"/b\">🎉 here menu. Name: here  </a><a> menu: caf&eacute; $20 Call</a> </div></footer><i> <a href=\"/a\">  late:<em style=\"display:contents\">dc</em></a><h3></p></h3>  café bread  : ok🚀,</i></td></tr></table></p><a>  <svg width=\"4\" height=\"4\"><title>Tip</title></svg> sale Call? <small><header><a>here.</a> <fieldset><b>late! here?open bread?\n  </b><button type=\"button\"></header>  <div> <a><font style=\"display:inline-block\">daily! open:   menu:  Fresh. Name</font>\nsale? 🎉 —. sale, </a> <small>R&amp;D:\n  </small></div></a></small>\n</body></html>"
+   }
+  ],
+  "arbiterRefused:ok": [
+   {
+    "html": "<!doctype html><title>T</title><span class=\"sr\">more: menu \n more? —? menu<span class=\"sr\">  <abbr>daily<h3> sale</abbr> <u> here here?</u></br></span>\n<blockquote><u> <a href=\"/b\"><label>\nhere: here<a href=\"/c\" id=\"k\"> Intro Spring: more.\n  </a><svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg></label><dt> <dd> us late x open, —! price? daily\n</dd><span style=\"white-space:pre\"> — <mark>\nbread menu:\n  here: 🎉! —  Name 🎉, us?  </mark></dt> late sale! Fresh! </a></u></blockquote>open: Intro. \n",
+    "answer": [
+     "T",
+     "more: menu more? —? menu daily",
+     "sale here here? a b",
+     " [here: here] [Intro Spring: more.]<b> ",
+     "us late x open, —! price? daily",
+     "— bread menu: here: 🎉! — Name 🎉, us?! ",
+     "late sale! Fresh!",
+     "open: Intro."
+    ],
+    "offered": [
+     "T",
+     "more: menu more? —? menu daily",
+     "sale here here?",
+     "[here: here] [Intro Spring: more.]",
+     "us late x open, —! price? daily",
+     "— bread menu: here: 🎉! — Name 🎉, us?",
+     "late sale! Fresh!",
+     "open: Intro."
+    ],
+    "m": "byway could not put line 6 on this page exactly as you wrote it, because a browser would show on one line what it showed on separate lines: it would show \"…late x open, —! price? daily / — bread menu: / here: 🎉! — Name 🎉,…\". Change line 6 again, or leave it as it was offered. As first offered, line 6 read \"— bread menu: here: 🎉! — Name 🎉, us?\".",
+    "written": "<!doctype html><title>T</title><span class=\"sr\">more: menu \n more? —? menu<span class=\"sr\">  <abbr>daily<h3> sale</abbr> <u>here here?</u> a b</br></span>\n<blockquote><u> <a href=\"/b\"><label>\nhere: here <a href=\"/c\" id=\"k\">Intro Spring: more.</a>&lt;b&gt; <svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg></label><dt> <dd> us late x open, —! price? daily\n</dd><span style=\"white-space:pre\"> — <mark>bread menu:\n  here: 🎉! —  Name 🎉, us?!  </mark></dt> late sale! Fresh! </a></u></blockquote>open: Intro. \n"
+   },
+   {
+    "html": "<!doctype html><title>T</title><span class=\"sr\">more: menu \n more? —? menu<span class=\"sr\">  <abbr>daily<h3> sale</abbr> <u> here here?</u></br></span>\n<blockquote><u> <a href=\"/b\"><label>\nhere: here<a href=\"/c\" id=\"k\"> Intro Spring: more.\n  </a><svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg></label><dt> <dd> us late x open, —! price? daily\n</dd><span style=\"white-space:pre\"> — <mark>\nbread menu:\n  here: 🎉! —  Name 🎉, us?  </mark></dt> late sale! Fresh! </a></u></blockquote>open: Intro. \n",
+    "answer": [
+     "T",
+     "more: menu more? —? menu daily",
+     " sale here here??",
+     "[here: here] [Intro Spring: more.]",
+     "",
+     "— bread menu: here: 🎉! — Name 🎉, us?)",
+     "late sale! Fresh!",
+     "open: Intro."
+    ],
+    "offered": [
+     "T",
+     "more: menu more? —? menu daily",
+     "sale here here?",
+     "[here: here] [Intro Spring: more.]",
+     "us late x open, —! price? daily",
+     "— bread menu: here: 🎉! — Name 🎉, us?",
+     "late sale! Fresh!",
+     "open: Intro."
+    ],
+    "m": "byway could not put line 6 on this page exactly as you wrote it, because a browser would show on one line what it showed on separate lines: it would show \"…e: here Intro Spring: more. / — bread menu: / here: 🎉! — Name 🎉,…\". Change line 6 again, or leave it as it was offered. As first offered, line 6 read \"— bread menu: here: 🎉! — Name 🎉, us?\".",
+    "written": "<!doctype html><title>T</title><span class=\"sr\">more: menu \n more? —? menu<span class=\"sr\">  <abbr>daily<h3> sale</abbr> <u>here here??</u></br></span>\n<blockquote><u> <a href=\"/b\"><label>\nhere: here<a href=\"/c\" id=\"k\"> Intro Spring: more.\n  </a><svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg></label><dt> <dd> \n</dd><span style=\"white-space:pre\"> — <mark>bread menu:\n  here: 🎉! —  Name 🎉, us?)  </mark></dt> late sale! Fresh! </a></u></blockquote>open: Intro. \n"
+   }
+  ],
+  "arbiterRefused:DIFF:chars": [
+   {
+    "html": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body> Intro! here?\n<button type=\"button\"><s><p>  R&amp;D Spring. caf&eacute;</p> <nav><b>\nName. ok🚀. open, <br></b> <aside> <article> open more. </article></aside>us!x.\n<sub> <address> <nav><b><sub> x   Name menu!</sub></b></nav><nav><figcaption>  <span style=\"white-space:pre\">\n  Intro.</span></figcaption><li><svg width=\"4\" height=\"4\"><desc>D</desc></svg></nav></address><summary>late: x   <span style=\"white-space:pre\"> <a href=\"/c\" id=\"k\">menu Spring.  </em></a>\nName Intro?</span></sub></summary>open, daily? late:</body></html>",
+    "answer": [
+     "T",
+     "Intro! here?",
+     "R&D Spring. café",
+     "Name. ok🚀. open,",
+     "open more..",
+     "today! us!x.",
+     "x Name menu!",
+     "(soon) Intro.",
+     "late: x [menu Spring.] Name Fresh ",
+     "open, daily? late:"
+    ],
+    "offered": [
+     "T",
+     "Intro! here?",
+     "R&D Spring. café",
+     "Name. ok🚀. open,",
+     "open more.",
+     "us!x.",
+     "x Name menu!",
+     "Intro.",
+     "late: x [menu Spring.] Name Intro?",
+     "open, daily? late:"
+    ],
+    "m": "byway could not put line 9 on this page exactly as you wrote it, because a browser would show on one line what it showed on separate lines: it would show \"…) Intro. / late: x menu Spring. Name Fresh / open, daily? late…\". Change line 9 again, or leave it as it was offered. As first offered, line 9 read \"late: x [menu Spring.] Name Intro?\".",
+    "written": "<!doctype html><html><head><title>T</title><style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style></head><body> Intro! here?\n<button type=\"button\"><s><p>  R&amp;D Spring. caf&eacute;</p> <nav><b>\nName. ok🚀. open, <br></b> <aside> <article> open more.. </article></aside>today! us!x.\n<sub> <address> <nav><b><sub> x   Name menu!</sub></b></nav><nav><figcaption>  <span style=\"white-space:pre\">\n  (soon) Intro.</span></figcaption><li><svg width=\"4\" height=\"4\"><desc>D</desc></svg></nav></address><summary>late: x <span style=\"white-space:pre\"><a href=\"/c\" id=\"k\">menu Spring.</em></a> Name Fresh</span></sub></summary>open, daily? late:</body></html>"
+   },
+   {
+    "html": "<!doctype html><title>T</title>late,<ins><table><tbody><tr><td> <mark><span style=\"display:inline-block\"><nav>\n  here? Namesale.</span><span><math><title>Mt</title></math>Name!  R&amp;D</span></mark><span style=\"display:inline-block\"> Call 🎉\n\n  <s>  <dd>R&amp;D: $20 now.\n   R&amp;D, open</dd></span></td><td><a href=\"/a\">\n  bread.\n  daily. here: here? 🎉? here. us!</a><svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg></td></tr></table>",
+    "answer": [
+     "T",
+     "late,",
+     "here? Namesale.",
+     "Fresh Name! R&D Call 🎉",
+     "",
+     "bread. daily. here: here? 🎉? here. us!"
+    ],
+    "offered": [
+     "T",
+     "late,",
+     "here? Namesale.",
+     "Name! R&D Call 🎉",
+     "R&D: $20 now. R&D, open",
+     "bread. daily. here: here? 🎉? here. us!"
+    ],
+    "m": "byway could not put line 4 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…e? Namesale.Fresh Name! R&DCall 🎉 / bread. daily. here: he…\". Change line 4 again, or leave it as it was offered. As first offered, line 4 read \"Name! R&D Call 🎉\".",
+    "written": "<!doctype html><title>T</title>late,<ins><table><tbody><tr><td> <mark><span style=\"display:inline-block\"><nav>\n  here? Namesale.</span><span><math><title>Mt</title></math>Fresh Name!  R&amp;D</span></mark><span style=\"display:inline-block\"> Call 🎉\n\n  <s>  <dd></dd></span></td><td><a href=\"/a\">\n  bread.\n  daily. here: here? 🎉? here. us!</a><svg width=\"9\" height=\"9\"><text y=\"5\">Svgt</text></svg></td></tr></table>"
+   }
+  ]
+ }
+}

@@ -1,0 +1,271 @@
+{
+ "seed": "12105",
+ "mode": "mix",
+ "n": 300,
+ "done": true,
+ "seconds": 813,
+ "stats": {
+  "pages": 300,
+  "deckLines": 2571,
+  "linesOffered": 2455,
+  "linesNotOffered": 116,
+  "edits": 900,
+  "stored": 617,
+  "stored, judged ok": 610,
+  "nothing": 122,
+  "refusedOther": 161,
+  "R: line N: this link cannot be removed in this step (it carries id, which other parts of the page may use) and wo": 26,
+  "R: line N cannot be changed in this step: a link on the page (to …) is left open or holds another link, around a ": 86,
+  "R: line N: this link cannot be removed in this step and would be left empty; keep some words for it, or leave the": 27,
+  "R: line N: words cannot be added on this side of the link here, because the link continues on the next or previou": 8,
+  "stored, judged PRE": 5,
+  "R: line N: a space at the start of this line would be inside a button, where browsers do not show it, so it canno": 2,
+  "R: line N: this button cannot be removed in this step and would be left empty; keep some words for it, or leave t": 8,
+  "R: line N: words cannot be added between these two links here: the page leaves the first one open, so a browser s": 3,
+  "stored, judged DIFF:chars": 1,
+  "stored, judged DIFF:link": 1,
+  "R: line N: words cannot be added after the link \"…\" on this line: the page leaves that link open, so a browser ma": 1
+ },
+ "ex": {
+  "stored:PRE": [
+   {
+    "html": "<!doctype html><html><head><title>T</title></head><body><a href=\"/b\"><a href=\"/b\">  more: Name <mark><del>\n  today Intro </del><a>  <a href=\"/a\"><a href=\"/b\"> today now!</a> $20, <a>🎉: Fresh. price</a><abbr>\n  <summary> $20. ok🚀 Name!  Call.  </summary><a> Name. Fresh priceCall. Call Fresh,</abbr></a></a></mark></a>\n<footer><del><h3><tt>Intro: x, <a href=\"/b\">Intro? Spring? price menu? here</a></tt> <a href=\"/b\"><abbr>menu\n   \nbread Intro. — Call</abbr> <section> x: &nbsp;. sale.<ins>Spring. $20 R&amp;D,Order. bread x!</ins></a></section></h3></del>\n<u> &nbsp;\n  <dd><address>\nSpring late more:<font face=\"Arial\">here: price.\nOrder!  </font>open! R&amp;D! Call</dd></u></footer>\n</td>\nprice? Fresh:\n</body></html>",
+    "answer": [
+     "T",
+     "more: Name",
+     "today Intro",
+     "[today now!] $20, 🎉: Fresh. price",
+     "$20. ok🚀 Name! Call.",
+     "",
+     "",
+     "",
+     "(x:  . sale.",
+     "Spring. $20 R&D,Order. bread x!)",
+     "🎉",
+     "Spring late more:",
+     "here: \\\\\\[1\\\\\\] Order!",
+     "open! R&D! Call",
+     "price? Fresh:"
+    ],
+    "offered": [
+     "T",
+     "more: Name",
+     "today Intro",
+     "[today now!] $20, 🎉: Fresh. price",
+     "$20. ok🚀 Name! Call.",
+     "Name. Fresh priceCall. Call Fresh,",
+     "Intro: x, [Intro? Spring? price menu? here]",
+     "menu bread Intro. — Call",
+     "x:  . sale.",
+     "Spring. $20 R&D,Order. bread x!",
+     " ",
+     "Spring late more:",
+     "here: price. Order!",
+     "open! R&D! Call",
+     "price? Fresh:"
+    ],
+    "written": "<!doctype html><html><head><title>T</title></head><body><a href=\"/b\"><a href=\"/b\">  more: Name <mark><del>\n  today Intro </del><a>  <a href=\"/a\"><a href=\"/b\"> today now!</a> $20, <a>🎉: Fresh. price</a><abbr>\n  <summary> $20. ok🚀 Name!  Call.  </summary><a> </abbr></a></a></mark></a>\n<footer><del><h3><tt></tt> <a href=\"/b\"> <section> (x:  . sale.<ins>Spring. $20 R&amp;D,Order. bread x!)</ins></a></section></h3></del>\n<u> 🎉\n  <dd><address>\nSpring late more:<font face=\"Arial\">here: \\[1\\]\nOrder!  </font>open! R&amp;D! Call</dd></u></footer>\n</td>\nprice? Fresh:\n</body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title></head><body><a name=\"n\">  <table><tr><td><i><nav><a href=\"/a\"> today:R&amp;D— Spring daily:<button type=\"button\"> ok🚀 ok🚀</button></nav>&nbsp;</p></i>  <aside><a href=\"/b\"><a href=\"/b\">price Call. </a></a>\nok🚀<a name=\"n\">Fresh. Name x:<table><tbody><tr><td> now, Spring daily\n   \n  here 🎉! ok🚀.</td></tr></table></a></td></tr></table> <ins> late?  </ins><a>Fresh Call  $20! Fresh.</a></p>\n</br></body></html>",
+    "answer": [
+     "T",
+     "today:R&D— Spring daily:?",
+     "ok🚀 ok🚀",
+     "\"quoted\"",
+     "[price Call.] ok🚀Fresh. Name x:",
+     "now, Spring daily here 🎉! ok🚀.",
+     "late?",
+     "Fresh Call $20! Fresh."
+    ],
+    "offered": [
+     "T",
+     "today:R&D— Spring daily:",
+     "ok🚀 ok🚀",
+     " ",
+     "[price Call.] ok🚀Fresh. Name x:",
+     "now, Spring daily here 🎉! ok🚀.",
+     "late?",
+     "Fresh Call $20! Fresh."
+    ],
+    "written": "<!doctype html><html><head><title>T</title></head><body><a name=\"n\">  <table><tr><td><i><nav><a href=\"/a\"> today:R&amp;D— Spring daily:?<button type=\"button\"> ok🚀 ok🚀</button></nav>\"quoted\"</p></i>  <aside><a href=\"/b\"><a href=\"/b\">price Call. </a></a>\nok🚀<a name=\"n\">Fresh. Name x:<table><tbody><tr><td> now, Spring daily\n   \n  here 🎉! ok🚀.</td></tr></table></a></td></tr></table> <ins> late?  </ins><a>Fresh Call  $20! Fresh.</a></p>\n</br></body></html>"
+   },
+   {
+    "html": "<!doctype html><title>T</title>&nbsp; Intro: now:\nprice,\n\n<i> <header>\n  Intro!</header></i>\n<article>ok🚀! menu:<del>\n  Call? &nbsp;, <ins> <a href=\"/a\"> <code>late? 🎉?\n   — daily, now:</code> ok🚀<p>\n&nbsp;</a></p> </b><small> daily: —. sale <hr></small></ins><mark> 🎉: x. sale. </mark></del><i><header><li>  <tt>\n  open? caf&eacute;!\n  </tt>\nName: here! Intro<mark>\ntoday: <i>now?  sale. Call! here!</i><mark> late!Name. </mark></mark></header></li><img src=\"i.png\" alt=\"Logo\"></i></article>\n<aside>Name? Fresh?\n   open! Spring! ok🚀</aside>\n",
+    "answer": [
+     "T",
+     "  Intro: now: price,",
+     "Intro!",
+     "ok🚀! menu:",
+     "(Call?  , ",
+     " late? — daily, now: ok🚀 ",
+     "Big",
+     "daily: —. sale",
+     "🎉: x. sale.",
+     "open? café!",
+     "",
+     "Name? Fresh? open! Spring! ok🚀"
+    ],
+    "offered": [
+     "T",
+     "  Intro: now: price,",
+     "Intro!",
+     "ok🚀! menu:",
+     "Call?  ,",
+     "late? 🎉? — daily, now: ok🚀",
+     " ",
+     "daily: —. sale",
+     "🎉: x. sale.",
+     "open? café!",
+     "Name: here! Intro today: now? sale. Call! here! late!Name.",
+     "Name? Fresh? open! Spring! ok🚀"
+    ],
+    "written": "<!doctype html><title>T</title>&nbsp; Intro: now:\nprice,\n\n<i> <header>\n  Intro!</header></i>\n<article>ok🚀! menu:<del>\n  (Call?  , <ins> <a href=\"/a\"> <code>late? — daily, now:</code> ok🚀<p>\nBig</a></p> </b><small> daily: —. sale <hr></small></ins><mark> 🎉: x. sale. </mark></del><i><header><li>  <tt>\n  open? caf&eacute;!\n  </tt>\n</header></li><img src=\"i.png\" alt=\"Logo\"></i></article>\n<aside>Name? Fresh?\n   open! Spring! ok🚀</aside>\n"
+   },
+   {
+    "html": "<!doctype html><title>T</title>&nbsp; Intro: now:\nprice,\n\n<i> <header>\n  Intro!</header></i>\n<article>ok🚀! menu:<del>\n  Call? &nbsp;, <ins> <a href=\"/a\"> <code>late? 🎉?\n   — daily, now:</code> ok🚀<p>\n&nbsp;</a></p> </b><small> daily: —. sale <hr></small></ins><mark> 🎉: x. sale. </mark></del><i><header><li>  <tt>\n  open? caf&eacute;!\n  </tt>\nName: here! Intro<mark>\ntoday: <i>now?  sale. Call! here!</i><mark> late!Name. </mark></mark></header></li><img src=\"i.png\" alt=\"Logo\"></i></article>\n<aside>Name? Fresh?\n   open! Spring! ok🚀</aside>\n",
+    "answer": [
+     "T",
+     "  Intro: now: price,",
+     "Intro!",
+     "ok🚀! menu:",
+     " ,",
+     "late? 🎉? — daily, now: ok🚀",
+     " \"quoted\"",
+     "Fresh —. sale",
+     "🎉: x. sale.",
+     "open? café!",
+     " Name: Intro today: now? sale. Call! here! late!Name.",
+     "Name? Fresh? open! Spring! ok🚀"
+    ],
+    "offered": [
+     "T",
+     "  Intro: now: price,",
+     "Intro!",
+     "ok🚀! menu:",
+     "Call?  ,",
+     "late? 🎉? — daily, now: ok🚀",
+     " ",
+     "daily: —. sale",
+     "🎉: x. sale.",
+     "open? café!",
+     "Name: here! Intro today: now? sale. Call! here! late!Name.",
+     "Name? Fresh? open! Spring! ok🚀"
+    ],
+    "written": "<!doctype html><title>T</title>&nbsp; Intro: now:\nprice,\n\n<i> <header>\n  Intro!</header></i>\n<article>ok🚀! menu:<del>\n   , <ins> <a href=\"/a\"> <code>late? 🎉?\n   — daily, now:</code> ok🚀<p>\n\"quoted\"</a></p> </b><small> Fresh —. sale <hr></small></ins><mark> 🎉: x. sale. </mark></del><i><header><li>  <tt>\n  open? caf&eacute;!\n  </tt>\nName: Intro<mark>\ntoday: <i>now?  sale. Call! here!</i><mark> late!Name. </mark></mark></header></li><img src=\"i.png\" alt=\"Logo\"></i></article>\n<aside>Name? Fresh?\n   open! Spring! ok🚀</aside>\n"
+   },
+   {
+    "html": "<!doctype html><html><head><title>T</title></head><body><a href=\"/c\" id=\"k\"><tt><h3>today. ok🚀? open <a href=\"/b\"> <a href=\"/b\"> open x Spring $20 Order late: <fieldset> —? Spring. more.x: us. </fieldset>  <sub>us. late. Order<dd><a> Name? ok🚀, Call &nbsp; today,more daily? </a>  <em> Name. menu? ok🚀 </em></h3></dd></p></tt> <img src=\"i.png\" alt=\"\"> <a href=\"/a\">  <mark> <h2> <big>  sale x caf&eacute; </big></h2><i class=\"icon\"></i></a></a><img src=\"i.png\" alt=\"\">\n<a href=\"/c\" id=\"k\"> now. Fresh: Call.menu late now.</font></a>\n<br>&nbsp; </body></html>",
+    "answer": [
+     "T",
+     "[today. ok🚀? open] [open x Spring $20 Order late:]",
+     "—? Spring. more.x: us.",
+     "us. Order",
+     "Name? ok🚀, Call   today,more daily? Name. menu? ok🚀",
+     "sale x café",
+     "now. Fresh: (soon) late now. ",
+     "R&D"
+    ],
+    "offered": [
+     "T",
+     "[today. ok🚀? open] [open x Spring $20 Order late:]",
+     "—? Spring. more.x: us.",
+     "us. late. Order",
+     "Name? ok🚀, Call   today,more daily? Name. menu? ok🚀",
+     "sale x café",
+     "now. Fresh: Call.menu late now.",
+     " "
+    ],
+    "written": "<!doctype html><html><head><title>T</title></head><body><a href=\"/c\" id=\"k\"><tt><h3>today. ok🚀? open <a href=\"/b\"> <a href=\"/b\"> open x Spring $20 Order late: <fieldset> —? Spring. more.x: us. </fieldset>  <sub>us. Order<dd><a> Name? ok🚀, Call &nbsp; today,more daily? </a>  <em> Name. menu? ok🚀 </em></h3></dd></p></tt> <img src=\"i.png\" alt=\"\"> <a href=\"/a\">  <mark> <h2> <big>  sale x caf&eacute; </big></h2><i class=\"icon\"></i></a></a><img src=\"i.png\" alt=\"\">\n<a href=\"/c\" id=\"k\"> now. Fresh: (soon) late now.</font></a>\n<br>R&amp;D </body></html>"
+   }
+  ],
+  "stored:DIFF:chars": [
+   {
+    "html": "<!doctype html><html><head><title>T</title></head><body><a> <table><tr><td> <h3><blockquote> today. sale usCall.<hr>\n  x?<li><big> price. </big><main>\n   🎉  price late\n</main></li></h3></blockquote> more more $20:\n</p></td><td><u><dt> \n  bread daily, &nbsp;!<i>—. Order! </i></dt> <a> <figcaption>daily, Order more   menu?</figcaption><label>$20. more, &nbsp;,\nmenutoday: </label> Name more? menu! </a><a href=\"/b\">daily, —, us <h3> daily.</h3> caf&eacute;. us</a>\n  <table><tbody><tr><td><div>\n🎉! today! <summary>bread: daily?</summary></div> Call! R&amp;D,</td><td><header> <footer>Call</footer> Call more more</td></tr></table></td></tr></table><button type=\"button\"> <nobr> here! Order: <b><i class=\"icon\"></i></b> <p></label><mark>Call:\n  </mark><footer>Name? today! now now  now. 🎉,</footer></p></nobr></a>\n<sup><a href=\"/c\" id=\"k\">  sale Name: Order x? —<a href=\"/c\" id=\"k\"> <center>Name:<mark> Intro 🎉!</mark>\n  open.late. now! Name!</a></center></a> <tt><a><span></span></p> <a name=\"n\">  <main>Spring! x menu,</main></a></a></tt></sup>\n<a href=\"/c\" id=\"k\">R&amp;D bread &nbsp;   menu here Fresh.\n  </a>\n</body></html>",
+    "answer": [
+     "T",
+     "today. sale usCall.",
+     "x?",
+     " (price. ",
+     "🎉 price late. ",
+     "more more $20:",
+     "bread 🎉  !—. Order!",
+     "daily, Order more menu?",
+     "$20. more,  , menutoday:",
+     "Name more? menu! [daily, —, us]",
+     "daily. café ",
+     "",
+     " 🎉!",
+     "bread: daily?",
+     "Call! R&D,",
+     "Call",
+     "",
+     " R&D Order: ",
+     "Call:",
+     "Name? today! now now now. 🎉,",
+     "sale Name: Order x? —",
+     "Name: Intro 🎉! open.late. now! Name!",
+     "Spring! x menu,",
+     "R&D bread   menu here Fresh. a b"
+    ],
+    "offered": [
+     "T",
+     "today. sale usCall.",
+     "x?",
+     "price.",
+     "🎉 price late",
+     "more more $20:",
+     "bread daily,  !—. Order!",
+     "daily, Order more menu?",
+     "$20. more,  , menutoday:",
+     "Name more? menu! [daily, —, us]",
+     "daily.",
+     "café. us",
+     "🎉! today!",
+     "bread: daily?",
+     "Call! R&D,",
+     "Call",
+     "Call more more",
+     "here! Order:",
+     "Call:",
+     "Name? today! now now now. 🎉,",
+     "sale Name: Order x? —",
+     "Name: Intro 🎉! open.late. now! Name!",
+     "Spring! x menu,",
+     "R&D bread   menu here Fresh."
+    ],
+    "written": "<!doctype html><html><head><title>T</title></head><body><a> <table><tr><td> <h3><blockquote> today. sale usCall.<hr>\n  x?<li><big> (price. </big><main>\n   🎉  price late.\n</main></li></h3></blockquote> more more $20:\n</p></td><td><u><dt> \n  bread 🎉  !<i>—. Order! </i></dt> <a> <figcaption>daily, Order more   menu?</figcaption><label>$20. more, &nbsp;,\nmenutoday: </label> Name more? menu! </a><a href=\"/b\">daily, —, us <h3> daily. café</h3> </a>\n  <table><tbody><tr><td><div>\n🎉! <summary>bread: daily?</summary></div> Call! R&amp;D,</td><td><header> <footer>Call</footer> </td></tr></table></td></tr></table><button type=\"button\"> <nobr> R&amp;D Order: <b><i class=\"icon\"></i></b> <p></label><mark>Call:\n  </mark><footer>Name? today! now now  now. 🎉,</footer></p></nobr></a>\n<sup><a href=\"/c\" id=\"k\">  sale Name: Order x? —<a href=\"/c\" id=\"k\"> <center>Name:<mark> Intro 🎉!</mark>\n  open.late. now! Name!</a></center></a> <tt><a><span></span></p> <a name=\"n\">  <main>Spring! x menu,</main></a></a></tt></sup>\n<a href=\"/c\" id=\"k\">R&amp;D bread     menu here Fresh. a b\n  </a>\n</body></html>"
+   }
+  ],
+  "stored:DIFF:link": [
+   {
+    "html": "<!doctype html><html><head><title>T</title></head><body><br>\n<label>x   <h2> <p></a></p> <span></span><dd>price now?Fresh: daily! <input></dd></label></h2>\n<i> </br><mark><h3> <table><tbody><tr><td> <h2>—  here, menu, bread.late —</h2><i class=\"icon\"></i></td><td><s> 🎉? daily?now  here us. </s>  <table><tr><td> \n  $20?   us!\nmenu?</td><td>here. x R&amp;Dcaf&eacute;,  late</td></tr></table></td></tr></table><a href=\"/c\" id=\"k\"><b>Intro! caf&eacute; R&amp;D: Spring us: late,</b><main>   R&amp;D! daily uslate:</main></h3></mark> open\n</i>caf&eacute;! Call? here.  </body></html>",
+    "answer": [
+     "T",
+     "x",
+     "price now?Fresh: daily!",
+     "🎉 — here, menu, bread.late —",
+     "🎉? daily?now here us.",
+     "$20? us! x",
+     "here. Fresh x R&Dcafé, late",
+     "Intro! café new Spring us: late,",
+     "",
+     " open café! here."
+    ],
+    "offered": [
+     "T",
+     "x",
+     "price now?Fresh: daily!",
+     "— here, menu, bread.late —",
+     "🎉? daily?now here us.",
+     "$20? us! menu?",
+     "here. x R&Dcafé, late",
+     "Intro! café R&D: Spring us: late,",
+     "R&D! daily uslate:",
+     "open café! Call? here."
+    ],
+    "written": "<!doctype html><html><head><title>T</title></head><body><br>\n<label>x   <h2> <p></a></p> <span></span><dd>price now?Fresh: daily! <input></dd></label></h2>\n<i> </br><mark><h3> <table><tbody><tr><td> <h2>🎉 —  here, menu, bread.late —</h2><i class=\"icon\"></i></td><td><s> 🎉? daily?now  here us. </s>  <table><tr><td> \n  $20?   us!\nx</td><td>here. Fresh x R&amp;Dcafé,  late</td></tr></table></td></tr></table><a href=\"/c\" id=\"k\"><b>Intro! café new Spring us: late,</b><main>   </main></h3></mark> open\n</i>café! here.  </body></html>"
+   }
+  ]
+ }
+}

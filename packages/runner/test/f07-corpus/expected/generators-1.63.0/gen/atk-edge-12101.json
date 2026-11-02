@@ -1,0 +1,582 @@
+{
+ "seed": "12101",
+ "mode": "atk",
+ "n": 300,
+ "done": true,
+ "seconds": 1136,
+ "stats": {
+  "pages": 300,
+  "deckLines": 1715,
+  "linesOffered": 1670,
+  "linesNotOffered": 45,
+  "edits": 900,
+  "stored": 709,
+  "stored, judged ok": 709,
+  "nothing": 88,
+  "refusedOther": 55,
+  "R: line N: this button cannot be removed in this step and would be left empty; keep some words for it, or leave t": 46,
+  "arbiterRefused": 48,
+  "arbiterRefused, write judged ok": 15,
+  "arbiterRefused, write judged DIFF:gap": 33,
+  "R: line N: a space at the end of this line would be inside a button, where browsers do not show it, so it cannot ": 6,
+  "R: line N: a space at the start of this line would be inside a button, where browsers do not show it, so it canno": 3
+ },
+ "ex": {
+  "arbiterRefused:ok": [
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><p style=\"white-space:pre-line\">in Fresh\nmore</address>\n<h2>Frommenu Name</li>\n<div style=\"display:flex;gap:0;align-items:baseline\"><span class=\"chip\">Call</span> <span>price bread</span><label class=\"chip\">From Fresh Call</label><label>now here</label></div>\n<div style=\"display:inline-flex;gap:0;align-items:baseline\"><strong>$29</strong>Sign menu $20inName</div>\n<div style=\"display:inline-flex;align-items:baseline\">bread<a href=\"/a\" class=\"pulse\">Name menu $29</a>\n  <button type=\"button\" class=\"pulse\">$20</button>Fresh Name</div></body></html>",
+    "answer": [
+     "T",
+     " in Fresh more?",
+     " Frommenu Name?",
+     "Call price bread",
+     "From Fresh Call",
+     "",
+     "$29Sign menu $20inName",
+     "bread[Name menu $29]",
+     "$20 Fresh",
+     "Fresh Name"
+    ],
+    "offered": [
+     "T",
+     "in Fresh more",
+     "Frommenu Name",
+     "Call price bread",
+     "From Fresh Call",
+     "now here",
+     "$29Sign menu $20inName",
+     "bread[Name menu $29]",
+     "$20",
+     "Fresh Name"
+    ],
+    "m": "byway could not put line 9 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…20inName / breadName menu $29$20 Fresh / Fresh Name\". Change line 9 again, or leave it as it was offered. As first offered, line 9 read \"$20\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><p style=\"white-space:pre-line\">in Fresh\nmore?</address>\n<h2>Frommenu Name?</li>\n<div style=\"display:flex;gap:0;align-items:baseline\"><span class=\"chip\">Call</span> <span>price bread</span><label class=\"chip\">From Fresh Call</label><label></label></div>\n<div style=\"display:inline-flex;gap:0;align-items:baseline\"><strong>$29</strong>Sign menu $20inName</div>\n<div style=\"display:inline-flex;align-items:baseline\">bread<a href=\"/a\" class=\"pulse\">Name menu $29</a>\n  <button type=\"button\" class=\"pulse\">$20 Fresh</button>Fresh Name</div></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><p class=\"eyebrow\">/month</p>\n<div style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:0;align-items:baseline\"><a href=\"/b\" class=\"bounce\">Name /month</a><span>today today daily</span> <label class=\"bounce\">sale Spring $20</label>\n  <button type=\"button\" class=\"floaty\">in more now</button></div>\n<p>late in<span class=\"js-move\">Sign</span> Order</p>\n<p>Fresh:<span class=\"chip\">$20</span><span class=\"chip\">now</span></p>\n<h3 style=\"display:flex;align-items:baseline\">sale priceName</h3><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>",
+    "answer": [
+     "T",
+     "/month",
+     "[Name /month]Fresh today daily ",
+     "sale Spring $20",
+     "in more now)",
+     "late inSign Order",
+     "Fresh:$20now",
+     "(sale priceName"
+    ],
+    "offered": [
+     "T",
+     "/month",
+     "[Name /month]today today daily",
+     "sale Spring $20",
+     "in more now",
+     "late inSign Order",
+     "Fresh:$20now",
+     "sale priceName"
+    ],
+    "m": "byway could not put line 3 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…ame /monthFresh today dailysale Spring $20 / in more now) / l…\". Change line 3 again, or leave it as it was offered. As first offered, line 3 read \"[Name /month]today today daily\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><p class=\"eyebrow\">/month</p>\n<div style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:0;align-items:baseline\"><a href=\"/b\" class=\"bounce\">Name /month</a><span>Fresh today daily</span> <label class=\"bounce\">sale Spring $20</label>\n  <button type=\"button\" class=\"floaty\">in more now)</button></div>\n<p>late in<span class=\"js-move\">Sign</span> Order</p>\n<p>Fresh:<span class=\"chip\">$20</span><span class=\"chip\">now</span></p>\n<h3 style=\"display:flex;align-items:baseline\">(sale priceName</h3><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><h3 style=\"display:flex;gap:0;align-items:baseline\"><label>now</label> <span class=\"floaty\">bread here open</span></h3>\n<p>here <span style=\"display:contents\"><b>Fresh</b> more</span> daily</p>\n<p dir=\"rtl\" lang=\"ar\">٠١٢٣ ٢٠٢٥ من؟</p>\n<p>From late<br>/month $20</li></body></html>",
+    "answer": [
+     "T",
+     "today! now ",
+     " bread today! open",
+     "here Fresh more daily",
+     "",
+     "From late",
+     "\\\\\\[1\\\\\\] /month $20"
+    ],
+    "offered": [
+     "T",
+     "now",
+     "bread here open",
+     "here Fresh more daily",
+     "٠١٢٣ ٢٠٢٥ من؟",
+     "From late",
+     "/month $20"
+    ],
+    "m": "byway could not put line 3 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"today! nowbread today! open / here Fresh…\". Change line 3 again, or leave it as it was offered. As first offered, line 3 read \"bread here open\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><h3 style=\"display:flex;gap:0;align-items:baseline\"><label>today! now </label> <span class=\"floaty\">bread today! open</span></h3>\n<p>here <span style=\"display:contents\"><b>Fresh</b> more</span> daily</p>\n\n<p>From late<br>\\[1\\] /month $20</li></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><p style=\"white-space:pre-line\">Intro\nmore New\n$29 /month</p>\n<p>From:<span class=\"chip\">$20</span><span class=\"chip\">Fresh</span></p>\n<p style=\"display:flex;gap:6px;align-items:baseline\"><a href=\"/a\" class=\"js-move\">$20</a><a href=\"/b\" class=\"floaty\">bread From Spring</a><strong>daily</strong></p>\n<p>Name Sign New\n  <span class=\"pulse\">menu</span>us</p><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>",
+    "answer": [
+     "T",
+     "",
+     " ",
+     "[$20][bread From today!]daily",
+     " Name Sign New menuus! "
+    ],
+    "offered": [
+     "T",
+     "Intro more New $29 /month",
+     "From:$20Fresh",
+     "[$20][bread From Spring]daily",
+     "Name Sign New menuus"
+    ],
+    "m": "byway could not put line 4 on this page exactly as you wrote it, because a browser would part words that your lines run together, at the edge of a box on the same row (shown as \" / \"): it would show \"$20 / bread From today! / daily / Name Sign New / menuus!\". Change line 4 again, or leave it as it was offered. As first offered, line 4 read \"[$20][bread From Spring]daily\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body>\n\n<p style=\"display:flex;gap:6px;align-items:baseline\"><a href=\"/a\" class=\"js-move\">$20</a><a href=\"/b\" class=\"floaty\">bread From today!</a><strong>daily</strong></p>\n<p>Name Sign New\n  <span class=\"pulse\">menu</span>us!</p><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><h2>late more $20</li>\n<div style=\"display:flex;gap:6px;align-items:baseline\">New Spring Order<span class=\"bounce\">here</span> <strong>/month</strong></div>\n<p>Call more Intro\n  <span class=\"bounce\">more</span> sale</p>\n<h3 style=\"display:flex;align-items:baseline\">Name /month Call<strong class=\"js-move\">open</strong></h3>\n<p style=\"display:inline-flex;align-items:baseline\"><label class=\"floaty\">Call us now</label>\n  <strong class=\"floaty\">more</strong><button type=\"button\">New</button> <button type=\"button\">Sign</button></p><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>",
+    "answer": [
+     "T",
+     "late more $20",
+     "(New Spring Orderhere /month",
+     "Call more Intro more sale",
+     "Name /month Callopen",
+     "Call us now R&D ",
+     "more",
+     "New",
+     "Sign"
+    ],
+    "offered": [
+     "T",
+     "late more $20",
+     "New Spring Orderhere /month",
+     "Call more Intro more sale",
+     "Name /month Callopen",
+     "Call us now",
+     "more",
+     "New",
+     "Sign"
+    ],
+    "m": "byway could not put line 6 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…onth Callopen / Call us now R&Dmore / New / Sign\". Change line 6 again, or leave it as it was offered. As first offered, line 6 read \"Call us now\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><h2>late more $20</li>\n<div style=\"display:flex;gap:6px;align-items:baseline\">(New Spring Order<span class=\"bounce\">here</span> <strong>/month</strong></div>\n<p>Call more Intro\n  <span class=\"bounce\">more</span> sale</p>\n<h3 style=\"display:flex;align-items:baseline\">Name /month Call<strong class=\"js-move\">open</strong></h3>\n<p style=\"display:inline-flex;align-items:baseline\"><label class=\"floaty\">Call us now R&amp;D </label>\n  <strong class=\"floaty\">more</strong><button type=\"button\">New</button> <button type=\"button\">Sign</button></p><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><p dir=\"rtl\" lang=\"ar\">الآن طازج الآن طازج!</p>\n<p style=\"display:inline-flex;align-items:baseline\"><strong>more</strong>From Sign<span class=\"pulse\">here Spring</span>menu us open</p>\n<p style=\"white-space:pre-line\">late /month bread\nIntro $20</address>\n<p class=\"eyebrow\">sale</p>\n<div style=\"display:flex;gap:6px;align-items:baseline\"><strong>in</strong> <a href=\"/c\" class=\"chip\">in Sign</a></div></body></html>",
+    "answer": [
+     "T",
+     "الآن طازج الآن طازج!",
+     "moreFrom (soon) Springmenu us open",
+     " late /month Intro $20 ",
+     "sale",
+     ""
+    ],
+    "offered": [
+     "T",
+     "الآن طازج الآن طازج!",
+     "moreFrom Signhere Springmenu us open",
+     "late /month bread Intro $20",
+     "sale",
+     "in [in Sign]"
+    ],
+    "m": "byway could not put line 3 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…ج الآن طازج! / moreFrom (soon)Springmenu us open / late /mon…\". Change line 3 again, or leave it as it was offered. As first offered, line 3 read \"moreFrom Signhere Springmenu us open\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><p dir=\"rtl\" lang=\"ar\">الآن طازج الآن طازج!</p>\n<p style=\"display:inline-flex;align-items:baseline\"><strong>more</strong>From (soon)<span class=\"pulse\"> Spring</span>menu us open</p>\n<p style=\"white-space:pre-line\">late /month Intro $20</address>\n<p class=\"eyebrow\">sale</p>\n<div style=\"display:flex;gap:6px;align-items:baseline\"></div></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><div style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:0;align-items:baseline\"><a href=\"/b\" class=\"pulse\">price bread</a>\n  <label>Call Intro Spring</label>\n  <label class=\"pulse\">in New bread</label></div>\n<p>today:<span class=\"chip\">New</span><span class=\"chip\">today</span></p>\n<p>menu $29 Intromore New Spring</li>\n<p style=\"white-space:pre-line\">$29 Name New\nmore Sign</address>\n<p dir=\"rtl\" lang=\"ar\">خبز طازج الآن!</p></body></html>",
+    "answer": [
+     "T",
+     " x bread",
+     "Call tom&jerry Spring ",
+     "in New bread",
+     "today:Newtoday",
+     "menu $29 Intromore New Spring",
+     "$29 Name New more Sign",
+     "خبز طازج الآن!? "
+    ],
+    "offered": [
+     "T",
+     "price bread",
+     "Call Intro Spring",
+     "in New bread",
+     "today:Newtoday",
+     "menu $29 Intromore New Spring",
+     "$29 Name New more Sign",
+     "خبز طازج الآن!"
+    ],
+    "m": "byway could not put line 3 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…breadCall tom&jerry Springin New bread / today: / New / today…\". Change line 3 again, or leave it as it was offered. As first offered, line 3 read \"Call Intro Spring\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><div style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:0;align-items:baseline\"><a href=\"/b\" class=\"pulse\">x bread</a>\n  <label>Call tom&amp;jerry Spring </label>\n  <label class=\"pulse\">in New bread</label></div>\n<p>today:<span class=\"chip\">New</span><span class=\"chip\">today</span></p>\n<p>menu $29 Intromore New Spring</li>\n<p style=\"white-space:pre-line\">$29 Name New\nmore Sign</address>\n<p dir=\"rtl\" lang=\"ar\">خبز طازج الآن!?</p></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><div style=\"display:grid;grid-auto-flow:column;justify-content:start;align-items:baseline\"><label class=\"bounce\">today here</label> <strong class=\"floaty\">Intro</strong></div>\n<p>Sign <span style=\"display:contents\"><b>From</b> Order</span> Sign</p>\n<p style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:0;align-items:baseline\"><strong class=\"js-move\">New</strong>$20 open<strong class=\"floaty\">Fresh</strong></p>\n<p>breadName $20</h2>\n<h2 class=\"new\">$20 Intro New</h2><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>",
+    "answer": [
+     "T & <co>",
+     "new here ",
+     "Intro",
+     "Sign From Order",
+     "",
+     "breadName R&D",
+     "$20 R&D Intro New"
+    ],
+    "offered": [
+     "T",
+     "today here",
+     "Intro",
+     "Sign From Order Sign",
+     "New$20 openFresh",
+     "breadName $20",
+     "$20 Intro New"
+    ],
+    "m": "byway could not put line 2 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"new hereIntro / Sign From Order / breadN…\". Change line 2 again, or leave it as it was offered. As first offered, line 2 read \"today here\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T &amp; &lt;co&gt;</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><div style=\"display:grid;grid-auto-flow:column;justify-content:start;align-items:baseline\"><label class=\"bounce\">new here </label> <strong class=\"floaty\">Intro</strong></div>\n<p>Sign <span style=\"display:contents\"><b>From</b> Order</span></p>\n\n<p>breadName R&amp;D</h2>\n<h2 class=\"new\">$20 R&amp;D Intro New</h2><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><li>here $29 price$20 here $29</p>\n<ul><li style=\"display:flex;align-items:baseline\"><button type=\"button\" class=\"chip\">price</button><span class=\"pulse\">Spring Call</span>bread Name Call<span class=\"pulse\">Intro From price</span></li></ul></body></html>",
+    "answer": [
+     "T",
+     "here $29 price$20 here $29",
+     "price",
+     "Spring Callbread Name CallIntro From price <b> "
+    ],
+    "offered": [
+     "T",
+     "here $29 price$20 here $29",
+     "price",
+     "Spring Callbread Name CallIntro From price"
+    ],
+    "m": "byway could not put line 4 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…ad Name CallIntro From price<b>\". Change line 4 again, or leave it as it was offered. As first offered, line 4 read \"Spring Callbread Name CallIntro From price\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><li>here $29 price$20 here $29</p>\n<ul><li style=\"display:flex;align-items:baseline\"><button type=\"button\" class=\"chip\">price</button><span class=\"pulse\">Spring Call</span>bread Name Call<span class=\"pulse\">Intro From price</span> &lt;b&gt;</li></ul></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><p>us daily From <span style=\"display:contents\"><b>price</b> open</span> in</p>\n<ul><li style=\"display:flex;align-items:baseline\"><label>open late</label> <a href=\"/a\" class=\"floaty\">late $20</a></li></ul>\n<p>Call $29<span class=\"bounce\">sale</span> Call</p>\n<p class=\"drop\">price daily Sign $20</p>\n<p>Order in <span class=\"bounce\">Intro</span>Spring</p></body></html>",
+    "answer": [
+     "T & <co>",
+     "us daily From price open in",
+     "(open late ",
+     "late $20",
+     "Call $29sale Call",
+     "price daily Sign $20",
+     "Order in IntroSpring"
+    ],
+    "offered": [
+     "T",
+     "us daily From price open in",
+     "open late",
+     "late $20",
+     "Call $29sale Call",
+     "price daily Sign $20",
+     "Order in IntroSpring"
+    ],
+    "m": "byway could not put line 3 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…From price open in / (open latelate $20 / Call $29sale / Call / pr…\". Change line 3 again, or leave it as it was offered. As first offered, line 3 read \"open late\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T &amp; &lt;co&gt;</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><p>us daily From <span style=\"display:contents\"><b>price</b> open</span> in</p>\n<ul><li style=\"display:flex;align-items:baseline\"><label>(open late </label> <a href=\"/a\" class=\"floaty\">late $20</a></li></ul>\n<p>Call $29<span class=\"bounce\">sale</span> Call</p>\n<p class=\"drop\">price daily Sign $20</p>\n<p>Order in <span class=\"bounce\">Intro</span>Spring</p></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><p class=\"drop\">Name here /month Name</p>\n<div style=\"display:inline-flex;align-items:baseline\"><strong>us</strong><label class=\"js-move\">now menu bread</label></div>\n<div style=\"display:flex;gap:0;align-items:baseline\"><span class=\"js-move\">New menu</span> <label class=\"floaty\">/month</label><span>Sign here</span>us now</div><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>",
+    "answer": [
+     "T",
+     "Name here /month Name",
+     "a b",
+     "now menu bread",
+     "New menu",
+     "/month",
+     " a b hereus now "
+    ],
+    "offered": [
+     "T",
+     "Name here /month Name",
+     "us",
+     "now menu bread",
+     "New menu",
+     "/month",
+     "Sign hereus now"
+    ],
+    "m": "byway could not put line 7 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…ow menu bread / New menu/montha b hereus now\". Change line 7 again, or leave it as it was offered. As first offered, line 7 read \"Sign hereus now\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><p class=\"drop\">Name here /month Name</p>\n<div style=\"display:inline-flex;align-items:baseline\"><strong>a b</strong><label class=\"js-move\">now menu bread</label></div>\n<div style=\"display:flex;gap:0;align-items:baseline\"><span class=\"js-move\">New menu</span> <label class=\"floaty\">/month</label><span> a b here</span>us now</div><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><p style=\"display:inline-flex;gap:0;align-items:baseline\">Intro Order<label>Name</label> <strong class=\"chip\">Sign</strong>\n  <a href=\"/c\" class=\"floaty\">in</a></p>\n<p class=\"eyebrow\">here more</p>\n<h2>Sign inSpring more</p></body></html>",
+    "answer": [
+     "T",
+     "Intro Order",
+     "",
+     "  [in]",
+     "",
+     "Sign inSpring more"
+    ],
+    "offered": [
+     "T",
+     "Intro Order",
+     "Name",
+     "Sign [in]",
+     "here more",
+     "Sign inSpring more"
+    ],
+    "m": "byway could not put line 4 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"Intro Orderin / Sign inSpring more\". Change line 4 again, or leave it as it was offered. As first offered, line 4 read \"Sign [in]\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><p style=\"display:inline-flex;gap:0;align-items:baseline\">Intro Order<label></label> <a href=\"/c\" class=\"floaty\">in</a></p>\n\n<h2>Sign inSpring more</p></body></html>"
+   }
+  ],
+  "arbiterRefused:DIFF:gap": [
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><h3 style=\"display:flex;gap:6px;align-items:baseline\"><a href=\"/a\">$20 us</a>Call moreFrom in</h3>\n<div style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:6px;align-items:baseline\"><span class=\"bounce\">Call</span> <a href=\"/c\" class=\"js-move\">Name</a></div>\n<p style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:6px;align-items:baseline\">more in<a href=\"/b\" class=\"js-move\">Order Spring</a>\n  <button type=\"button\" class=\"chip\">Fresh</button></p><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>",
+    "answer": [
+     "T",
+     "tom&jerry[$20 us]Call moreFrom in",
+     "Call [Name]",
+     "",
+     "Fresh"
+    ],
+    "offered": [
+     "T",
+     "[$20 us]Call moreFrom in",
+     "Call [Name]",
+     "more in[Order Spring]",
+     "Fresh"
+    ],
+    "m": "byway could not put line 2 on this page exactly as you wrote it, because a browser would part words that your lines run together, at the edge of a box on the same row (shown as \" / \"): it would show \"tom&jerry / $20 us / Call moreFrom in / Call / N…\". Change line 2 again, or leave it as it was offered. As first offered, line 2 read \"[$20 us]Call moreFrom in\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><h3 style=\"display:flex;gap:6px;align-items:baseline\">tom&amp;jerry<a href=\"/a\">$20 us</a>Call moreFrom in</h3>\n<div style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:6px;align-items:baseline\"><span class=\"bounce\">Call</span> <a href=\"/c\" class=\"js-move\">Name</a></div>\n<p style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:6px;align-items:baseline\">\n  <button type=\"button\" class=\"chip\">Fresh</button></p><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><h2>moreIntro</p>\n<h2 class=\"new\">in Name</h2>\n<p>in Name $20<span class=\"bounce\">New</span>\n  From</p>\n<ul><li style=\"display:flex;gap:6px;align-items:baseline\"><strong class=\"bounce\">From</strong><strong class=\"js-move\">$29</strong>Intro</li></ul>\n<ul><li style=\"display:flex;align-items:baseline\">late now Order<span class=\"chip\">today Spring</span><strong>$29</strong></li></ul><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>",
+    "answer": [
+     "T",
+     "moreIntro café ",
+     "Name ",
+     "",
+     "From$29Intro",
+     "late now Ordertoday Spring$29 Big"
+    ],
+    "offered": [
+     "T",
+     "moreIntro",
+     "in Name",
+     "in Name $20New From",
+     "From$29Intro",
+     "late now Ordertoday Spring$29"
+    ],
+    "m": "byway could not put line 6 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…te now Order / today Spring / $29Big\". Change line 6 again, or leave it as it was offered. As first offered, line 6 read \"late now Ordertoday Spring$29\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><h2>moreIntro café</p>\n<h2 class=\"new\">Name</h2>\n\n<ul><li style=\"display:flex;gap:6px;align-items:baseline\"><strong class=\"bounce\">From</strong><strong class=\"js-move\">$29</strong>Intro</li></ul>\n<ul><li style=\"display:flex;align-items:baseline\">late now Order<span class=\"chip\">today Spring</span><strong>$29</strong> Big</li></ul><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><div class=\"ticker\"><div>daily New $20 Order $29 · /month more $20 Sign New · </div></div>\n<p class=\"drop\">daily in more more</p>\n<p>daily New Fresh menu now</p>\n<p>today: <span class=\"chip\">/month</span><span class=\"chip\">Spring</span></p>\n<h2 class=\"tick\">open</h2></body></html>",
+    "answer": [
+     "T",
+     "<b> daily New $20 Order $29 · /month more $20 Sign New ·",
+     "daily in more more",
+     "daily New Fresh menu now",
+     " today:/monthSpring",
+     ""
+    ],
+    "offered": [
+     "T",
+     "daily New $20 Order $29 · /month more $20 Sign New ·",
+     "daily in more more",
+     "daily New Fresh menu now",
+     "today: /monthSpring",
+     "open"
+    ],
+    "m": "byway could not put line 5 on this page exactly as you wrote it, because a browser would part words that your lines run together, at the edge of a box on the same row (shown as \" / \"): it would show \"…ily New Fresh menu now / today: / /month / Spring\". Change line 5 again, or leave it as it was offered. As first offered, line 5 read \"today: /monthSpring\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><div class=\"ticker\"><div>&lt;b&gt; daily New $20 Order $29 · /month more $20 Sign New · </div></div>\n<p class=\"drop\">daily in more more</p>\n<p>daily New Fresh menu now</p>\n<p>today:<span class=\"chip\">/month</span><span class=\"chip\">Spring</span></p>\n</body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><div class=\"ticker\"><div>us price open daily today · Intro bread more From daily · </div></div>\n<address style=\"white-space:pre-wrap\">here\n/month Order Order</address>\n<p>daily: <span class=\"chip\">Sign</span><span class=\"chip\">From</span></p>\n<ul><li style=\"display:flex;gap:6px;align-items:baseline\"><label>late daily</label>/month<a href=\"/a\">here Intro</a></li></ul>\n<p dir=\"rtl\" lang=\"he\">7:00 עכשיו בוקר.</p></body></html>",
+    "answer": [
+     "T & <co>",
+     " us price open daily today · Intro bread more From daily · <b>",
+     "here /month Order Order",
+     "daily:SignFrom ",
+     "café late daily ",
+     "/month[here Intro]",
+     "7:00 עכשיו בוקר."
+    ],
+    "offered": [
+     "T",
+     "us price open daily today · Intro bread more From daily ·",
+     "here /month Order Order",
+     "daily: SignFrom",
+     "late daily",
+     "/month[here Intro]",
+     "7:00 עכשיו בוקר."
+    ],
+    "m": "byway could not put line 4 on this page exactly as you wrote it, because a browser would part words that your lines run together, at the edge of a box on the same row (shown as \" / \"): it would show \"…re / /month Order Order / daily: / Sign / From / café late daily / /mo…\". Change line 4 again, or leave it as it was offered. As first offered, line 4 read \"daily: SignFrom\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T &amp; &lt;co&gt;</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><div class=\"ticker\"><div>us price open daily today · Intro bread more From daily · &lt;b&gt; </div></div>\n<address style=\"white-space:pre-wrap\">here\n/month Order Order</address>\n<p>daily:<span class=\"chip\">Sign</span><span class=\"chip\">From</span></p>\n<ul><li style=\"display:flex;gap:6px;align-items:baseline\"><label>café late daily </label>/month<a href=\"/a\">here Intro</a></li></ul>\n<p dir=\"rtl\" lang=\"he\">7:00 עכשיו בוקר.</p></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><ul><li style=\"display:flex;align-items:baseline\"><strong class=\"chip\">price</strong> <strong class=\"pulse\">Order</strong><button type=\"button\" class=\"chip\">now now Order</button>menu Sign open</li></ul>\n<p>open:\n  <span class=\"chip\">menu</span><span class=\"chip\">Call</span></p>\n<h2 class=\"new\">open Intro</h2>\n<h3 style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:0;align-items:baseline\"><strong class=\"bounce\">Call</strong>\n  <label class=\"bounce\">Intro</label></h3></body></html>",
+    "answer": [
+     "T",
+     " priceOrder",
+     "now now Order",
+     "menu Sign open?",
+     "open:menuCall",
+     "open Intro!",
+     "",
+     "Intro"
+    ],
+    "offered": [
+     "T",
+     "price Order",
+     "now now Order",
+     "menu Sign open",
+     "open: menuCall",
+     "open Intro",
+     "Call",
+     "Intro"
+    ],
+    "m": "byway could not put line 2 on this page exactly as you wrote it, because a browser would part words that your lines run together, at the edge of a box on the same row (shown as \" / \"): it would show \"price / Order / now now Order / menu Sign…\". Change line 2 again, or leave it as it was offered. As first offered, line 2 read \"price Order\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><ul><li style=\"display:flex;align-items:baseline\"><strong class=\"chip\">price</strong><strong class=\"pulse\">Order</strong><button type=\"button\" class=\"chip\">now now Order</button>menu Sign open?</li></ul>\n<p>open:<span class=\"chip\">menu</span><span class=\"chip\">Call</span></p>\n<h2 class=\"new\">open Intro!</h2>\n<h3 style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:0;align-items:baseline\">\n  <label class=\"bounce\">Intro</label></h3></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><ul><li style=\"display:flex;gap:6px;align-items:baseline\"><a href=\"/a\">Spring</a> <a href=\"/c\" class=\"chip\">sale</a> <strong class=\"bounce\">daily</strong><strong class=\"pulse\">/month</strong></li></ul>\n<h3 style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:0;align-items:baseline\"><span class=\"chip\">late</span><a href=\"/c\">now</a>\n  <button type=\"button\">open Sign</button><button type=\"button\" class=\"bounce\">us</button></h3>\n<p class=\"drop\">Spring menu late late</p>\n<div style=\"display:flex;gap:0;align-items:baseline\"><a href=\"/c\" class=\"bounce\">Call /month</a>here<label class=\"js-move\">Spring Fresh open</label>Order bread us</div><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>",
+    "answer": [
+     "T",
+     "[Spring] [sale] daily/month",
+     " late[now]a b",
+     "Sign",
+     "us",
+     "",
+     "[Call /month (soon)]here",
+     "Spring Fresh open Big ",
+     "Order bread us"
+    ],
+    "offered": [
+     "T",
+     "[Spring] [sale] daily/month",
+     "late[now]",
+     "open Sign",
+     "us",
+     "Spring menu late late",
+     "[Call /month]here",
+     "Spring Fresh open",
+     "Order bread us"
+    ],
+    "m": "byway could not put line 8 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…n)hereSpring Fresh open BigOrder bread us\". Change line 8 again, or leave it as it was offered. As first offered, line 8 read \"Spring Fresh open\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><ul><li style=\"display:flex;gap:6px;align-items:baseline\"><a href=\"/a\">Spring</a> <a href=\"/c\" class=\"chip\">sale</a> <strong class=\"bounce\">daily</strong><strong class=\"pulse\">/month</strong></li></ul>\n<h3 style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:0;align-items:baseline\"><span class=\"chip\">late</span><a href=\"/c\">now</a>a b\n  <button type=\"button\">Sign</button><button type=\"button\" class=\"bounce\">us</button></h3>\n\n<div style=\"display:flex;gap:0;align-items:baseline\"><a href=\"/c\" class=\"bounce\">Call /month (soon)</a>here<label class=\"js-move\">Spring Fresh open Big </label>Order bread us</div><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><p>Order here New <span class=\"pulse\">$20</span> here</p>\n<li>today us New Intro</li>\n<div style=\"display:inline-flex;align-items:baseline\"><label class=\"floaty\">open daily open</label><label class=\"pulse\">more New Order</label> <strong class=\"bounce\">Sign</strong>Call $20</div></body></html>",
+    "answer": [
+     "T",
+     "Order hereNew $20 here ",
+     "",
+     "open a b daily open ",
+     "a b New Order",
+     "SignCall $20"
+    ],
+    "offered": [
+     "T",
+     "Order here New $20 here",
+     "today us New Intro",
+     "open daily open",
+     "more New Order",
+     "SignCall $20"
+    ],
+    "m": "byway could not put line 5 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…w / $20 / here / open a b daily opena b New OrderSignCall $20\". Change line 5 again, or leave it as it was offered. As first offered, line 5 read \"more New Order\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><p>Order hereNew <span class=\"pulse\">$20</span> here</p>\n\n<div style=\"display:inline-flex;align-items:baseline\"><label class=\"floaty\">open a b daily open </label><label class=\"pulse\">a b New Order</label> <strong class=\"bounce\">Sign</strong>Call $20</div></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><ul><li style=\"display:flex;gap:0;align-items:baseline\">more New Order<button type=\"button\" class=\"bounce\">Spring</button></li></ul>\n<div style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:6px;align-items:baseline\"><a href=\"/a\">Call /month Fresh</a><a href=\"/b\" class=\"js-move\">Sign From</a>\n  <a href=\"/a\" class=\"bounce\">now</a> <strong class=\"bounce\">bread</strong></div>\n<div style=\"display:inline-flex;gap:6px;align-items:baseline\">Fresh Sign From<a href=\"/c\">here</a><span class=\"chip\">menu in today</span><label class=\"bounce\">Order</label></div><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>",
+    "answer": [
+     "T",
+     "more New Order",
+     "(Spring",
+     "🎉[Call /month Fresh][Sign From] [now] bread",
+     "Fresh Sign From[here]menu in today",
+     ""
+    ],
+    "offered": [
+     "T",
+     "more New Order",
+     "Spring",
+     "[Call /month Fresh][Sign From] [now] bread",
+     "Fresh Sign From[here]menu in today",
+     "Order"
+    ],
+    "m": "byway could not put line 4 on this page exactly as you wrote it, because a browser would part words that your lines run together, at the edge of a box on the same row (shown as \" / \"): it would show \"more New Order / (Spring / 🎉 / Call /month Fresh / Sign From / n…\". Change line 4 again, or leave it as it was offered. As first offered, line 4 read \"[Call /month Fresh][Sign From] [now] bread\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><ul><li style=\"display:flex;gap:0;align-items:baseline\">more New Order<button type=\"button\" class=\"bounce\">(Spring</button></li></ul>\n<div style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:6px;align-items:baseline\">🎉<a href=\"/a\">Call /month Fresh</a><a href=\"/b\" class=\"js-move\">Sign From</a> <a href=\"/a\" class=\"bounce\">now</a><strong class=\"bounce\"> bread</strong></div>\n<div style=\"display:inline-flex;gap:6px;align-items:baseline\">Fresh Sign From<a href=\"/c\">here</a><span class=\"chip\">menu in today</span><label class=\"bounce\"></label></div><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><h3 style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:0;align-items:baseline\"><label class=\"js-move\">menu</label>$20</h3>\n<ul><li style=\"display:flex;align-items:baseline\"><a href=\"/a\" class=\"chip\">price open New</a>\n  <label class=\"chip\">Sign</label>\n  <span class=\"js-move\">open Order</span>us Fresh</li></ul><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>",
+    "answer": [
+     "T",
+     "menu",
+     " $20 tom&jerry",
+     "(price open New",
+     "Sign",
+     "open Orderus Fresh"
+    ],
+    "offered": [
+     "T",
+     "menu",
+     "$20",
+     "price open New",
+     "Sign",
+     "open Orderus Fresh"
+    ],
+    "m": "byway could not put line 3 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"menu$20 tom&jerry / (price open Ne…\". Change line 3 again, or leave it as it was offered. As first offered, line 3 read \"$20\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><h3 style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:0;align-items:baseline\"><label class=\"js-move\">menu</label> $20 tom&amp;jerry</h3>\n<ul><li style=\"display:flex;align-items:baseline\"><a href=\"/a\" class=\"chip\">(price open New</a>\n  <label class=\"chip\">Sign</label>\n  <span class=\"js-move\">open Order</span>us Fresh</li></ul><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><p dir=\"rtl\" lang=\"ar\">٠١٢٣ من طازج ١٩٩٨ من؟</p>\n<ul><li style=\"display:flex;align-items:baseline\">/month $20<label class=\"js-move\">Name</label><a href=\"/c\" class=\"chip\">Sign here today</a></li></ul>\n<h3 style=\"display:grid;grid-auto-flow:column;justify-content:start;align-items:baseline\">in<a href=\"/a\">late Sign us</a> <button type=\"button\">today more</button>/month $29 Call</h3>\n<p dir=\"rtl\" lang=\"he\">כל כל טרי עכשיו.</p><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>",
+    "answer": [
+     "T & <co>",
+     "٠١٢٣ من طازج ١٩٩٨ من؟",
+     " /month",
+     " R&D",
+     "Sign here today!",
+     "in[late Sign us]",
+     "todaymore",
+     "(/month $29 Call",
+     "(soon) כל טרי עכשיו."
+    ],
+    "offered": [
+     "T",
+     "٠١٢٣ من طازج ١٩٩٨ من؟",
+     "/month $20",
+     "Name",
+     "Sign here today",
+     "in[late Sign us]",
+     "today more",
+     "/month $29 Call",
+     "כל כל טרי עכשיו."
+    ],
+    "m": "byway could not put line 4 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"٠١٢٣ من طازج ١٩٩٨ من؟ / /monthR&D / Sign here today! / inlate S…\". Change line 4 again, or leave it as it was offered. As first offered, line 4 read \"Name\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T &amp; &lt;co&gt;</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><p dir=\"rtl\" lang=\"ar\">٠١٢٣ من طازج ١٩٩٨ من؟</p>\n<ul><li style=\"display:flex;align-items:baseline\">/month<label class=\"js-move\"> R&amp;D</label><a href=\"/c\" class=\"chip\">Sign here today!</a></li></ul>\n<h3 style=\"display:grid;grid-auto-flow:column;justify-content:start;align-items:baseline\">in<a href=\"/a\">late Sign us</a> <button type=\"button\">todaymore</button>(/month $29 Call</h3>\n<p dir=\"rtl\" lang=\"he\">(soon) כל טרי עכשיו.</p><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><h2 class=\"new\">now</h2>\n<p style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:0;align-items:baseline\"><label>more Fresh Spring</label>Spring price breadNew<label class=\"js-move\">Order Name $20</label></p>\n<p class=\"drop\">$20 open Fresh From</p>\n<p class=\"drop\">Sign us daily $29</p>\n<ul><li style=\"display:flex;align-items:baseline\">sale<strong class=\"chip\">us</strong>price late now</li></ul><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>",
+    "answer": [
+     "T",
+     "now",
+     "more Fresh Spring",
+     "Springprice breadNew ",
+     "Order Name $20",
+     "$20 open new From",
+     "Sign us daily $29!",
+     "saleusprice now"
+    ],
+    "offered": [
+     "T",
+     "now",
+     "more Fresh Spring",
+     "Spring price breadNew",
+     "Order Name $20",
+     "$20 open Fresh From",
+     "Sign us daily $29",
+     "saleusprice late now"
+    ],
+    "m": "byway could not put line 4 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…pringSpringprice breadNewOrder Name $20 / $ 20 open new Fr…\". Change line 4 again, or leave it as it was offered. As first offered, line 4 read \"Spring price breadNew\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><h2 class=\"new\">now</h2>\n<p style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:0;align-items:baseline\"><label>more Fresh Spring</label>Springprice breadNew <label class=\"js-move\">Order Name $20</label></p>\n<p class=\"drop\">$20 open new From</p>\n<p class=\"drop\">Sign us daily $29!</p>\n<ul><li style=\"display:flex;align-items:baseline\">sale<strong class=\"chip\">us</strong>price now</li></ul><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>"
+   },
+   {
+    "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><h2 class=\"new\">now</h2>\n<p style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:0;align-items:baseline\"><label>more Fresh Spring</label>Spring price breadNew<label class=\"js-move\">Order Name $20</label></p>\n<p class=\"drop\">$20 open Fresh From</p>\n<p class=\"drop\">Sign us daily $29</p>\n<ul><li style=\"display:flex;align-items:baseline\">sale<strong class=\"chip\">us</strong>price late now</li></ul><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>",
+    "answer": [
+     "T",
+     "now",
+     "tom&jerry more Fresh Spring ",
+     "Spring price breadNew",
+     "Order $20",
+     "",
+     "(Sign us daily $29",
+     "saleusprice late now"
+    ],
+    "offered": [
+     "T",
+     "now",
+     "more Fresh Spring",
+     "Spring price breadNew",
+     "Order Name $20",
+     "$20 open Fresh From",
+     "Sign us daily $29",
+     "saleusprice late now"
+    ],
+    "m": "byway could not put line 3 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show \"…tom&jerry more Fresh SpringSpring price breadNewOrder…\". Change line 3 again, or leave it as it was offered. As first offered, line 3 read \"more Fresh Spring\".",
+    "written": "<!doctype html><html><head><meta charset=\"utf-8\"><title>T</title><style>\n@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}\n@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}\n@keyframes floaty{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}\n@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n.pulse{display:inline-block;animation:pulse 2s infinite}.bounce{display:inline-block;animation:bounce 1s infinite}.floaty{display:inline-block;animation:floaty 3s infinite}\n.chip{display:inline-block;padding:2px 8px;background:#eee;border-radius:9px}\n.eyebrow{letter-spacing:.3em;text-transform:uppercase;font-size:12px}\n.new::before{content:\"New: \"}.tick::after{content:\" \\2713\"}\n.drop::first-letter{float:left;font-size:3em;line-height:1;margin-right:6px}\n.ticker{overflow:hidden;white-space:nowrap;width:600px}.ticker>div{display:inline-block;animation:tick 20s linear infinite}\n.js-move{display:inline-block;transform:translateY(30px)}\n</style></head><body><h2 class=\"new\">now</h2>\n<p style=\"display:grid;grid-auto-flow:column;justify-content:start;gap:0;align-items:baseline\"><label>tom&amp;jerry more Fresh Spring </label>Spring price breadNew<label class=\"js-move\">Order $20</label></p>\n\n<p class=\"drop\">(Sign us daily $29</p>\n<ul><li style=\"display:flex;align-items:baseline\">sale<strong class=\"chip\">us</strong>price late now</li></ul><script>(() => { const xs = [...document.querySelectorAll('.js-move')]; xs.forEach((x, i) => { const start = performance.now() + i * 400; const step = (t) => { const k = Math.min(1, Math.max(0, (t - start) / 900)); x.style.transform = 'translateY(' + (30 * (1 - k)) + 'px)'; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); })();</script></body></html>"
+   }
+  ]
+ }
+}
