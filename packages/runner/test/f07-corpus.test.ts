@@ -4,11 +4,12 @@
  * for byte (the VOICE reader works on the HTML source, so a converted line end is a different page), every realistic
  * page in exactly one of run-realistic.sh's groups, and round 14's recorded outcomes covering those groups' pages. And
  * compare-hand.mjs, which needs no browser, is run on hand-case runs rebuilt from round 13's outcomes: it passes only a
- * run that has every case.
+ * run that has every case. The generators' baseline (F07 (a)) is kept byte for byte too, with every job the README's
+ * commands name, and compare-gen.mjs is run on copies of it.
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -139,6 +140,80 @@ describe('compare-hand.mjs passes a hand-case run only when it has every case of
     mkdirSync(empty);
     const r = compare(empty);
     expect(r.summary).toMatch(/^0 cases: .*, 746 missing/);
+    expect(r.status).toBe(1);
+    expect(compare(path.join(work, 'no-such-folder')).status).toBe(2);
+  });
+});
+
+const BASELINE = `${DIR}expected/generators-1.63.0`;
+/** The generator jobs the README's commands run: where each writes, and its generator, seed, size and mode. */
+const genJobs = [...read('README.md').toString('utf8').matchAll(/OUT=<out>\/(gen|genv)\/(\S+) npx tsx test\/f07-corpus\/(gen13|gen-v14)\.mts (\d+) (\d+) (\w+)/g)].map(
+  ([, sub = '', name = '', gen = '', seed = '', size = '', mode = '']) => ({ sub, name, gen, seed, size: Number(size), mode }),
+);
+const baselineFiles = (dir: string) => ['gen', 'genv'].flatMap((sub) => (existsSync(`${dir}/${sub}`) ? readdirSync(`${dir}/${sub}`).sort().map((f) => `${sub}/${f}`) : []));
+
+describe("the generators' baseline on Playwright 1.63.0 (F07 (a)) is the one taken on 2026-11-01 and 02", () => {
+  it('holds every job the README runs, each finished at its size with nothing thrown, and no other file', () => {
+    expect(genJobs).toHaveLength(12);
+    for (const job of genJobs) {
+      const tally = JSON.parse(readFileSync(`${BASELINE}/${job.sub}/${job.name}.json`, 'utf8')) as { seed: string; mode: string; n: number; done?: boolean; stats: Record<string, number> };
+      expect({ job: job.name, seed: tally.seed, mode: tally.mode, n: tally.n, done: tally.done }).toEqual({ job: job.name, seed: job.seed, mode: job.mode, n: job.size, done: true });
+      expect({ job: job.name, threw: Object.keys(tally.stats).filter((k) => /threw/i.test(k)) }).toEqual({ job: job.name, threw: [] });
+    }
+    const names = new Set(genJobs.map((j) => `${j.sub}/${j.name}`));
+    expect(baselineFiles(BASELINE).filter((f) => !names.has(f.replace(/\.(json|refusals\.jsonl|judged\.jsonl|threw\.jsonl)$/, '')))).toEqual([]);
+  });
+
+  it('keeps its files byte for byte', () => {
+    const h = createHash('sha256');
+    for (const f of baselineFiles(BASELINE)) h.update(`${f}\n`).update(readFileSync(`${BASELINE}/${f}`));
+    expect(h.digest('hex')).toBe('b834bbe3888638c4d1cc2bf0cc3c7169a47e8c798e3cbe75c52e6592faf52998');
+  });
+});
+
+describe('compare-gen.mjs passes a generator run only when every count and every listed edit is the baseline’s', () => {
+  const work = mkdtempSync(path.join(tmpdir(), 'byway-f07-gen-'));
+  afterAll(() => rmSync(work, { recursive: true, force: true }));
+  const compare = (dir: string) => {
+    const r = spawnSync(process.execPath, [`${DIR}compare-gen.mjs`, dir], { encoding: 'utf8' });
+    return { status: r.status, summary: r.stdout.trim().split('\n').pop() ?? '', out: r.stdout + r.stderr };
+  };
+  const copy = (name: string) => {
+    const dir = path.join(work, name);
+    cpSync(BASELINE, dir, { recursive: true });
+    return dir;
+  };
+
+  it('passes the baseline itself', () => {
+    const r = compare(BASELINE);
+    expect(r.summary).toBe("12 jobs in the baseline: 0 missing; 0 counts and 0 edits different (0 of them the same outcome, the oracle's verdict alone differing)");
+    expect(r.status).toBe(0);
+  });
+
+  it('fails a run where the arbiter stored an edit the baseline refused, or a count moved', () => {
+    const dir = copy('stored');
+    const refusals = path.join(dir, 'gen', 'lv-edge-12103.refusals.jsonl');
+    writeFileSync(refusals, readFileSync(refusals, 'utf8').split('\n').slice(1).join('\n'));
+    const stored = compare(dir);
+    expect(stored.out).toMatch(/^DIFFERENT gen\/lv-edge-12103 answer .*\n {2}baseline: REFUSED: byway could not put line \d+ .*\n {2}now: {6}STORED ok$/m);
+    expect(stored.summary).toMatch(/; 0 counts and 1 edits different \(0 of them/);
+    expect(stored.status).toBe(1);
+    const tally = path.join(dir, 'gen', 'lv-edge-12103.json');
+    const t = JSON.parse(readFileSync(tally, 'utf8')) as { stats: Record<string, number> };
+    t.stats.stored = (t.stats.stored ?? 0) + 1;
+    writeFileSync(tally, JSON.stringify(t));
+    expect(compare(dir).out).toMatch(/^COUNT gen\/lv-edge-12103 stored baseline: \d+ now: \d+$/m);
+  });
+
+  it('fails a run with a job missing or stopped early, and stops on a folder that does not exist', () => {
+    const dir = copy('missing');
+    rmSync(path.join(dir, 'genv', 'r12-edge-13101.json'));
+    const tally = path.join(dir, 'gen', 'glue-12107.json');
+    writeFileSync(tally, JSON.stringify({ ...(JSON.parse(readFileSync(tally, 'utf8')) as object), n: 125, done: undefined }));
+    const r = compare(dir);
+    expect(r.out).toContain('MISSING genv/r12-edge-13101');
+    expect(r.out).toContain('MISSING gen/glue-12107 (stopped after 125 of 300 pages)');
+    expect(r.summary).toMatch(/^12 jobs in the baseline: 2 missing;/);
     expect(r.status).toBe(1);
     expect(compare(path.join(work, 'no-such-folder')).status).toBe(2);
   });
