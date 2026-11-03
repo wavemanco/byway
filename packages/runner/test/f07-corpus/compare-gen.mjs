@@ -3,9 +3,9 @@
 // same layout; F07 (a), 2026-11-01 and 02). For each of the baseline's jobs it compares the tally's counts, then every
 // edit the job lists, matched by page and answer: the arbiter's refusals (.refusals.jsonl), the stored writes the
 // oracle judged otherwise (.judged.jsonl) and, for gen-v14, what threw (.threw.jsonl). The pages are seeded, so a job
-// makes the same pages each run while each page is offered the same number of lines: both generators draw each page's
-// edits from the stream that makes their pages, one draw for each line offered, so after a page offered another number
-// of lines the job's later pages differ, its later edits show as DIFFERENT, and it is read by its counts. An edit
+// makes the same pages each run while each page is offered the same lines: both generators draw each page's edits from
+// the stream that makes their pages, a draw for each line offered and more for each line edited, so after a page
+// offered other lines the job's later pages differ, its later edits show as DIFFERENT, and it is read by its counts. An edit
 // stored and judged right, one that changed nothing and one the reader or placement refused are listed nowhere, so an
 // edit listed in one run alone shows against NOT LISTED, and the counts say which of those it is.
 // Usage: node compare-gen.mjs <out> [<baseline>]. Exits 1 when a count, a list or an edit differs or a job is missing,
