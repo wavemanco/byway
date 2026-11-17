@@ -8,14 +8,17 @@ const ref = (provider: ProviderId, model: string): ModelRef => ({ provider, mode
 
 /**
  * Model profiles: data, chosen per run (judgment uses the big tier, execution the mid tier: default rule 5).
- * Every model id was checked against its provider's documentation on 2026-10-07, and again on 2026-10-18 before the
- * first live run, when every id below was still listed:
+ * Every model id was checked against its provider's documentation on 2026-10-07, again on 2026-10-18 before the
+ * first live run, and on 2026-11-16 in the price re-read, when every id below was still listed:
  * - Anthropic: platform.claude.com/docs/en/about-claude/models/overview (claude-fable-5-1, claude-opus-5-5, claude-sonnet-5-5;
- *   each a current model, retired not sooner than September 2027).
- * - OpenAI: developers.openai.com/api/docs/models (gpt-6-astra, gpt-6.1-sol, gpt-image-2.5-flare, gpt-image-2.5-sunburst).
+ *   each a current model, retired not sooner than September 2027; on 2026-11-16 the model-deprecations page lists all
+ *   three as Active, retiring not sooner than 2027-09-01, 09-22 and 09-28, and the overview leads with Claude Fable 5.2).
+ * - OpenAI: developers.openai.com/api/docs/models (gpt-6-astra, gpt-6.1-sol, gpt-image-2.5-flare, gpt-image-2.5-sunburst;
+ *   on 2026-11-16 all four listed with no deprecation date, beside the newer gpt-image-2.6-flare and -sunburst).
  * - Google: ai.google.dev/gemini-api/docs/models (page dated 2026-10-13) and ai.google.dev/gemini-api/docs/deprecations
  *   (2026-10-12): gemini-3.8-flash and gemini-nano-banana-2.1 are stable; gemini-3.1-pro-preview is still a preview
- *   (listed without a status), and no shutdown date is announced for any of the three.
+ *   (listed without a status), and no shutdown date is announced for any of the three. On 2026-11-16 the deprecations
+ *   page, moved to aistudio.google.com/docs/deprecations, still says "No shutdown date announced" for each.
  * - OpenRouter: openrouter.ai/api/v1/models (anthropic/claude-opus-5.5, anthropic/claude-sonnet-5.5).
  * - fal.ai: fal.ai/models/fal-ai/kling-video/v2.5-turbo/pro/image-to-video and fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video
  *   (also listed in @fal-ai/client 1.10.1's endpoint types).

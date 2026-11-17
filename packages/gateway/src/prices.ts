@@ -75,10 +75,20 @@ export interface LongContextTier {
 // guides), and each still says what is quoted. PRICES_CHECKED is that day. The dates here are the day of the session
 // that read the pages, as the records date the owner's answers: this read ran from 17:00 to 17:20 Pacific time on
 // 2026-10-22, which was 00:00 to 00:20 UTC on 2026-10-23.
-const ANTHROPIC = 'platform.claude.com/docs/en/about-claude/pricing, read 2026-10-18 and again 2026-10-22';
-const OPENAI = 'developers.openai.com/api/docs/pricing, read 2026-10-18, 2026-10-21 and 2026-10-22';
-const GOOGLE = 'ai.google.dev/gemini-api/docs/pricing (page dated 2026-10-16), read 2026-10-18, 2026-10-21 (page dated 2026-10-19) and 2026-10-22 (page dated 2026-10-22)';
-const OPENROUTER = 'openrouter.ai/api/v1/models (pricing.prompt / pricing.completion), read 2026-10-18 and again 2026-10-22';
+//
+// Every row was read again on 2026-11-16, the re-read the weekly report of that day called for, since it could not find
+// the two OpenAI image rows' figures; every figure the rows record matched its page. OpenAI's page now lists each image
+// model as an Image row and a Text row, and its Standard table hides the 2.5 models behind a toggle, so in the page's
+// text they appear first in the Batch table at half price; the report now reads the data the page draws its tables
+// from (scripts/price-report.ts, propsRows). Google's pricing page has moved to aistudio.google.com/docs/pricing
+// (ai.google.dev answers with a redirect). Every model the profiles name is still offered (profiles.ts). Two newer
+// models no profile uses are on the pages: Claude Fable 5.2, at $8 / $40 against Fable 5.1's $10 / $50, and GPT Image
+// 2.6, at the 2.5 models' prices (backlog row B-192). PRICES_CHECKED is that day: this read ran in the evening of
+// 2026-11-16, Pacific time, which was the early hours of 2026-11-17 UTC.
+const ANTHROPIC = 'platform.claude.com/docs/en/about-claude/pricing, read 2026-10-18, 2026-10-22 and 2026-11-16';
+const OPENAI = 'developers.openai.com/api/docs/pricing, read 2026-10-18, 2026-10-21, 2026-10-22 and 2026-11-16';
+const GOOGLE = 'ai.google.dev/gemini-api/docs/pricing (page dated 2026-10-16), read 2026-10-18, 2026-10-21 (page dated 2026-10-19), 2026-10-22 (page dated 2026-10-22) and 2026-11-16 (moved to aistudio.google.com/docs/pricing)';
+const OPENROUTER = 'openrouter.ai/api/v1/models (pricing.prompt / pricing.completion), read 2026-10-18, 2026-10-22 and 2026-11-16';
 
 /**
  * The day byway's prices were last checked: the last day every row a provider charges for was read against its page
@@ -92,7 +102,7 @@ const OPENROUTER = 'openrouter.ai/api/v1/models (pricing.prompt / pricing.comple
  * agent's or a person's (AGENTS.md). pricing.test.ts holds every paid row's source to name this day, and no source to
  * name a later one.
  */
-export const PRICES_CHECKED = '2026-10-22';
+export const PRICES_CHECKED = '2026-11-16';
 
 export const PRICES: readonly PriceRow[] = [
   // Anthropic, first-party API, global routing (no inference_geo multiplier). No row has a long-context tier: the page's
@@ -172,7 +182,9 @@ export const PRICES: readonly PriceRow[] = [
     source: OPENAI,
   },
   // gpt-image-2.5-flare and gpt-image-2.5-sunburst: text input $5, image output $30 per 1M tokens. Source: OPENAI. The
-  // page gives them one context length.
+  // page gives them one context length. Since 2026-11-16 it lists each as an Image row (input $8, output $30, cached
+  // input $2) and a Text row (input $5, cached input $1.25), hides the 2.5 models in its Standard table behind a toggle,
+  // and lists GPT Image 2.6 beside them at the same prices.
   // byway sends them a text prompt only, so their image input price ($8) does not apply. Their cached text input ($1.25)
   // is not recorded: the page says cached input rates for these models "only apply to images generated with the
   // Responses API", and byway uses the Images API. The page lists no cache-write rate for them. OpenAI publishes no
@@ -247,7 +259,7 @@ export const PRICES: readonly PriceRow[] = [
     inputPerMTok: 0,
     outputPerMTok: 0,
     perSecondUsd: 0.07,
-    source: 'fal.ai/models/fal-ai/kling-video/v2.5-turbo/pro/image-to-video, read 2026-10-18 and again 2026-10-22',
+    source: 'fal.ai/models/fal-ai/kling-video/v2.5-turbo/pro/image-to-video, read 2026-10-18, 2026-10-22 and 2026-11-16',
   },
   // kling-video/v3/pro/image-to-video: "$0.112 (audio off)" per second of video ($0.168 with audio, $0.196 with voice
   // control). The gateway always sends generate_audio: false.
@@ -257,11 +269,11 @@ export const PRICES: readonly PriceRow[] = [
     inputPerMTok: 0,
     outputPerMTok: 0,
     perSecondUsd: 0.112,
-    source: 'fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video, read 2026-10-18 and again 2026-10-22',
+    source: 'fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video, read 2026-10-18, 2026-10-22 and 2026-11-16',
   },
   // ffmpeg-api/extract-frame (the relay anchor: a clip's last frame): "Your request will cost $0.0002 per second" of
   // compute. fal does not report the seconds to the client; the gateway charges a fixed upper bound (providers/fal.ts).
-  { provider: 'fal', model: 'fal-ai/ffmpeg-api/extract-frame', inputPerMTok: 0, outputPerMTok: 0, perSecondUsd: 0.0002, source: 'fal.ai/models/fal-ai/ffmpeg-api/extract-frame, read 2026-10-18 and again 2026-10-22' },
+  { provider: 'fal', model: 'fal-ai/ffmpeg-api/extract-frame', inputPerMTok: 0, outputPerMTok: 0, perSecondUsd: 0.0002, source: 'fal.ai/models/fal-ai/ffmpeg-api/extract-frame, read 2026-10-18, 2026-10-22 and 2026-11-16' },
 
   // The demo-mode mock costs nothing.
   { provider: 'mock', model: 'mock-big', inputPerMTok: 0, outputPerMTok: 0, source: 'byway mock provider, 2026-10-07' },

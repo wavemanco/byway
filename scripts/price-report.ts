@@ -18,7 +18,9 @@
  * - Every other row's page (Anthropic's, OpenAI's, Google's and fal's), for each row in force on the day of the run or
  *   still to come, not one a later row has replaced: each figure the row records must be on the page, as a dollar
  *   amount shortly after the first place the page names the model with a price (on OpenAI's page, its Standard row,
- *   before its Batch, Fast and Ultrafast rows); OpenAI's long-context rates, which the page draws from its own script,
+ *   before its Batch, Fast and Ultrafast rows; for its image models, the first entry that names the model in the data
+ *   the page draws its tables from, its Standard table's, since that table hides them); OpenAI's long-context rates,
+ *   which the page draws from its own script,
  *   in that script's standard map; each long-context tier's threshold, beside the row's figures on Google's page and on
  *   the switch above the Flagship models' table on OpenAI's; a row with no tier that the page now prices by prompt
  *   length; the figures byway's reading of a page rests on without recording them (Kling 2.5's price for its first 5
@@ -81,6 +83,13 @@ export interface PricePage {
    * row's (its tier words could hide a changed threshold, or flag a row with no tier; B-032).
    */
   byIds?: boolean;
+  /**
+   * The page draws tables from its components' data, where a model the table hides behind a toggle is still listed: on
+   * 2026-11-16 OpenAI's Standard image table hid the 2.5 models, so in its text they appeared first in the Batch table,
+   * at half price. A row whose model the data names is read from the first entry that names it, the Standard table's
+   * (the Batch entry follows), never from the text, so a Batch row is not read as Standard (PRICES-1).
+   */
+  propsRows?: boolean;
 }
 
 /** The figures of a row that a page states, by what they are. Zero is not stated (fal's token rates). */
@@ -149,6 +158,7 @@ export function pricePages(now: Date): PricePage[] {
       rows: rowsOf('openai', now),
       longInScripts: true,
       byIds: true,
+      propsRows: true,
       tierWords: { words: (t) => `Long: >${t.aboveInputTokens / 1000}K input tokens`, heading: 'Flagship models' },
     },
     // In English: asked by Node's fetch with no hl=en, Google answered with its page in Russian (2026-10-22).
@@ -251,6 +261,25 @@ export function priceStretch(text: string, name: string, otherNames: readonly st
     if (dollars(stretch).length > 0) return stretch;
   }
   return undefined;
+}
+
+/**
+ * A model's figures in the data a page draws its tables from, as OpenAI's page writes its image tables (entities
+ * decoded): `"model":[0,"<id>"],"rows":[1,[[1,[[0,"Image"],[0,8],[0,30],[0,2]]],...]]`, from the first entry that names
+ * the model, its Standard table's; undefined when no entry names it.
+ */
+export function propsFigures(attributes: string, name: string): number[] | undefined {
+  const key = `"model":[0,${JSON.stringify(name)}],"rows":`;
+  const at = attributes.indexOf(key);
+  if (at < 0) return undefined;
+  const open = at + key.length;
+  let depth = 0;
+  let end = open;
+  for (; end < attributes.length; end++) {
+    if (attributes[end] === '[') depth++;
+    else if (attributes[end] === ']' && --depth === 0) break;
+  }
+  return [...attributes.slice(open, end).matchAll(/\[0,(\d+(?:\.\d+)?)\]/g)].map((m) => Number(m[1]));
 }
 
 /** The figures of a row the page's text does not show: every figure must be among the dollar amounts of its stretch. */
@@ -389,7 +418,7 @@ export function pageReport(page: PricePage, body: string, scripts: readonly stri
   for (const row of page.rows) {
     const name = nameOf(row);
     const stretch = priceStretch(text, name, names.filter((n) => n !== name), page.form, page.byIds);
-    const shown = stretch === undefined ? [] : dollars(stretch);
+    const shown = (page.propsRows ? propsFigures(attributes, name) : undefined) ?? (stretch === undefined ? [] : dollars(stretch));
     const missing = figures(row, !page.longInScripts).filter((f) => !shown.includes(f.usd));
     const dated = row.from ? ` (the row from ${row.from})` : '';
     if (missing.length > 0) lines.push(`${page.label} ${row.model}${dated}: not found after its name on the page: ${missing.map((f) => `${f.what} ${usd(f.usd)}`).join(', ')}.`);
