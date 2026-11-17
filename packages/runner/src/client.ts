@@ -4,7 +4,7 @@
  * run's workflow with their ids; `resolve` sends the RESOLVE_UPDATE Update, which the workflow validates against the
  * open checkpoint; cancel, pause and resume are signals; `view` reads the store.
  */
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { WorkflowExecutionAlreadyStartedError, WorkflowUpdateFailedError, type Client } from '@temporalio/client';
 import { WorkflowNotFoundError } from '@temporalio/common';
 import { CANCEL_SIGNAL, PAUSE_SIGNAL, RecipeRefusedError, RESOLVE_UPDATE, RESUME_SIGNAL, TASK_QUEUE, type CheckpointResolution, type RunRecord, type RunStatus, type RunView, type Runner, type StartRunInput, type Store } from '@byway/contracts';
@@ -15,6 +15,7 @@ import { LOST_RUN_MESSAGE, settleLostRun } from './lost-runs.ts';
 import { startFailureMessage, type WorkflowAfterFailedStart } from './start-failure.ts';
 import { signAnswer } from './answer-check.ts';
 import { storeRunInputs } from './stored-inputs.ts';
+import { startDigest } from './start-digest.ts';
 import { ENDED_STATUSES as ENDED, RUN_WORKFLOW, workflowIdFor, type RunInput } from './types.ts';
 
 export interface RunnerClientOptions {
@@ -167,8 +168,17 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       // to the same files.
       const stored = await storeRunInputs(store.artifacts, input);
       const id = input.runId ?? randomUUID();
-      // The run's start token (B-188): its first step claims the run with it, so only this start can be carried out.
-      let startToken = randomBytes(24).toString('base64url');
+      const args: RunInput = {
+        runId: id,
+        workspaceId: input.workspaceId,
+        recipe,
+        problemId: stored.problemId,
+        profileId: input.profileId,
+        budgetUsd: input.budgetUsd,
+        medium,
+        routes: input.routes ?? {},
+        inputs: stored.inputs,
+      };
       let record: RunRecord;
       let created = true;
       try {
@@ -184,30 +194,17 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
           medium,
           budgetUsd: input.budgetUsd,
           status: 'queued',
-          startToken,
+          // Its first step claims the run only with this input (B-188, start-digest.ts), so only this start is carried out.
+          startDigest: startDigest(args),
         });
       } catch (e) {
         // The store refuses a second run with one id; a caller that named the id gets the first one back instead.
         if (input.runId === undefined || storeCode(e) !== 'already-exists') throw e;
         record = await startedBefore(input, id, hash);
         created = false;
-        // The same start delivered again: its workflow takes the token the first delivery kept with the run.
-        startToken = (await store.runStartToken(id)) ?? startToken;
       }
       // Its workflow has ended (Temporal would start a new one under a closed id): the run is as it was left.
       if (!created && ENDED.has(record.status)) return record;
-      const args: RunInput = {
-        runId: id,
-        workspaceId: input.workspaceId,
-        recipe,
-        problemId: stored.problemId,
-        profileId: input.profileId,
-        budgetUsd: input.budgetUsd,
-        medium,
-        routes: input.routes ?? {},
-        inputs: stored.inputs,
-        startToken,
-      };
       try {
         await client.workflow.start(RUN_WORKFLOW, { taskQueue, workflowId: workflowIdFor(id), args: [args] });
       } catch (e) {

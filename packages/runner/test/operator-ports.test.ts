@@ -83,7 +83,7 @@ interface Run {
 
 /** Run `recipe` through the real Interpreter; a person picks the first draft, and a confirm is yes. */
 async function run(recipe: Recipe): Promise<Run> {
-  const input: RunInput = { startToken: 'test-start-token', runId: 'run-ports', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: {}, inputs: {} };
+  const input: RunInput = { runId: 'run-ports', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: {}, inputs: {} };
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   const engine = new Interpreter(input, control as never);
   const entries: Run['entries'] = [];

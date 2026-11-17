@@ -223,7 +223,7 @@ describe('migrations', () => {
       [9, 'answer-waits', MIGRATION_9_CHECKSUM],
       [10, 'spend-book-waits', MIGRATION_10_CHECKSUM],
       [11, 'spend-book-retained-waits', MIGRATION_11_CHECKSUM],
-      [12, 'run-start-claim', 'sha256:d0319c01d3b592056873231947a4cfdf90ed7372ec5fc77589a67a84f4cc5ef5'],
+      [12, 'run-start-claim', 'sha256:0bc6925e06c75c65a1377e3913b9992734fea4ee7fb2d0f1754407624af2359d'],
     ]);
   });
 

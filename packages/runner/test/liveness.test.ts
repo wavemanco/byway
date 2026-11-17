@@ -373,7 +373,7 @@ describe('a step whose run is ending, in an activity (ADR-0111)', () => {
 
   const start = async (status: 'running' | 'cancelled') => {
     const ws = (await store.ensureDefaultWorkspace()).id;
-    const run = await store.createRun({ id: `r-${Math.random().toString(36).slice(2)}`, workspaceId: ws, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'prose', budgetUsd: 5, startToken: 't' });
+    const run = await store.createRun({ id: `r-${Math.random().toString(36).slice(2)}`, workspaceId: ws, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'prose', budgetUsd: 5, startDigest: 't' });
     // Claimed for the mock activity environment's execution, as the run's first step claims it (B-188, claim.ts).
     await store.claimRun(run.id, 't', MOCK_EXECUTION);
     await store.updateRun(run.id, { status: 'running' });
@@ -489,7 +489,7 @@ describe('the operation an activity invocation hands its calls', () => {
   /** A model step's input for a new run that is going. */
   const input = async () => {
     const ws = (await store.ensureDefaultWorkspace()).id;
-    const run = await store.createRun({ id: `r-${Math.random().toString(36).slice(2)}`, workspaceId: ws, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'prose', budgetUsd: 5, startToken: 't' });
+    const run = await store.createRun({ id: `r-${Math.random().toString(36).slice(2)}`, workspaceId: ws, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'prose', budgetUsd: 5, startDigest: 't' });
     // Claimed for the mock activity environment's execution, as the run's first step claims it (B-188, claim.ts).
     await store.claimRun(run.id, 't', MOCK_EXECUTION);
     await store.updateRun(run.id, { status: 'running' });

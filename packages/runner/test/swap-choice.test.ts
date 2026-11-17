@@ -61,7 +61,7 @@ function nested(r: Recipe): Recipe {
 async function run(recipe: Recipe): Promise<void> {
   state.asked = [];
   state.swapped = [];
-  const input: RunInput = { startToken: 'test-start-token', runId: 'run-swaps', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: recipe.medium ?? 'web-page', routes: {}, inputs: {} };
+  const input: RunInput = { runId: 'run-swaps', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: recipe.medium ?? 'web-page', routes: {}, inputs: {} };
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   const engine = new Interpreter(input, control as never);
   Object.assign(engine, {

@@ -58,7 +58,7 @@ const { Interpreter } = await import('../src/workflow/interpreter.ts');
 /** What the run asked at each write checkpoint, by step id, in order. */
 async function writePrompts(recipe: Recipe): Promise<[string, string][]> {
   const asked: [string, string][] = [];
-  const input: RunInput = { startToken: 'test-start-token', runId: 'run-lock', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: recipe.medium ?? 'media', routes: {}, inputs: {} };
+  const input: RunInput = { runId: 'run-lock', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: recipe.medium ?? 'media', routes: {}, inputs: {} };
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   const engine = new Interpreter(input, control as never);
   Object.assign(engine, {

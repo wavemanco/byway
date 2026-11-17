@@ -43,11 +43,11 @@ import { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE, workflowBundleHash } from '..
  * calls are pure (backlog row B-176). B-176's fix marks them pure, so the bundle drops ids.ts whole, and with it the media and
  * tell-domain lists of @byway/protocol it alone brought in, and changes once more,
  * on purpose, from f5cb3d64… to 1d8d5728…, with no workflow code changed; after it, a new prompt id leaves the hash alone
- * (the test "holds none of @byway/prompts' id lists" below). B-188 changes it on purpose, from 1d8d5728… to c04b7293…:
- * the workflow claims its run with the run's start token, as its first step, before its status loops start. Runs waiting
+ * (the test "holds none of @byway/prompts' id lists" below). B-188 changes it on purpose, from 1d8d5728… to 94f16fba…:
+ * the workflow claims its run with its whole input, as its first step, before its status loops start. Runs waiting
  * under an older bundle end plainly (ADR-0078).
  */
-const PINNED_WORKFLOW_HASH = '370aaacc5a5e3a78eac377279d6122aca544a08369536c003d37c908ad471f5b';
+const PINNED_WORKFLOW_HASH = '94f16fbab1826b601853e7de0953f841360bbe1e8ee7a69d1da0a80c6c79946f';
 
 describe('the workflow bundle', () => {
   it('inlines the workspace and leaves only the Temporal workflow SDK external', async () => {

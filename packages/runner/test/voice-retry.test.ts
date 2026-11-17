@@ -152,7 +152,7 @@ async function run(stages: [Stage['stage'], Node][], scores: number[], opts: { r
   state.scores = [...scores];
   const medium = opts.medium ?? 'prose';
   const recipe: Recipe = { schema: 'byway.recipe/1', id: 'retry', title: 'Retry', kind: 'experimental', family: 'test', channel: 'workspace', medium, inputs: ['intent'], stages: stages.map(([stage, body]) => ({ stage, body })), sitsOut: [], exceptions: [], bank: false };
-  const input: RunInput = { startToken: 'test-start-token', runId: opts.runId ?? 'run-retry', workspaceId: opts.workspaceId ?? 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium, routes: {}, inputs: {} };
+  const input: RunInput = { runId: opts.runId ?? 'run-retry', workspaceId: opts.workspaceId ?? 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium, routes: {}, inputs: {} };
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   state.control = control;
   return new Interpreter(input, control as never).runStages();

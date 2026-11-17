@@ -80,7 +80,7 @@ export async function runRecipe(input: RunInput): Promise<RunOutcome> {
   // its last activity writes, and an unhandled rejection must not wedge the workflow task.
   // Only a run this byway started goes on (B-188, activities/claim.ts): claimed before any other step, the status loops
   // included, so a workflow started, replayed or reset through Temporal's port stops here and writes nothing.
-  await quick.claimRun({ runId: input.runId, startToken: input.startToken });
+  await quick.claimRun(input);
   const loops = control.startLoops().catch(() => undefined);
   const end = async (finish: () => Promise<void>) => {
     control.finished = true;

@@ -82,7 +82,7 @@ const stageWith = (recipe: Recipe, stage: string, id: string): Node => optionalA
  * declined; a person's answer to anything else is an empty text, and a confirm is yes.
  */
 async function run(recipe: Recipe, stage: string, body: Node, ports: Ports): Promise<Ports> {
-  const input: RunInput = { startToken: 'test-start-token', runId: 'run-declined', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: recipe.medium ?? 'prose', routes: {}, inputs: {} };
+  const input: RunInput = { runId: 'run-declined', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: recipe.medium ?? 'prose', routes: {}, inputs: {} };
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   const engine = new Interpreter(input, control as never);
   Object.assign(engine, {

@@ -6,10 +6,13 @@
  */
 import { MockActivityEnvironment } from '@temporalio/testing';
 import { defaultPayloadConverter } from '@temporalio/common';
+import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { withHash } from '@byway/recipe';
 import { RESOLVE_UPDATE } from '@byway/contracts';
 import { answerSigned, signAnswer } from '../src/answer-check.ts';
 import { createActivities } from '../src/activities/index.ts';
+import { startDigest } from '../src/start-digest.ts';
 import { RUN_WORKFLOW, workflowIdFor, type RunInput } from '../src/types.ts';
 import { createHarness, HARNESS_ACCESS_KEY, type Harness } from './helpers/harness.ts';
 import { tiny } from './helpers/recipes.ts';
@@ -43,7 +46,6 @@ describe('a workflow started through the port by another program', () => {
     const calls = h.ledger(run.id).length;
     const events = done.events.length;
     const input = await startedWith(run.id);
-    expect(input.startToken).toEqual(expect.any(String));
     // Temporal lets a closed workflow id be started again: the replay runs in a new execution.
     const replay = await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: h.taskQueue, workflowId: workflowIdFor(run.id), args: [input] });
     await expect(replay.result()).rejects.toThrow();
@@ -55,15 +57,36 @@ describe('a workflow started through the port by another program', () => {
     expect(after.events).toHaveLength(events);
   }, 120_000);
 
-  it('a workflow for a run byway never created, or with another token, stops at its first step', async () => {
+  it('a workflow for a run byway never created stops at its first step', async () => {
     const run = await h.start(tiny);
     const input = await startedWith(run.id);
-    const forged: RunInput = { ...input, runId: `${run.id}-forged`, startToken: 'guessed' };
+    const forged: RunInput = { ...input, runId: `${run.id}-forged` };
     const handle = await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: h.taskQueue, workflowId: workflowIdFor(forged.runId), args: [forged] });
     await expect(handle.result()).rejects.toThrow();
     expect(h.ledger(forged.runId)).toHaveLength(0);
     await h.runner.cancel(run.id);
   }, 120_000);
+
+  it('a workflow for a run byway made, not yet claimed, but with any other input, stops at its first step; with its own input it runs', async () => {
+    // As if another program read a new run's input from Temporal's history and, before its first step, stopped its
+    // workflow and started its own with another recipe, profile, budget or routes.
+    const run = await h.start(tiny);
+    const own = await startedWith(run.id);
+    await h.runner.cancel(run.id);
+    const id = randomUUID();
+    const input: RunInput = { ...own, runId: id };
+    await h.store.createRun({ id, workspaceId: input.workspaceId, recipeId: tiny.id, recipeHash: withHash(tiny).hash!, profileId: input.profileId, title: 'Bound', problem: 'p', medium: input.medium, budgetUsd: input.budgetUsd, status: 'queued', startDigest: startDigest(input) });
+    for (const other of [{ ...input, profileId: 'best' }, { ...input, routes: { any: 'other' } }, { ...input, budgetUsd: input.budgetUsd + 1 }]) {
+      const handle = await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: h.taskQueue, workflowId: workflowIdFor(id), args: [other] });
+      await expect(handle.result()).rejects.toThrow();
+      expect(await h.store.runClaim(id)).toBeUndefined();
+    }
+    expect(h.ledger(id)).toHaveLength(0);
+    await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: h.taskQueue, workflowId: workflowIdFor(id), args: [input] });
+    await openQuestion(id);
+    expect(await h.store.runClaim(id)).toEqual(expect.any(String));
+    await h.runner.cancel(id);
+  }, 180_000);
 });
 
 describe("a checkpoint's answer", () => {
@@ -101,7 +124,7 @@ describe('every step after the claim', () => {
     const acts = createActivities({ gateway: h.gateway, store: h.store, prompts: h.prompts, pages: h.pages });
     const other = new MockActivityEnvironment({ workflowExecution: { workflowId: workflowIdFor(run.id), runId: 'another-execution' } } as never);
     await expect(other.run(acts.setRunStatus, { runId: run.id, status: 'paused' as const })).rejects.toThrow(/not started by this byway/);
-    await expect(other.run(acts.claimRun, { runId: run.id, startToken: (await h.store.runStartToken(run.id))! })).rejects.toThrow(/not started by this byway/);
+    await expect(other.run(acts.claimRun, await startedWith(run.id))).rejects.toThrow(/not started by this byway/);
     expect((await h.store.getRun(run.id))?.status).not.toBe('paused');
     await h.runner.cancel(run.id);
   }, 120_000);

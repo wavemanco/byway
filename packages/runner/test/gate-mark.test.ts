@@ -63,7 +63,7 @@ const fix: Step = step({ id: 'fix', role: 'fix', actor: 'model', tier: 'mid', pr
 /** Run one stage of `body` (prose) through the real Interpreter; a person's directive lists nothing, and the gate's "use it anyway?" is yes. */
 async function run(body: Node): Promise<Ports> {
   const recipe: Recipe = { schema: 'byway.recipe/1', id: 'gate-mark', title: 'Gate mark', kind: 'experimental', family: 'test', channel: 'workspace', medium: 'prose', inputs: ['intent'], stages: [{ stage: 'D2', body }], sitsOut: [], exceptions: [], bank: false };
-  const input: RunInput = { startToken: 'test-start-token', runId: 'run-gate-mark', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: {}, inputs: {} };
+  const input: RunInput = { runId: 'run-gate-mark', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: {}, inputs: {} };
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   const engine = new Interpreter(input, control as never);
   Object.assign(engine, {

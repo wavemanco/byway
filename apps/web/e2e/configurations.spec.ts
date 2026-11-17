@@ -6,6 +6,7 @@
 import http from 'node:http';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { PRESENTATIONS } from '@byway/catalog';
+import { accessKey } from './access.ts';
 import { answerUntilDone, describeProblem, exportText, openResult, startRecommended, timelineLabels, watchForKeys } from './flow.ts';
 
 interface Case {
@@ -196,9 +197,9 @@ test('C4: an optional step you decline reads Skipped, and the Result lists it as
 test('the local guard refuses a foreign Host on every path, Next.js internals included (SEC-6, DNS rebinding)', async ({ baseURL }) => {
   const { hostname, port } = new URL(baseURL ?? 'http://127.0.0.1:3210');
   // Node's http, because a browser or Playwright's request client sets Host itself.
-  const status = (path: string, host: string) =>
+  const status = (path: string, host: string, cookie = `byway_access=${accessKey()}`) =>
     new Promise<number>((resolve, reject) => {
-      const req = http.request({ hostname, port: Number(port), path, headers: { host }, agent: false }, (res) => {
+      const req = http.request({ hostname, port: Number(port), path, headers: { host, cookie }, agent: false }, (res) => {
         res.resume();
         resolve(res.statusCode ?? 0);
       });
@@ -209,4 +210,7 @@ test('the local guard refuses a foreign Host on every path, Next.js internals in
     expect(await status(path, 'rebind.evil.example'), path).toBe(403);
   }
   expect(await status('/settings', `${hostname}:${port}`)).toBe(200);
+  // And this start's access cookie (B-188): without it, or with another key, byway's own Host is not enough.
+  expect(await status('/settings', `${hostname}:${port}`, '')).toBe(401);
+  expect(await status('/api/settings', `${hostname}:${port}`, `byway_access=${'x'.repeat(43)}`)).toBe(401);
 });

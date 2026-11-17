@@ -104,7 +104,7 @@ async function run(body: Node | [Stage['stage'], Node][], medium: RunInput['medi
   const r = await benchRun(b, medium);
   const stages = Array.isArray(body) ? body.map(([stage, node]) => ({ stage, body: node })) : [{ stage: 'D2' as const, body }];
   const recipe: Recipe = { schema: 'byway.recipe/1', id: 'page-voice', title: 'Page voice', kind: 'experimental', family: 'test', channel: 'workspace', medium, inputs: ['intent'], stages, sitsOut: [], exceptions: [], bank: false };
-  const input: RunInput = { startToken: 'test-start-token', runId: r.runId, workspaceId: r.workspaceId, recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium, routes: {}, inputs: {} };
+  const input: RunInput = { runId: r.runId, workspaceId: r.workspaceId, recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium, routes: {}, inputs: {} };
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   state.control = control;
   await new Interpreter(input, control as never).runStages();

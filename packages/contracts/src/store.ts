@@ -284,20 +284,18 @@ export interface Store {
   updateWorkspace(id: string, patch: Partial<Pick<Workspace, 'name' | 'budgetUsd'>>): Promise<Workspace>;
 
   /**
-   * `startToken`, the run's random start token, is kept with the run and never returned in a RunRecord: the run's first
-   * step claims the run with it (claimRun; backlog row B-188).
+   * `startDigest`, the digest of the run's workflow input, is kept with the run and never returned in a RunRecord: the
+   * run's first step claims the run only with an input of that digest (claimRun; backlog row B-188).
    */
-  createRun(run: Omit<RunRecord, 'createdAt' | 'updatedAt' | 'costUsd' | 'status'> & { status?: RunStatus; startToken?: string }): Promise<RunRecord>;
+  createRun(run: Omit<RunRecord, 'createdAt' | 'updatedAt' | 'costUsd' | 'status'> & { status?: RunStatus; startDigest?: string }): Promise<RunRecord>;
   /**
-   * Claims a run for the Temporal execution that carries it out: true when the run exists, `startToken` is the one it
+   * Claims a run for the Temporal execution that carries it out: true when the run exists, `startDigest` is the one it
    * was created with, and no other execution has claimed it (the claiming execution asking again is true); false
-   * otherwise, changing nothing. A run created without a start token cannot be claimed.
+   * otherwise, changing nothing. A run created without a start digest cannot be claimed.
    */
-  claimRun(id: string, startToken: string, executionId: string): Promise<boolean>;
+  claimRun(id: string, startDigest: string, executionId: string): Promise<boolean>;
   /** The Temporal execution that claimed a run, or undefined for a run that is unknown or not yet claimed. */
   runClaim(id: string): Promise<string | undefined>;
-  /** A run's start token, for a start delivered again before its workflow started; undefined for a run without one. */
-  runStartToken(id: string): Promise<string | undefined>;
   /** `null` clears error or outputArtifactId; undefined leaves a field unchanged. */
   updateRun(
     id: string,

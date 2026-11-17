@@ -39,7 +39,7 @@ const interview = (prompt = 'product.c7.interview', id = 'interview'): Step => s
 async function reactPrompts(body: Node): Promise<[string, string][]> {
   const asked: [string, string][] = [];
   const recipe: Recipe = { schema: 'byway.recipe/1', id: 'in-place', title: 'In place', kind: 'experimental', family: 'test', channel: 'workspace', medium: 'code-diff', inputs: ['intent'], stages: [{ stage: 'D1', body }], sitsOut: [], exceptions: [], bank: false };
-  const input: RunInput = { startToken: 'test-start-token', runId: 'run-in-place', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: 'code-diff', routes: {}, inputs: {} };
+  const input: RunInput = { runId: 'run-in-place', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: 'code-diff', routes: {}, inputs: {} };
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   const engine = new Interpreter(input, control as never);
   Object.assign(engine, {
