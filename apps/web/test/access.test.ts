@@ -48,12 +48,20 @@ describe("byway's start link and access cookie", () => {
     expect(page).not.toMatch(/<script|<link|src=/i);
   });
 
+  it('a tab or bookmark at an earlier start’s name is told that byway started again, and to open the new link', () => {
+    const old = checkRequest({ method: 'GET', host: `byway-${'b2'.repeat(12)}.localhost:3000`, origin: null, secFetchSite: null, accessHost: HOST });
+    expect(old).toMatchObject({ ok: false, status: 403, message: expect.stringMatching(/started again since this page was opened/) });
+    expect(checkRequest({ method: 'GET', host: 'rebind.evil.example', origin: null, secFetchSite: null, accessHost: HOST })).toMatchObject({ message: expect.stringMatching(/only answers requests addressed to this computer/) });
+  });
+
   it('the guard answers this start’s host name and the loopback names, and no other name', () => {
     const at = (host: string, accessHost: string | undefined = HOST) => checkRequest({ method: 'GET', host, origin: null, secFetchSite: null, accessHost });
     for (const host of [`${HOST}:3000`, HOST, '127.0.0.1:3000', 'localhost:3000', '[::1]:3000']) expect(at(host), host).toEqual({ ok: true });
     for (const host of [`byway-${'b2'.repeat(12)}.localhost:3000`, `x.${HOST}:3000`, `${HOST}.evil.example:3000`, 'rebind.evil.example']) expect(at(host), host).toMatchObject({ ok: false, status: 403 });
     expect(checkRequest({ method: 'GET', host: `${HOST}:3000`, origin: null, secFetchSite: null })).toMatchObject({ ok: false, status: 403 });
     expect(at(`${HOST}:3000`, 'not-a-byway-name.localhost')).toMatchObject({ ok: false, status: 403 });
+    // A name not of byway's form is refused even when it is the one byway was given.
+    expect(at('not-a-byway-name.localhost:3000', 'not-a-byway-name.localhost')).toMatchObject({ ok: false, status: 403 });
     // A change from byway's own page at its host name passes; one from another byway's does not.
     expect(checkRequest({ method: 'POST', host: `${HOST}:3000`, origin: `http://${HOST}:3000`, secFetchSite: 'same-origin', accessHost: HOST })).toEqual({ ok: true });
     expect(checkRequest({ method: 'POST', host: `${HOST}:3000`, origin: `http://byway-${'b2'.repeat(12)}.localhost:3000`, secFetchSite: 'same-site', accessHost: HOST })).toMatchObject({ ok: false, status: 403 });

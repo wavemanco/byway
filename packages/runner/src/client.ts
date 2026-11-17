@@ -5,7 +5,7 @@
  * open checkpoint; cancel, pause and resume are signals; `view` reads the store.
  */
 import { randomUUID } from 'node:crypto';
-import { WorkflowExecutionAlreadyStartedError, WorkflowUpdateFailedError, type Client } from '@temporalio/client';
+import { ActivityFailure, WorkflowExecutionAlreadyStartedError, WorkflowUpdateFailedError, type Client } from '@temporalio/client';
 import { WorkflowNotFoundError } from '@temporalio/common';
 import { CANCEL_SIGNAL, PAUSE_SIGNAL, RecipeRefusedError, RESOLVE_UPDATE, RESUME_SIGNAL, TASK_QUEUE, type CheckpointResolution, type RunRecord, type RunStatus, type RunView, type Runner, type StartRunInput, type Store } from '@byway/contracts';
 import { CATALOG } from '@byway/catalog';
@@ -238,7 +238,12 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
         await handle(cp.runId).executeUpdate(RESOLVE_UPDATE, { args: [sent] });
       } catch (e) {
         // The workflow's validator (stale or mismatched answers) and handler refusals arrive as the Update's failure.
-        if (e instanceof WorkflowUpdateFailedError) throw new ResolutionRejectedError((e.cause as Error | undefined)?.message ?? e.message);
+        if (e instanceof WorkflowUpdateFailedError) {
+          // An activity's refusal (AnswerNotSigned) sits under Temporal's ActivityFailure, "Activity task failed".
+          let cause = e.cause as Error | undefined;
+          while (cause instanceof ActivityFailure && cause.cause instanceof Error) cause = cause.cause;
+          throw new ResolutionRejectedError(cause?.message ?? e.message);
+        }
         if (e instanceof WorkflowNotFoundError) {
           // The store says the run is going but Temporal has no running workflow for it: nobody can answer it now.
           await settleLostRun(store, cp.runId, { status: 'failed', error: LOST_RUN_MESSAGE });

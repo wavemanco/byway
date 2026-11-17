@@ -9,7 +9,7 @@ import { routeChoice } from '@byway/catalog';
 import { ApplicationFailure } from '@temporalio/activity';
 import { answerSigned } from '../answer-check.ts';
 import { currentExecution } from './claim.ts';
-import type { Medium } from '@byway/contracts';
+import type { CheckpointResolution, Medium } from '@byway/contracts';
 import { withoutMarks } from '@byway/gateway';
 import { voiceWrite } from '@byway/recipe/semantics';
 import { applyClaims, claimLines } from '../claims.ts';
@@ -333,6 +333,14 @@ export async function recordResolution(deps: RunnerDeps, input: RecordResolution
     const { answer, resolution } = input;
     const written = answer !== undefined && answer.checkpointId === resolution.checkpointId && (['choice', 'text', 'approved'] as const).every((k) => resolution[k] === undefined || JSON.stringify(resolution[k]) === JSON.stringify(answer[k]));
     if (deps.accessKey === undefined || answer === undefined || !written || !answerSigned(deps.accessKey, input.runId, answer)) {
+      // A retry of an attempt that recorded this very answer under an earlier start's key (byway stopped hard before
+      // Temporal heard of it) is that attempt's success, not a new answer: the run goes on with what the person said.
+      const stored = await deps.store.getCheckpoint(resolution.checkpointId);
+      const said = (r: CheckpointResolution | undefined) => JSON.stringify([r?.checkpointId, r?.choice ?? null, r?.text ?? null, r?.approved ?? null]);
+      if (stored?.status === 'resolved' && said(stored.resolution) === said(resolution)) {
+        await emit(deps.store, input.runId, 'checkpoint-resolved', { checkpointId: resolution.checkpointId }, at(input.call, `checkpoint/${resolution.checkpointId}/resolved`));
+        return;
+      }
       throw ApplicationFailure.nonRetryable('This answer was not sent by byway, so it is not recorded: an answer came through the engine’s port from another program.', 'AnswerNotSigned');
     }
   }

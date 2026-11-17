@@ -13,6 +13,8 @@ import { RESOLVE_UPDATE } from '@byway/contracts';
 import { answerSigned, signAnswer } from '../src/answer-check.ts';
 import { REFUSED_START_MESSAGE } from '../src/activities/claim.ts';
 import { createActivities } from '../src/activities/index.ts';
+import { createRunnerClient, ResolutionRejectedError } from '../src/client.ts';
+import { createWorker } from '../src/worker.ts';
 import { startDigest } from '../src/start-digest.ts';
 import { RUN_WORKFLOW, workflowIdFor, type RunInput } from '../src/types.ts';
 import { createHarness, HARNESS_ACCESS_KEY, type Harness } from './helpers/harness.ts';
@@ -131,6 +133,42 @@ describe("a checkpoint's answer", () => {
     expect((await h.store.getCheckpoint(cp.id))?.status).toBe('open');
     await h.runner.cancel(run.id);
   }, 120_000);
+
+  it('recorded before a restart, it counts as recorded when Temporal tries it again under the next start’s key', async () => {
+    // byway stopped hard after an attempt wrote the answer and before Temporal heard of it; the retry runs on the next
+    // start's worker, whose key is new (B-188's re-check).
+    const run = await h.start(tiny);
+    const cp = await openQuestion(run.id);
+    const inWorker = new MockActivityEnvironment({ workflowExecution: { workflowId: workflowIdFor(run.id), runId: (await h.store.runClaim(run.id))! } } as never);
+    const call = { stepId: 'react', attempt: 1 } as never;
+    const resolution = { checkpointId: cp.id, text: 'what the person said' };
+    const signedBefore = { ...resolution, signature: signAnswer(HARNESS_ACCESS_KEY, run.id, resolution) };
+    const nextStart = createActivities({ gateway: h.gateway, store: h.store, prompts: h.prompts, pages: h.pages, accessKey: 'n'.repeat(43) });
+    await h.store.resolveCheckpoint(resolution);
+    await expect(inWorker.run(nextStart.recordResolution, { runId: run.id, call, resolution, answer: signedBefore })).resolves.toBeUndefined();
+    // Anything other than what was recorded is still refused.
+    const other = { checkpointId: cp.id, text: 'something else' };
+    await expect(inWorker.run(nextStart.recordResolution, { runId: run.id, call, resolution: other, answer: { ...other, signature: signAnswer(HARNESS_ACCESS_KEY, run.id, other) } })).rejects.toThrow(/not sent by byway/);
+    expect((await h.store.getCheckpoint(cp.id))?.resolution).toEqual(resolution);
+    await h.runner.cancel(run.id);
+  }, 120_000);
+
+  it('refused, it reaches the person as byway’s own words, not the engine’s', async () => {
+    const run = await h.start(tiny);
+    const cp = await openQuestion(run.id);
+    const otherKey = createRunnerClient({ client: h.env.client, store: h.store, taskQueue: h.taskQueue, accessKey: 'o'.repeat(43) });
+    const refused = await otherKey.resolve({ checkpointId: cp.id, text: 'signed with another key' }).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(ResolutionRejectedError);
+    expect((refused as Error).message).toMatch(/This answer was not sent by byway/);
+    expect((await h.store.getCheckpoint(cp.id))?.status).toBe('open');
+    await h.runner.cancel(run.id);
+  }, 120_000);
+
+  it('a worker without this start’s key does not start', async () => {
+    for (const accessKey of ['', 'short']) {
+      await expect(createWorker({ connection: h.env.nativeConnection, taskQueue: `no-key-${randomUUID()}`, gateway: h.gateway, store: h.store, prompts: h.prompts, pages: h.pages, workflowsPath: h.workflowsPath, accessKey })).rejects.toThrow(/access key/);
+    }
+  });
 
   it("signs the run, the checkpoint and what the answer says, in constant time", () => {
     const r = { checkpointId: 'cp-1', choice: ['A'] };

@@ -58,6 +58,14 @@ describe("proxy.ts, the production server's guard", () => {
     }
   });
 
+  it('tells a browser at an earlier start’s name, on a page, that byway started again', async () => {
+    started();
+    const old = at(`byway-${'b2'.repeat(12)}.localhost:3000`, '/runs/x', { accept: 'text/html', cookie: COOKIE });
+    expect(old.status).toBe(403);
+    expect(old.headers.get('content-type')).toMatch(/^text\/html/);
+    expect(await old.text()).toMatch(/^<!doctype html>.*started again since this page was opened/s);
+  });
+
   it('refuses a foreign Host before anything else, and everything when byway was started without its key', () => {
     started();
     expect(at('rebind.evil.example', '/settings', { cookie: COOKIE }).status).toBe(403);

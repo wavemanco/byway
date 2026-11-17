@@ -59,6 +59,8 @@ export interface RunnerWorker {
 }
 
 export async function createWorker(opts: CreateWorkerOptions): Promise<RunnerWorker> {
+  // B-188: a worker without this start's key would record no answer; it does not start.
+  if (typeof opts.accessKey !== 'string' || opts.accessKey.length < 32) throw new Error('The runner worker needs this start’s access key (32 characters or more): start byway with pnpm start, which makes one.');
   const workflowsPath = opts.workflowsPath ?? (await buildWorkflows());
   const ownConnection = opts.connection ? undefined : await NativeConnection.connect({ address: DEFAULT_TEMPORAL_ADDRESS });
   const connection = opts.connection ?? ownConnection!;

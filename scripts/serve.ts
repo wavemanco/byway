@@ -51,6 +51,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ENGINE_STOPPED_MESSAGE, watchEngine } from '../apps/web/src/server/engine-watch.ts';
 import { ACCESS_HOST } from '../apps/web/src/server/guard.ts';
+import { holdIpv6Loopback } from '../apps/web/src/server/ipv6-hold.ts';
 import { parseServeArgs } from '../apps/web/src/server/serving.ts';
 import { createGateway, loadEnvFile, withoutSecrets } from '../packages/gateway/src/index.ts';
 import { createPromptRenderer } from '../packages/prompts/src/index.ts';
@@ -169,6 +170,9 @@ async function main(): Promise<void> {
   // from (BUILD-2). The engine checks its port again when it starts, for a port taken meanwhile.
   await assertPortFree(temporalPort);
   await assertPortFree(webPort, webPortInUseMessage);
+  // And the web port on IPv6 loopback, held for as long as byway runs (B-188's re-check, ipv6-hold.ts): Chrome and Edge
+  // open the start link's .localhost name on [::1] first, where another program would otherwise receive it.
+  const ipv6 = await holdIpv6Loopback(webPort);
 
   quietTemporal();
   // Turbopack's caches are off now (next.config.ts), but ones left by an earlier byway may hold a snapshot of the
@@ -200,10 +204,11 @@ async function main(): Promise<void> {
   // first and the worker runs it; otherwise the worker builds dist/workflows.js itself.
   // The per-start secret (B-188, apps/web/src/server/guard.ts): a new random key and host name at each start, in this
   // process and the web server's environment only, never on disk. BYWAY_ACCESS_KEY may name a key of 32 characters or
-  // more, and BYWAY_ACCESS_HOST a host name of guard.ts's form, for the e2e suite, which sets its browser's cookie from them.
-  const given = process.env.BYWAY_ACCESS_KEY?.trim();
+  // more, and BYWAY_ACCESS_HOST a host name of guard.ts's form, for the e2e suite, which sets its browser's cookie from them;
+  // only in demo mode, which spends nothing, so a key or name kept in a file never guards a byway that spends.
+  const given = demo ? process.env.BYWAY_ACCESS_KEY?.trim() : undefined;
   const accessKey = given !== undefined && given.length >= 32 ? given : randomBytes(32).toString('base64url');
-  const givenHost = process.env.BYWAY_ACCESS_HOST?.trim().toLowerCase();
+  const givenHost = demo ? process.env.BYWAY_ACCESS_HOST?.trim().toLowerCase() : undefined;
   const accessHost = givenHost !== undefined && ACCESS_HOST.test(givenHost) ? givenHost : `byway-${randomBytes(12).toString('hex')}.localhost`;
   console.log('  engine     starting Temporal and the runner worker…');
   const bundle = process.env.BYWAY_WORKFLOWS_BUNDLE?.trim();
@@ -263,6 +268,7 @@ async function main(): Promise<void> {
       console.log('\nStopping byway…');
       watch.stop();
       await stopWeb(web);
+      await ipv6?.close();
       // ENG-10: the worker gives in-flight steps a grace period and then abandons them (they are retried on the next
       // start), so the engine's stop is bounded; the deadline guards against a stop that hangs anyway.
       const stopped = await Promise.race([

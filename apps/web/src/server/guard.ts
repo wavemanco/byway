@@ -22,9 +22,11 @@ export type GuardResult = { ok: true } | { ok: false; status: number; message: s
  * host name only, and goes on to the start screen; every other request must carry that cookie. A browser sends a
  * cookie to every port of the host it belongs to, so a cookie for 127.0.0.1 would reach any program listening on
  * another 127.0.0.1 port; the host name, a name under .localhost that Chrome, Edge and Firefox send to this computer
- * themselves, is new at each start and shown only in the terminal, so no other program can have the browser send it
- * the cookie. So another program on the computer, under any account, cannot use byway's server without the link.
- * Temporal's port is a door of its own: ADR-0117 item 5 says what stays open there.
+ * themselves, is new at each start, so another program has no name to have the browser send it the cookie at (byway also
+ * holds its port on [::1], ipv6-hold.ts, where those browsers try such a name first). So a program under another Windows
+ * account cannot use byway's server without the link. A program under the person's own account can read the key from
+ * byway's environment, and a generated page whose scripts the person turned on can read the name from its own address;
+ * Temporal's port is a door of its own: ADR-0117 item 5 says what stays open.
  */
 export const ACCESS_COOKIE = 'byway_access';
 export const OPEN_PATH = '/open';
@@ -70,6 +72,8 @@ function hostName(host: string | null): string | null {
   return m ? m[1]!.toLowerCase() : null;
 }
 
+const RESTARTED = 'byway has started again since this page was opened, at a new address. Open the link it printed this time, shown in the window where byway runs.';
+
 const NOT_THE_LINK = 'This is not the link byway printed when it last started. Open the link shown in the window where byway runs, as it is shown.';
 
 export function checkAccess(input: AccessInput): AccessResult {
@@ -92,6 +96,8 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 export function checkRequest(input: GuardInput): GuardResult {
   const own = input.accessHost !== undefined && ACCESS_HOST.test(input.accessHost) && hostName(input.host) === input.accessHost;
   if (!input.host || !(own || LOOPBACK.test(input.host))) {
+    // An earlier start's name: a tab or bookmark kept from before byway started again.
+    if (ACCESS_HOST.test(hostName(input.host) ?? '')) return { ok: false, status: 403, message: RESTARTED };
     return { ok: false, status: 403, message: 'byway only answers requests addressed to this computer (127.0.0.1).' };
   }
   if (SAFE_METHODS.has(input.method.toUpperCase())) return { ok: true };

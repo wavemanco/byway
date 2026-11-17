@@ -169,14 +169,15 @@ export interface GuardedServer {
 export function createGuardedServer(handle: RequestHandler): GuardedServer {
   const gate = http.createServer();
   const server = http.createServer((req, res) => {
+    const html = (header(req.headers, 'accept') ?? '').includes('text/html');
     const verdict = guardRequest(req);
-    if (!verdict.ok) return refuse(res, verdict);
+    if (!verdict.ok) return refuse(res, verdict, html);
     const access = accessOf(req);
     if (access.ok === 'open') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Set-Cookie': access.setCookie, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
       return res.end(openedPage());
     }
-    if (!access.ok) return refuse(res, access, (header(req.headers, 'accept') ?? '').includes('text/html'));
+    if (!access.ok) return refuse(res, access, html);
     Promise.resolve()
       .then(() => handle(req, res))
       .catch((err: unknown) => {

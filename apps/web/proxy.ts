@@ -20,7 +20,11 @@ export function proxy(request: NextRequest) {
     secFetchSite: request.headers.get('sec-fetch-site'),
     accessHost,
   });
-  if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status });
+  const html = (request.headers.get('accept') ?? '').includes('text/html');
+  if (!result.ok) {
+    if (html) return new NextResponse(refusalPage(result.message), { status: result.status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+    return NextResponse.json({ error: result.message }, { status: result.status });
+  }
   // Then the per-start secret (B-188): the start link sets the access cookie, and every other request must carry it.
   const access = checkAccess({
     path: request.nextUrl.pathname,
@@ -34,7 +38,7 @@ export function proxy(request: NextRequest) {
     return new NextResponse(openedPage(), { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Set-Cookie': access.setCookie, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' } });
   }
   if (!access.ok) {
-    if ((request.headers.get('accept') ?? '').includes('text/html')) {
+    if (html) {
       return new NextResponse(refusalPage(access.message), { status: access.status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
     }
     return NextResponse.json({ error: access.message }, { status: access.status, headers: { 'Cache-Control': 'no-store' } });

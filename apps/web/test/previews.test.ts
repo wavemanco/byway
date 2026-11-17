@@ -81,6 +81,8 @@ describe('running a generated page’s scripts (SEC-4)', () => {
       const out = html(createElement(ScriptsToggle, { on, onChange: () => undefined }));
       expect(out).toContain(`aria-pressed="${on}"`);
       expect(out).toContain('A page running its scripts can send what it contains to other sites.');
+      // And this start's address, which the page can read from its own (B-188's re-check).
+      expect(out).toContain('It can also read the address byway has this time, which a program on this computer could use to reach byway.');
     }
     // On, it says how long: only while this screen shows the page.
     expect(html(createElement(ScriptsToggle, { on: true, onChange: () => undefined }))).toContain('until you leave or reload this screen');

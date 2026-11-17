@@ -92,6 +92,30 @@ describe("serve.ts's renderer line and Playwright's browsers folder (ADR-0105)",
  * so it shares no file with a byway you are running from the same checkout. serve.ts reads the file's name from
  * BYWAY_WORKFLOWS_BUNDLE and hands the engine what it built; without it the worker builds dist/workflows.js itself.
  */
+describe("serve.ts's per-start secret (B-188)", () => {
+  const e2e = codeLines(read('scripts/e2e.ts'));
+
+  it('takes a given key or host name only in demo mode, and only a name of guard.ts\'s form', () => {
+    expect(matching(serve, /process\.env\.BYWAY_ACCESS_(KEY|HOST)/)).toEqual([
+      'const given = demo ? process.env.BYWAY_ACCESS_KEY?.trim() : undefined;',
+      'const givenHost = demo ? process.env.BYWAY_ACCESS_HOST?.trim().toLowerCase() : undefined;',
+    ]);
+    expect(matching(serve, /const accessHost = /)).toEqual(["const accessHost = givenHost !== undefined && ACCESS_HOST.test(givenHost) ? givenHost : `byway-${randomBytes(12).toString('hex')}.localhost`;"]);
+  });
+
+  it('holds the web port on [::1] from before anything starts until byway has stopped', () => {
+    const hold = serve.indexOf('const ipv6 = await holdIpv6Loopback(webPort);');
+    expect(hold).toBeGreaterThan(serve.indexOf('await assertPortFree(webPort, webPortInUseMessage);'));
+    expect(hold).toBeLessThan(serve.findIndex((l) => l.startsWith('const keys = loadEnvFile(')));
+    expect(serve).toContain('await ipv6?.close();');
+  });
+
+  it('the e2e suite writes byway\'s output to its log with the key masked', () => {
+    expect(matching(e2e, /log\.write\(/)).toEqual(["for (const stream of [server.stdout, server.stderr]) if (stream) createInterface({ input: stream, crlfDelay: Infinity }).on('line', (line) => log.write(`${line.replaceAll(accessKey, '<key>')}\\n`));"]);
+    expect(matching(e2e, /\.pipe\(log\)/)).toEqual([]);
+  });
+});
+
 describe("serve.ts's workflow bundle, and the e2e suite's own (DEV-1)", () => {
   const e2e = codeLines(read('scripts/e2e.ts'));
 
