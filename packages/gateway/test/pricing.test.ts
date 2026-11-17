@@ -240,8 +240,8 @@ describe('the day prices were last checked (PRICES_CHECKED)', () => {
   const paid = PRICES.filter((r) => r.provider !== 'mock');
   const days = (text: string) => [...text.matchAll(/\b(\d{4}-\d{2}-\d{2})\b/g)].map((m) => m[1]!);
 
-  it('is a real day, the last full re-read: 2026-10-22', () => {
-    expect(PRICES_CHECKED).toBe('2026-10-22');
+  it('is a real day, the last full re-read: 2026-11-16', () => {
+    expect(PRICES_CHECKED).toBe('2026-11-16');
     expect(new Date(`${PRICES_CHECKED}T00:00:00Z`).toISOString().slice(0, 10)).toBe(PRICES_CHECKED);
   });
 

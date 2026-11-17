@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { PRICES, PRICES_CHECKED, type PriceRow } from '../../packages/gateway/src/prices.ts';
-import { decimal, OPENROUTER_MODELS, openRouterReport, pageScripts, pageText, plain, priceStretch, pricePages, REREAD_DUE_DAYS, report, rereadLine, samePerToken, type OpenRouterModels, type PriceReportOptions } from '../price-report.ts';
+import { decimal, OPENROUTER_MODELS, openRouterReport, pageReport, pageScripts, pageText, plain, priceStretch, pricePages, propsFigures, REREAD_DUE_DAYS, report, rereadLine, samePerToken, type OpenRouterModels, type PriceReportOptions } from '../price-report.ts';
 
 const row = (provider: PriceRow['provider'], model: string, from?: string) => PRICES.find((r) => r.provider === provider && r.model === model && r.from === from)!;
 const $ = (n: number) => `$${n.toFixed(Math.max(2, (String(n).split('.')[1] ?? '').length))}`;
@@ -327,6 +327,25 @@ describe("the weekly run's price report (PRICE-CADENCE)", () => {
       flagged: true,
       lines: [`OpenRouter ${rows[1]!.model}: the model list gives completion "0.000021" per token; byway records $${rows[1]!.outputPerMTok} per 1M tokens.`, `OpenRouter ${rows[2]!.model}: the model list no longer has it.`],
     });
+  });
+
+  it("reads OpenAI's image models from the data its tables are drawn from, where the Standard table hides them, and never takes their Batch row for Standard (2026-11-16)", () => {
+    const page = pricePages(CHECKED).find((p) => p.label === 'OpenAI')!;
+    const images = page.rows.filter((r) => r.estimatedOutputTokensPerImage !== undefined);
+    expect(images.length).toBeGreaterThan(0);
+    // As the page writes it: an Image row (input, output, cached) and a Text row (input, -, cached) per model.
+    const entry = (r: PriceRow, k: number) => `{"model":[0,"${r.model}"],"rows":[1,[[1,[[0,"Image"],[0,${8 * k}],[0,${r.outputPerMTok * k}],[0,${2 * k}]]],[1,[[0,"Text"],[0,${r.inputPerMTok * k}],[0,"-"],[0,${1.25 * k}]]]]]}`;
+    const body = (standard: number) => {
+      const data = `[${images.map((r) => entry(r, standard)).join(',')}],[${images.map((r) => entry(r, standard / 2)).join(',')}]`.replace(/"/g, '&quot;');
+      // In the page's text the image models appear only in the Batch table, at half the Standard figures.
+      const batch = `<h4>Batch</h4><table>${images.map((r) => `<tr><td>${r.model}</td><td>Image</td><td>${$(4 * standard)}</td><td>${$((r.outputPerMTok * standard) / 2)}</td><td>Text</td><td>${$((r.inputPerMTok * standard) / 2)}</td></tr>`).join('')}</table>`;
+      return openaiPage(page.rows.filter((r) => !images.includes(r))).replace('</body>', `<astro-island props="${data}"></astro-island>${batch}</body>`);
+    };
+    const flagged = (b: string) => pageReport(page, b, [openaiScript()]).lines.filter((l) => images.some((r) => l.includes(` ${r.model}:`)));
+    expect(flagged(body(1))).toEqual([]);
+    // Every Standard figure doubled: the Batch row now shows the old Standard figures, which the text alone would pass.
+    expect(flagged(body(2))).toHaveLength(images.length);
+    expect(propsFigures('{"model":[0,"gpt-9"],"rows":[1,[[0,7]]]}', 'gpt-image-2.5-flare')).toBeUndefined();
   });
 
   it('never fails: a page or list it cannot read is said in one line, and the others are still checked', async () => {
