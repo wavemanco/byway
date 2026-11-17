@@ -1,5 +1,5 @@
 /**
- * Ordering runs for History and the header badge: runs waiting for you come first (spec §5, History), because
+ * Ordering runs for History and the start screen: runs waiting for you come first (spec §5, History), because
  * a run cannot move until you take your turn. A paused run is still in progress; it sits with the working ones.
  */
 import type { CheckpointRecord, RunRecord } from '@byway/contracts';
