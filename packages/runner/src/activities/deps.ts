@@ -20,4 +20,6 @@ export interface RunnerDeps {
   random?: () => number;
   /** Aborted when Temporal cancels the running activity invocation (set per invocation by createActivities). */
   signal?: AbortSignal;
+  /** This start's key (the per-start secret, B-188): an answer is recorded only with its signature (answer-check.ts). */
+  accessKey?: string;
 }

@@ -17,7 +17,7 @@ pnpm install
 pnpm demo        # byway with sample outputs: no keys, no AI calls, nothing charged
 ```
 
-Open http://127.0.0.1:3000. Ctrl+C stops everything.
+Open the link printed on the "web" line, `http://127.0.0.1:3000/open?key=…`: it sets the access cookie, and byway answers only a browser that has it (B-188; apps/web/src/server/guard.ts). The key is new at each start; `BYWAY_ACCESS_KEY` may set one of 32 characters or more, as the e2e suite does. Ctrl+C stops everything.
 
 To use real models:
 

@@ -38,7 +38,7 @@ pnpm install
 pnpm demo
 ```
 
-Then open http://127.0.0.1:3000 in your browser. Everything you see there is sample output: no AI is used and nothing is charged. To stop byway, press Ctrl+C in the window where it runs.
+Then open the link byway prints on its "web" line, `http://127.0.0.1:3000/open?key=…`, in your browser. The key is new each time byway starts, and byway answers only the browser that opened that link, so no other program on your computer can use it. Everything you see there is sample output: no AI is used and nothing is charged. To stop byway, press Ctrl+C in the window where it runs.
 
 ## Use it with your own AI accounts
 
@@ -61,7 +61,7 @@ Then open http://127.0.0.1:3000 in your browser. Everything you see there is sam
    pnpm start
    ```
 
-   and open http://127.0.0.1:3000. Settings shows which providers byway can use, never the keys themselves.
+   and open the link it prints on its "web" line. Settings shows which providers byway can use, never the keys themselves.
 
 ## How byway handles money
 

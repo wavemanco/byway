@@ -6,6 +6,7 @@
  * text question early.
  */
 import { expect, request, test, type Page, type Route } from '@playwright/test';
+import { accessState } from './access.ts';
 import type { CheckpointKind } from '@byway/contracts';
 import { answerField as field, answerTurn, answerUntilDone, describeProblem, nextTurn, startRecommended, timelineLabels, turnAfter, untilTurn, type Turn } from './flow.ts';
 
@@ -37,7 +38,7 @@ type Answer = { status: number; headers: Record<string, string>; body: Buffer };
  * A context of its own has no connection to reuse.
  */
 async function fetchOwn(route: Route): Promise<Answer> {
-  const own = await request.newContext();
+  const own = await request.newContext({ storageState: accessState() });
   try {
     const res = await own.fetch(route.request(), { headers: route.request().headers() });
     return { status: res.status(), headers: res.headers(), body: await res.body() };

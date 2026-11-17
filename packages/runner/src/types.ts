@@ -37,6 +37,11 @@ export interface RunInput {
    * file Runner.start stored it in (stored-inputs.ts).
    */
   inputs: { refs?: string[]; voiceId?: string; draftId?: string; tellsId?: string };
+  /**
+   * The run's start token, kept with its record (backlog row B-188): the run's first step claims the run for this
+   * workflow execution with it, so a workflow another program starts through Temporal's port cannot be carried out.
+   */
+  startToken: string;
 }
 
 export type StageName = 'D1' | 'D2' | 'D3';
@@ -370,6 +375,8 @@ export interface RecordResolutionInput {
   runId: string;
   call: StepCall;
   resolution: CheckpointResolution;
+  /** The answer as the update brought it, with its signature (B-188, answer-check.ts); `resolution` is checked from it. */
+  answer?: CheckpointResolution;
 }
 
 export interface FinishHumanInput {
@@ -442,6 +449,8 @@ export interface FailRunInput {
 
 /** Everything the workflow calls. Implemented by `createActivities`. */
 export interface RunnerActivities {
+  /** The run's first step (B-188, activities/claim.ts): claims the run for this execution with its start token, or refuses. */
+  claimRun(input: { runId: string; startToken: string }): Promise<void>;
   beginRun(input: { runId: string; recipeId: string; profileId: string; budgetUsd: number }): Promise<void>;
   setRunStatus(input: { runId: string; status: Extract<RunStatus, 'running' | 'waiting' | 'paused'> }): Promise<void>;
   emitEvents(input: { runId: string; events: WorkflowEvent[] }): Promise<void>;

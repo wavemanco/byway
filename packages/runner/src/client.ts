@@ -4,7 +4,7 @@
  * run's workflow with their ids; `resolve` sends the RESOLVE_UPDATE Update, which the workflow validates against the
  * open checkpoint; cancel, pause and resume are signals; `view` reads the store.
  */
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { WorkflowExecutionAlreadyStartedError, WorkflowUpdateFailedError, type Client } from '@temporalio/client';
 import { WorkflowNotFoundError } from '@temporalio/common';
 import { CANCEL_SIGNAL, PAUSE_SIGNAL, RecipeRefusedError, RESOLVE_UPDATE, RESUME_SIGNAL, TASK_QUEUE, type CheckpointResolution, type RunRecord, type RunStatus, type RunView, type Runner, type StartRunInput, type Store } from '@byway/contracts';
@@ -13,6 +13,7 @@ import { engineProblems, parseRecipe, recipeHash, type Recipe } from '@byway/rec
 import { validate } from '@byway/validator';
 import { LOST_RUN_MESSAGE, settleLostRun } from './lost-runs.ts';
 import { startFailureMessage, type WorkflowAfterFailedStart } from './start-failure.ts';
+import { signAnswer } from './answer-check.ts';
 import { storeRunInputs } from './stored-inputs.ts';
 import { ENDED_STATUSES as ENDED, RUN_WORKFLOW, workflowIdFor, type RunInput } from './types.ts';
 
@@ -20,6 +21,8 @@ export interface RunnerClientOptions {
   client: Client;
   store: Store;
   taskQueue?: string;
+  /** This start's key (the per-start secret, B-188): each answer the client sends is signed with it (answer-check.ts). */
+  accessKey?: string;
 }
 
 /** A run title from the problem: its first line, cut at a word near 72 characters. */
@@ -164,6 +167,8 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       // to the same files.
       const stored = await storeRunInputs(store.artifacts, input);
       const id = input.runId ?? randomUUID();
+      // The run's start token (B-188): its first step claims the run with it, so only this start can be carried out.
+      let startToken = randomBytes(24).toString('base64url');
       let record: RunRecord;
       let created = true;
       try {
@@ -179,12 +184,15 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
           medium,
           budgetUsd: input.budgetUsd,
           status: 'queued',
+          startToken,
         });
       } catch (e) {
         // The store refuses a second run with one id; a caller that named the id gets the first one back instead.
         if (input.runId === undefined || storeCode(e) !== 'already-exists') throw e;
         record = await startedBefore(input, id, hash);
         created = false;
+        // The same start delivered again: its workflow takes the token the first delivery kept with the run.
+        startToken = (await store.runStartToken(id)) ?? startToken;
       }
       // Its workflow has ended (Temporal would start a new one under a closed id): the run is as it was left.
       if (!created && ENDED.has(record.status)) return record;
@@ -198,6 +206,7 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
         medium,
         routes: input.routes ?? {},
         inputs: stored.inputs,
+        startToken,
       };
       try {
         await client.workflow.start(RUN_WORKFLOW, { taskQueue, workflowId: workflowIdFor(id), args: [args] });
@@ -227,7 +236,9 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       const run = await store.getRun(cp.runId);
       if (!run || ENDED.has(run.status)) throw new ResolutionRejectedError('This run is no longer running.');
       try {
-        await handle(cp.runId).executeUpdate(RESOLVE_UPDATE, { args: [resolution] });
+        // Signed with this start's key, so the worker records it (B-188, answer-check.ts).
+        const sent = opts.accessKey === undefined ? resolution : { ...resolution, signature: signAnswer(opts.accessKey, cp.runId, resolution) };
+        await handle(cp.runId).executeUpdate(RESOLVE_UPDATE, { args: [sent] });
       } catch (e) {
         // The workflow's validator (stale or mismatched answers) and handler refusals arrive as the Update's failure.
         if (e instanceof WorkflowUpdateFailedError) throw new ResolutionRejectedError((e.cause as Error | undefined)?.message ?? e.message);

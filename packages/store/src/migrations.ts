@@ -396,6 +396,20 @@ CREATE UNIQUE INDEX paid_operations_by_key ON paid_operations (op_key) WHERE op_
 ALTER TABLE paid_operations ADD COLUMN retained_waited TEXT CHECK (retained_waited IS NULL OR json_valid(retained_waited));
 `,
   },
+  {
+    version: 12,
+    name: 'run-start-claim',
+    sql: `
+-- Only a run this byway started is carried out (backlog row B-188). Runner.start gives each run a random start token,
+-- which its workflow input carries; the run's first step claims the run for its Temporal execution with that token,
+-- once, and every later step checks that it runs in the claiming execution. A workflow started, replayed or reset
+-- through Temporal's port by another program runs in another execution, so it stops before any paid call. Runs from
+-- before this migration are marked claimed, so none of them can be claimed by a replay.
+ALTER TABLE runs ADD COLUMN start_token TEXT CHECK (start_token IS NULL OR start_token <> '');
+ALTER TABLE runs ADD COLUMN claimed_by TEXT CHECK (claimed_by IS NULL OR claimed_by <> '');
+UPDATE runs SET claimed_by = 'before-schema-12';
+`,
+  },
 ];
 
 /** The schema version this build writes. */

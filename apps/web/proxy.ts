@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { checkRequest } from './src/server/guard.ts';
+import { checkAccess, checkRequest } from './src/server/guard.ts';
+import { refusalPage } from './src/server/refusal-page.ts';
 
 /**
  * The local guard (src/server/guard.ts): only loopback hosts (no DNS rebinding) and no cross-site writes, on every
@@ -18,6 +19,26 @@ export function proxy(request: NextRequest) {
     secFetchSite: request.headers.get('sec-fetch-site'),
   });
   if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status });
+  // Then the per-start secret (B-188): the start link sets the access cookie, and every other request must carry it.
+  const access = checkAccess({
+    path: request.nextUrl.pathname,
+    linkKey: request.nextUrl.searchParams.get('key'),
+    cookieHeader: request.headers.get('cookie'),
+    key: process.env.BYWAY_ACCESS_KEY,
+  });
+  if (access.ok === 'open') {
+    const res = NextResponse.redirect(new URL(access.location, request.url), 303);
+    res.headers.append('Set-Cookie', access.setCookie);
+    res.headers.set('Cache-Control', 'no-store');
+    res.headers.set('Referrer-Policy', 'no-referrer');
+    return res;
+  }
+  if (!access.ok) {
+    if ((request.headers.get('accept') ?? '').includes('text/html')) {
+      return new NextResponse(refusalPage(access.message), { status: access.status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+    }
+    return NextResponse.json({ error: access.message }, { status: access.status, headers: { 'Cache-Control': 'no-store' } });
+  }
   return NextResponse.next();
 }
 

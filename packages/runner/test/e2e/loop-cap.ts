@@ -110,8 +110,8 @@ export function loopCapScenarios(use: () => Harness): void {
         if (n.op === 'replicate') n.n = 1e9;
       });
       const id = randomUUID();
-      await h.store.createRun({ id, workspaceId: h.workspaceId, recipeId: recipe.id, recipeHash: withHash(recipe).hash!, profileId: 'demo', title: 'Too many', problem: 'A story', medium: 'prose', budgetUsd: 5, status: 'queued' });
-      const input: RunInput = { runId: id, workspaceId: h.workspaceId, recipe, problemId: await storeBrief(h.store.artifacts, { text: 'A story' }), profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: {}, inputs: {} };
+      await h.store.createRun({ id, workspaceId: h.workspaceId, recipeId: recipe.id, recipeHash: withHash(recipe).hash!, profileId: 'demo', title: 'Too many', problem: 'A story', medium: 'prose', budgetUsd: 5, status: 'queued', startToken: 'test-start-token' });
+      const input: RunInput = { startToken: 'test-start-token', runId: id, workspaceId: h.workspaceId, recipe, problemId: await storeBrief(h.store.artifacts, { text: 'A story' }), profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: {}, inputs: {} };
       await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: h.taskQueue, workflowId: workflowIdFor(id), args: [input] });
       const view = await h.drive(id);
       expect(view.run.status).toBe('failed');

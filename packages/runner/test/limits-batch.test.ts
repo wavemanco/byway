@@ -83,7 +83,7 @@ async function batches(body: Node): Promise<{ count: number; bytes: number; seed
   held.pending = [];
   const recipe: Recipe = { schema: 'byway.recipe/1', id: 'batches', title: 'Batches', kind: 'experimental', family: 'test', channel: 'workspace', medium: 'web-page', inputs: ['intent'], stages: [{ stage: 'D1', body }], sitsOut: [], exceptions: [], bank: false };
   // A real run id is a UUID; the brief travels as its file's id (P2), whatever the person wrote.
-  const input: RunInput = { runId: '6f1c2a34-5b6d-4e7f-8a9b-0c1d2e3f4a5b', workspaceId: 'default', recipe, problemId: UNREAD_BRIEF, profileId: 'balanced', budgetUsd: 5, medium: 'web-page', routes: {}, inputs: {} };
+  const input: RunInput = { startToken: 'test-start-token', runId: '6f1c2a34-5b6d-4e7f-8a9b-0c1d2e3f4a5b', workspaceId: 'default', recipe, problemId: UNREAD_BRIEF, profileId: 'balanced', budgetUsd: 5, medium: 'web-page', routes: {}, inputs: {} };
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   const engine = new Interpreter(input, control as never);
   Object.assign(engine, { ask: async () => ({ checkpointId: 'cp', approved: true, choice: ['A'] }) });

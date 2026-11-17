@@ -6,6 +6,8 @@
  * write is stored only when Chromium shows the written page as the person's edit of the page before.
  */
 import { routeChoice } from '@byway/catalog';
+import { ApplicationFailure } from '@temporalio/activity';
+import { answerSigned } from '../answer-check.ts';
 import type { Medium } from '@byway/contracts';
 import { withoutMarks } from '@byway/gateway';
 import { voiceWrite } from '@byway/recipe/semantics';
@@ -322,6 +324,14 @@ function plainChoice(recipeId: string, routeId: string, cp: OpenCheckpointInput[
 
 /** Write the person's answer to the store (the workflow already validated it) and announce it. */
 export async function recordResolution(deps: RunnerDeps, input: RecordResolutionInput): Promise<void> {
+  // Only an answer byway's app sent (B-188, answer-check.ts): one sent through Temporal's port by any other program
+  // carries no valid signature, and is refused before anything is written.
+  if (deps.accessKey !== undefined) {
+    const answer = input.answer;
+    if (!answer || answer.checkpointId !== input.resolution.checkpointId || !answerSigned(deps.accessKey, input.runId, answer)) {
+      throw ApplicationFailure.nonRetryable('This answer was not sent by byway, so it is not recorded: an answer came through the engine’s port from another program.', 'AnswerNotSigned');
+    }
+  }
   try {
     await deps.store.resolveCheckpoint(input.resolution);
   } catch (e) {

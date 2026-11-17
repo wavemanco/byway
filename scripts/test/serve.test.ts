@@ -98,7 +98,7 @@ describe("serve.ts's workflow bundle, and the e2e suite's own (DEV-1)", () => {
   it('builds the bundle into the file BYWAY_WORKFLOWS_BUNDLE names inside packages/runner/dist, and the engine runs that file', () => {
     expect(matching(serve, /\bBYWAY_WORKFLOWS_BUNDLE\b/)).toEqual(['const bundle = process.env.BYWAY_WORKFLOWS_BUNDLE?.trim();']);
     expect(matching(serve, /\bbuildWorkflows\(/)).toEqual(['const workflowsBuilt = bundle ? buildWorkflows({ outfile: path.join(path.dirname(DEFAULT_WORKFLOWS_BUNDLE), bundle) }) : Promise.resolve(undefined);']);
-    expect(matching(serve, /\bstartDevEngine\(/)).toEqual(['const engineStarting = workflowsBuilt.then((workflowsPath) => startDevEngine({ dataDir, gateway, store, prompts, port: temporalPort, ...(workflowsPath ? { workflowsPath } : {}) }));']);
+    expect(matching(serve, /\bstartDevEngine\(/)).toEqual(['const engineStarting = workflowsBuilt.then((workflowsPath) => startDevEngine({ dataDir, gateway, store, prompts, port: temporalPort, accessKey, ...(workflowsPath ? { workflowsPath } : {}) }));']);
   });
 
   it('the e2e byway names a bundle of its own, and removes it with the data directory once byway has stopped', () => {

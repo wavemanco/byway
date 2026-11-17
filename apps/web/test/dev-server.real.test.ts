@@ -19,8 +19,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withoutSecrets } from '@byway/gateway';
-import { ANSWER_MS, request, upgrade } from './fixtures/http.ts';
+import { ANSWER_MS, request, upgrade, TEST_ACCESS_KEY } from './fixtures/http.ts';
 import { REPO } from './guards/scan.ts';
+
+// This start's key (B-188): the server under test reads it, and the request helpers send its cookie.
+process.env.BYWAY_ACCESS_KEY = TEST_ACCESS_KEY;
 
 const WEB = path.join(REPO, 'apps', 'web');
 /** How long next dev may take to compile a route on its first request, as dev-web.ts's own start may (150 s, below). */
@@ -95,6 +98,8 @@ beforeAll(async () => {
       BYWAY_NEXT_DIST_DIR: '.next-dev-test',
       // No engine runs here; nothing in this test reaches it.
       BYWAY_TEMPORAL_ADDRESS: '127.0.0.1:9',
+      // withoutSecrets drops it, as it drops every key: pnpm start hands it on by name the same way.
+      BYWAY_ACCESS_KEY: TEST_ACCESS_KEY,
     },
   });
   for (const stream of [child.stdout, child.stderr]) stream?.on('data', (d: Buffer) => output.push(d.toString()));

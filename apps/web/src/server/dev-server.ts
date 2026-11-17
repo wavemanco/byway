@@ -19,7 +19,8 @@
 import http, { type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createRequire } from 'node:module';
 import type { Duplex } from 'node:stream';
-import { checkRequest, type GuardResult } from './guard.ts';
+import { ACCESS_COOKIE, checkAccess, checkRequest, type AccessResult, type GuardResult } from './guard.ts';
+import { refusalPage } from './refusal-page.ts';
 
 /**
  * The part of Next's custom-server API used here (`next()` in next/dist/server/next.d.ts, Next 16). It is typed here
@@ -138,9 +139,15 @@ export function guardRequest(req: Pick<IncomingMessage, 'method' | 'url' | 'head
   return { ok: true };
 }
 
-function refuse(res: ServerResponse, verdict: Extract<GuardResult, { ok: false }>): void {
-  res.writeHead(verdict.status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ error: verdict.message }));
+function refuse(res: ServerResponse, verdict: Extract<GuardResult, { ok: false }>, html = false): void {
+  res.writeHead(verdict.status, { 'Content-Type': html ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(html ? refusalPage(verdict.message) : JSON.stringify({ error: verdict.message }));
+}
+
+/** The per-start secret's verdict on one request (B-188, guard.ts), with this start's key from BYWAY_ACCESS_KEY. */
+export function accessOf(req: Pick<IncomingMessage, 'url' | 'headers'>): AccessResult {
+  const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+  return checkAccess({ path: url.pathname, linkKey: url.searchParams.get('key'), cookieHeader: header(req.headers, 'cookie'), key: process.env.BYWAY_ACCESS_KEY });
 }
 
 function refuseUpgrade(socket: Duplex, status: number, reason: string): void {
@@ -163,6 +170,12 @@ export function createGuardedServer(handle: RequestHandler): GuardedServer {
   const server = http.createServer((req, res) => {
     const verdict = guardRequest(req);
     if (!verdict.ok) return refuse(res, verdict);
+    const access = accessOf(req);
+    if (access.ok === 'open') {
+      res.writeHead(303, { Location: access.location, 'Set-Cookie': access.setCookie, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+      return res.end();
+    }
+    if (!access.ok) return refuse(res, access, (header(req.headers, 'accept') ?? '').includes('text/html'));
     Promise.resolve()
       .then(() => handle(req, res))
       .catch((err: unknown) => {
@@ -178,6 +191,7 @@ export function createGuardedServer(handle: RequestHandler): GuardedServer {
     socket.on('error', () => socket.destroy());
     const verdict = guardRequest(req, true);
     if (!verdict.ok) return refuseUpgrade(socket, verdict.status, 'Forbidden');
+    if (accessOf(req).ok !== true) return refuseUpgrade(socket, 401, 'Unauthorized');
     // Next sets up its WebSocket handler on its first request; until then there is nothing to connect to, and the
     // HMR client tries again.
     if (gate.listenerCount('upgrade') === 0) return refuseUpgrade(socket, 503, 'Service Unavailable');
@@ -248,7 +262,8 @@ export async function startGuardedDev(opts: GuardedDevOptions): Promise<GuardedD
 
 function primeNext(port: number): Promise<void> {
   return new Promise((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port, path: '/_next/static/byway-ready', headers: { host: `127.0.0.1:${port}` }, agent: false }, (res) => {
+    // With this start's access cookie (B-188), so the guard lets it through to Next.
+    const req = http.request({ host: '127.0.0.1', port, path: '/_next/static/byway-ready', headers: { host: `127.0.0.1:${port}`, cookie: `${ACCESS_COOKIE}=${process.env.BYWAY_ACCESS_KEY ?? ''}` }, agent: false }, (res) => {
       res.resume();
       res.on('end', () => resolve());
     });

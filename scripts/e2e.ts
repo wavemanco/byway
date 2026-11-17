@@ -18,6 +18,7 @@
  * so here it has to start, with the sandbox on, as byway's default is.
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { createWriteStream, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -65,12 +66,12 @@ const freePort = () =>
 
 const exited = (child: ChildProcess) => new Promise<number | null>((resolve) => (child.exitCode !== null ? resolve(child.exitCode) : child.once('exit', (code) => resolve(code))));
 
-async function waitUntilReady(url: string, server: ChildProcess, timeoutMs: number): Promise<void> {
+async function waitUntilReady(url: string, server: ChildProcess, timeoutMs: number, accessKey: string): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (server.exitCode !== null) throw new Error(`byway exited with code ${server.exitCode} before it was ready.`);
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+      const res = await fetch(url, { signal: AbortSignal.timeout(30_000), headers: { cookie: `byway_access=${accessKey}` } });
       if (res.ok) return;
     } catch {
       // Not listening yet.
@@ -87,6 +88,8 @@ async function main(): Promise<number> {
   const temporalPort = await freePort();
   const baseUrl = `http://127.0.0.1:${webPort}`;
   const logFile = path.join(tmpdir(), 'byway-e2e-server.log');
+  // The per-start secret (B-188): byway starts with this key, and the suite's browsers carry its cookie (e2e/access.ts).
+  const accessKey = randomBytes(32).toString('base64url');
   const log = createWriteStream(logFile);
 
   console.log(`e2e: starting byway in demo mode at ${baseUrl} (engine port ${temporalPort}, data ${dataDir})`);
@@ -102,6 +105,7 @@ async function main(): Promise<number> {
       BYWAY_WORKFLOWS_BUNDLE: WORKFLOWS_BUNDLE,
       PORT: String(webPort),
       BYWAY_TEMPORAL_PORT: String(temporalPort),
+      BYWAY_ACCESS_KEY: accessKey,
     },
   });
   server.stdout?.pipe(log);
@@ -116,14 +120,14 @@ async function main(): Promise<number> {
 
   let code = 1;
   try {
-    await waitUntilReady(`${baseUrl}/`, server, 240_000);
+    await waitUntilReady(`${baseUrl}/`, server, 240_000, accessKey);
     console.log('e2e: byway is ready; running the suite');
     const cli = path.join(WEB, 'node_modules', '@playwright', 'test', 'cli.js');
     const suite = spawn(process.execPath, [cli, 'test', ...process.argv.slice(2)], {
       cwd: WEB,
       stdio: 'inherit',
       // The engine's address too: the specs that seed going runs park a workflow for each on it (apps/web/e2e/seed.ts).
-      env: { ...process.env, BYWAY_E2E_BASE_URL: baseUrl, BYWAY_E2E_DATA_DIR: dataDir, BYWAY_E2E_TEMPORAL_ADDRESS: `127.0.0.1:${temporalPort}` },
+      env: { ...process.env, BYWAY_E2E_BASE_URL: baseUrl, BYWAY_E2E_DATA_DIR: dataDir, BYWAY_E2E_TEMPORAL_ADDRESS: `127.0.0.1:${temporalPort}`, BYWAY_E2E_ACCESS_KEY: accessKey },
     });
     code = (await exited(suite)) ?? 1;
     if (code !== 0) console.error(`e2e: the server's output is in ${logFile}`);

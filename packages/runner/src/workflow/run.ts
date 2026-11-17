@@ -47,7 +47,7 @@ export async function runRecipe(input: RunInput): Promise<RunOutcome> {
       if (!check.ok) throw ApplicationFailure.nonRetryable(check.problem, 'InvalidResolution');
       entry.recording = true;
       try {
-        await quick.recordResolution({ runId: input.runId, call: entry.call, resolution: check.resolution });
+        await quick.recordResolution({ runId: input.runId, call: entry.call, resolution: check.resolution, answer: res });
       } catch (e) {
         entry.recording = false;
         throw e;
@@ -78,6 +78,9 @@ export async function runRecipe(input: RunInput): Promise<RunOutcome> {
 
   // Status and pause bookkeeping is best effort: if its writes ever fail for good, the run still ends with the status
   // its last activity writes, and an unhandled rejection must not wedge the workflow task.
+  // Only a run this byway started goes on (B-188, activities/claim.ts): claimed before any other step, the status loops
+  // included, so a workflow started, replayed or reset through Temporal's port stops here and writes nothing.
+  await quick.claimRun({ runId: input.runId, startToken: input.startToken });
   const loops = control.startLoops().catch(() => undefined);
   const end = async (finish: () => Promise<void>) => {
     control.finished = true;

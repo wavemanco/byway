@@ -6,12 +6,19 @@ import { randomBytes } from 'node:crypto';
 import http from 'node:http';
 import net from 'node:net';
 
+/** The key the guard tests start byway's server with (B-188): set as BYWAY_ACCESS_KEY before a server starts. */
+export const TEST_ACCESS_KEY = 't'.repeat(43);
+
+/** The access cookie for this start's key, unless the request names a Cookie of its own (B-188, guard.ts). */
+const withAccess = (headers: Record<string, string>): Record<string, string> =>
+  process.env.BYWAY_ACCESS_KEY && !Object.keys(headers).some((k) => k.toLowerCase() === 'cookie') ? { ...headers, Cookie: `byway_access=${process.env.BYWAY_ACCESS_KEY}` } : headers;
+
 /** How long a request or a handshake may wait for an answer: generous for a loaded machine, so a test never hangs. */
 export const ANSWER_MS = 20_000;
 
 export function request(port: number, path: string, headers: Record<string, string>, method = 'GET', waitMs = ANSWER_MS): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port, path, method, headers, agent: false }, (res) => {
+    const req = http.request({ host: '127.0.0.1', port, path, method, headers: withAccess(headers), agent: false }, (res) => {
       let body = '';
       res.on('data', (c) => (body += c));
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
@@ -38,7 +45,7 @@ export function upgrade(port: number, headers: Record<string, string>, opts: Upg
       resolve(result);
     };
     const socket = net.connect(port, '127.0.0.1', () => {
-      const all = { Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': randomBytes(16).toString('base64'), ...headers };
+      const all = { Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': randomBytes(16).toString('base64'), ...withAccess(headers) };
       const lines = Object.entries(all).map(([k, v]) => `${k}: ${v}`);
       socket.write(`GET ${opts.path ?? '/_next/hmr?id=byway-test'} HTTP/1.1\r\n${lines.join('\r\n')}\r\n\r\n`);
     });

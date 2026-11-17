@@ -175,7 +175,7 @@ describe('a run workflow whose run the store does not have (R4: a store older th
   it('is stopped at engine start, before the worker polls, so none of its steps runs', async () => {
     const queue = `${h.taskQueue}-restored`;
     const runId = `orphan-${Date.now()}`;
-    const input: RunInput = { runId, workspaceId: h.workspaceId, recipe: tiny, problemId: await storeBrief(h.store.artifacts, PROBLEM), profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: {}, inputs: {} };
+    const input: RunInput = { startToken: 'test-start-token', runId, workspaceId: h.workspaceId, recipe: tiny, problemId: await storeBrief(h.store.artifacts, PROBLEM), profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: {}, inputs: {} };
     // Started as the Runner client starts a run, on a queue no worker polls yet, and never written to this store: as
     // after a restore of byway.sqlite from before the run began, beside a temporal.sqlite from after.
     await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: queue, workflowId: workflowIdFor(runId), args: [input] });

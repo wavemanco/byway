@@ -81,7 +81,7 @@ async function run(s: Scenario): Promise<string[]> {
   state.scores = [...(s.scores ?? [])];
   state.checks = [...(s.checks ?? [])];
   const recipe: Recipe = { schema: 'byway.recipe/1', id: 'exits', title: 'Exits', kind: 'experimental', family: 'test', channel: 'workspace', medium: 'prose', inputs: ['intent'], stages: [{ stage: 'D2', body: seq(draft, s.loop) }], sitsOut: [], exceptions: [], bank: false };
-  const input: RunInput = { runId: 'run-exits', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: s.routes ?? {}, inputs: {} };
+  const input: RunInput = { startToken: 'test-start-token', runId: 'run-exits', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: s.routes ?? {}, inputs: {} };
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   const engine = new Interpreter(input, control as never);
   const approve = (prompt: string) => (typeof s.approve === 'function' ? s.approve(prompt) : (s.approve ?? true));

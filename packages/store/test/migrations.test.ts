@@ -223,7 +223,16 @@ describe('migrations', () => {
       [9, 'answer-waits', MIGRATION_9_CHECKSUM],
       [10, 'spend-book-waits', MIGRATION_10_CHECKSUM],
       [11, 'spend-book-retained-waits', MIGRATION_11_CHECKSUM],
+      [12, 'run-start-claim', 'sha256:d0319c01d3b592056873231947a4cfdf90ed7372ec5fc77589a67a84f4cc5ef5'],
     ]);
+  });
+
+  it('mark every run from before migration 12 as claimed, so a replay cannot claim one (B-188)', async () => {
+    const dataDir = tempDir();
+    writeVersion1Database(dataDir);
+    const store = openStore({ dataDir });
+    expect(await store.runClaim('old-run')).toBe('before-schema-12');
+    expect(await store.claimRun('old-run', 'anything', 'exec-a')).toBe(false);
   });
 
   it('upgrade an existing version-1 database file in place, keeping every row', async () => {

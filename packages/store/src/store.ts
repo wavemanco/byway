@@ -7,7 +7,7 @@
  * node:sqlite is synchronous. The contract is asynchronous so that a remote store could stand in later; here the
  * promises simply settle with the synchronous result (or reject with its error).
  */
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
@@ -96,6 +96,13 @@ type IntakePatch = Parameters<Store['updateIntake']>[1];
 
 const RUN_PATCH_KEYS = ['status', 'outputArtifactId', 'error', 'costUsd', 'title', 'budgetUsd'] as const satisfies readonly (keyof RunPatch)[];
 const WORKSPACE_PATCH_KEYS = ['name', 'budgetUsd'] as const satisfies readonly (keyof WorkspacePatch)[];
+
+/** Two secrets compared in constant time: a start token is not leaked a character at a time by how long a refusal takes. */
+function sameSecret(a: string, b: string): boolean {
+  const x = Buffer.from(a, 'utf8');
+  const y = Buffer.from(b, 'utf8');
+  return x.length === y.length && timingSafeEqual(x, y);
+}
 
 function onlyKeys(what: string, patch: unknown, allowed: readonly string[]): Record<string, unknown> {
   if (!isPlainObject(patch)) throw invalid(`${what} must be a plain object`);
@@ -194,6 +201,7 @@ export class SqliteStore implements Store {
       outputArtifactId: run.outputArtifactId === undefined ? null : nonEmpty('outputArtifactId', run.outputArtifactId),
       error: run.error === undefined ? null : text('error', run.error),
     };
+    const startToken = run.startToken === undefined ? null : nonEmpty('start token', run.startToken);
     return writeTransaction(this.#db, () => {
       if (q.run.get(id)) throw new StoreError('already-exists', `run ${JSON.stringify(id)} already exists`);
       if (!q.workspace.get(values.workspaceId)) throw new StoreError('not-found', `no workspace ${JSON.stringify(values.workspaceId)}`);
@@ -207,8 +215,31 @@ export class SqliteStore implements Store {
       const at = this.#stamp();
       const v = values;
       q.insertRun.run(id, v.workspaceId, v.recipeId, v.recipeHash, v.profileId, v.intakeId, v.title, v.problem, v.medium, v.status, v.outputArtifactId, v.error, v.budgetUsd, at, at);
+      if (startToken !== null) this.#db.prepare('UPDATE runs SET start_token = ? WHERE id = ?').run(startToken, id);
       return toRun(q.run.get(id)!);
     });
+  }
+
+  async claimRun(id: string, startToken: string, executionId: string): Promise<boolean> {
+    const token = nonEmpty('start token', startToken);
+    const execution = nonEmpty('execution id', executionId);
+    return writeTransaction(this.#db, () => {
+      const row = this.#db.prepare('SELECT start_token, claimed_by FROM runs WHERE id = ?').get(id) as { start_token: string | null; claimed_by: string | null } | undefined;
+      if (!row || row.start_token === null || !sameSecret(row.start_token, token)) return false;
+      if (row.claimed_by !== null) return row.claimed_by === execution;
+      this.#db.prepare('UPDATE runs SET claimed_by = ? WHERE id = ?').run(execution, id);
+      return true;
+    });
+  }
+
+  async runClaim(id: string): Promise<string | undefined> {
+    const row = this.#db.prepare('SELECT claimed_by FROM runs WHERE id = ?').get(id) as { claimed_by: string | null } | undefined;
+    return row?.claimed_by ?? undefined;
+  }
+
+  async runStartToken(id: string): Promise<string | undefined> {
+    const row = this.#db.prepare('SELECT start_token FROM runs WHERE id = ?').get(id) as { start_token: string | null } | undefined;
+    return row?.start_token ?? undefined;
   }
 
   /** Fields left undefined keep their value; `null` clears `error` or `outputArtifactId` (and only those). */

@@ -178,6 +178,11 @@ export interface CheckpointResolution {
   text?: string;
   /** confirm: the answer. */
   approved?: boolean;
+  /**
+   * byway's app's signature over this answer with the per-start secret (backlog row B-188): the engine records an
+   * answer only with a valid one, so no other program can answer a run's checkpoint through Temporal's port.
+   */
+  signature?: string;
 }
 
 /** What the user brought before a run starts: the problem, the chooser answers they set, and what the advisor proposed. */
@@ -278,7 +283,21 @@ export interface Store {
   getWorkspace(id: string): Promise<Workspace | undefined>;
   updateWorkspace(id: string, patch: Partial<Pick<Workspace, 'name' | 'budgetUsd'>>): Promise<Workspace>;
 
-  createRun(run: Omit<RunRecord, 'createdAt' | 'updatedAt' | 'costUsd' | 'status'> & { status?: RunStatus }): Promise<RunRecord>;
+  /**
+   * `startToken`, the run's random start token, is kept with the run and never returned in a RunRecord: the run's first
+   * step claims the run with it (claimRun; backlog row B-188).
+   */
+  createRun(run: Omit<RunRecord, 'createdAt' | 'updatedAt' | 'costUsd' | 'status'> & { status?: RunStatus; startToken?: string }): Promise<RunRecord>;
+  /**
+   * Claims a run for the Temporal execution that carries it out: true when the run exists, `startToken` is the one it
+   * was created with, and no other execution has claimed it (the claiming execution asking again is true); false
+   * otherwise, changing nothing. A run created without a start token cannot be claimed.
+   */
+  claimRun(id: string, startToken: string, executionId: string): Promise<boolean>;
+  /** The Temporal execution that claimed a run, or undefined for a run that is unknown or not yet claimed. */
+  runClaim(id: string): Promise<string | undefined>;
+  /** A run's start token, for a start delivered again before its workflow started; undefined for a run without one. */
+  runStartToken(id: string): Promise<string | undefined>;
   /** `null` clears error or outputArtifactId; undefined leaves a field unchanged. */
   updateRun(
     id: string,
