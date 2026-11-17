@@ -17,7 +17,7 @@ pnpm install
 pnpm demo        # byway with sample outputs: no keys, no AI calls, nothing charged
 ```
 
-Open the link printed on the "web" line, `http://127.0.0.1:3000/open?key=…`: it sets the access cookie, and byway answers only a browser that has it (B-188; apps/web/src/server/guard.ts). The key is new at each start; `BYWAY_ACCESS_KEY` may set one of 32 characters or more, as the e2e suite does. Ctrl+C stops everything.
+Open the link printed on the "web" line, `http://byway-<24 hex digits>.localhost:3000/open?key=…`, in Chrome, Edge or Firefox: it sets the access cookie for that host name alone, and byway answers only a browser that has it (B-188, ADR-0117; apps/web/src/server/guard.ts). The key and the name are new at each start; `BYWAY_ACCESS_KEY` may set a key of 32 characters or more and `BYWAY_ACCESS_HOST` a name of that form, as the e2e suite does. Node on Windows does not resolve names under .localhost, so a script reaches byway at 127.0.0.1 with `Cookie: byway_access=<key>`; the start link itself works only at the printed name. Ctrl+C stops everything.
 
 To use real models:
 

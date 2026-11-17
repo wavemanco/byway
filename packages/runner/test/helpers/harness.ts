@@ -369,6 +369,7 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
         taskQueue,
         dataDir: dir,
         workflowsPath,
+        accessKey: opts.accessKey ?? HARNESS_ACCESS_KEY,
         ...extra,
         ...(opts.leaseMs !== undefined ? { leaseMs: opts.leaseMs } : {}),
         ...(opts.renewEveryMs !== undefined ? { renewEveryMs: opts.renewEveryMs } : {}),

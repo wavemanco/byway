@@ -607,8 +607,12 @@ describe('exports carry their images (EXP-1)', () => {
     const page = await d.services.store.artifacts.putText(`<!doctype html><img src="/api/artifacts/${png.id}" alt="x">`, 'text/html');
     const html = await (await artifactResponse(d.services, page.id, new URL(`http://127.0.0.1:3000/artifacts/${page.id}?download=1`))).text();
     expect(html).toBe(`<!doctype html><img src="data:image/png;base64,${TINY_PNG_BASE64}" alt="x">`);
-    // Viewing (not downloading) serves the stored bytes as they are.
-    expect(await (await artifactResponse(d.services, page.id, new URL(`http://127.0.0.1:3000/artifacts/${page.id}`))).text()).toContain('/api/artifacts/');
+    // Shown in byway's frame, a page carries its images inline too: the frame is sandboxed, so its own requests carry no
+    // access cookie (B-188). A Markdown file, shown in byway's own page, is served as stored.
+    for (const shown of ['', '?scripts=1']) {
+      expect(await (await artifactResponse(d.services, page.id, new URL(`http://127.0.0.1:3000/artifacts/${page.id}${shown}`))).text()).toBe(`<!doctype html><img src="data:image/png;base64,${TINY_PNG_BASE64}" alt="x">`);
+    }
+    expect(await (await artifactResponse(d.services, md.id, new URL(`http://127.0.0.1:3000/artifacts/${md.id}`))).text()).toContain('/api/artifacts/');
   });
 
   it('leaves a reference it cannot inline as it was (missing, or not an image or clip)', async () => {

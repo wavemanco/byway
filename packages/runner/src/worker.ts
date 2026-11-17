@@ -27,8 +27,8 @@ export interface CreateWorkerOptions {
   pages?: PageRenderer;
   /** A prebuilt workflow bundle; by default the worker builds dist/workflows.js first. */
   workflowsPath?: string;
-  /** This start's key (the per-start secret, B-188): answers are recorded only with its signature. */
-  accessKey?: string;
+  /** This start's key (the per-start secret, B-188): answers are recorded only with its signature; a worker without it records none. */
+  accessKey: string;
   labelFor?: RunnerDeps['labelFor'];
   seed?: RunnerDeps['seed'];
   random?: RunnerDeps['random'];
@@ -74,7 +74,7 @@ export async function createWorker(opts: CreateWorkerOptions): Promise<RunnerWor
     ...(opts.labelFor ? { labelFor: opts.labelFor } : {}),
     ...(opts.seed ? { seed: opts.seed } : {}),
     ...(opts.random ? { random: opts.random } : {}),
-    ...(opts.accessKey !== undefined ? { accessKey: opts.accessKey } : {}),
+    accessKey: opts.accessKey,
   };
   const taskQueue = opts.taskQueue ?? TASK_QUEUE;
   const workflowHash = workflowBundleHash(workflowsPath);

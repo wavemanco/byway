@@ -17,7 +17,7 @@ import { createWorker } from '../src/worker.ts';
 import { OLDER_VERSION_MESSAGE, retireStaleRuns } from '../src/versioning.ts';
 import { WORKFLOW_HASH_MEMO } from '../src/workflow/version.ts';
 import { storeBrief } from './helpers/briefs.ts';
-import { createHarness, PROBLEM, type Harness } from './helpers/harness.ts';
+import { createHarness, HARNESS_ACCESS_KEY, PROBLEM, type Harness } from './helpers/harness.ts';
 import { tiny } from './helpers/recipes.ts';
 
 let h: Harness;
@@ -185,7 +185,7 @@ describe('a run workflow whose run the store does not have (R4: a store older th
     });
     // A worker on another queue leaves it alone: each engine settles its own queue.
     expect((await reconcileLostRuns(h.env.client, h.store, [h.workspaceId], { taskQueue: h.taskQueue })).orphaned).not.toContain(runId);
-    const worker = await createWorker({ connection: h.env.nativeConnection, taskQueue: queue, gateway: h.gateway, store: h.store, prompts: h.prompts, pages: h.pages, workflowsPath: h.workflowsPath });
+    const worker = await createWorker({ connection: h.env.nativeConnection, taskQueue: queue, gateway: h.gateway, store: h.store, prompts: h.prompts, pages: h.pages, workflowsPath: h.workflowsPath, accessKey: HARNESS_ACCESS_KEY });
     let running: Promise<void> | undefined;
     try {
       const atStart = await settleBeforePolling(h.env.client, worker, h.store);

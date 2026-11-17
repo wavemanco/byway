@@ -8,6 +8,8 @@ import net from 'node:net';
 
 /** The key the guard tests start byway's server with (B-188): set as BYWAY_ACCESS_KEY before a server starts. */
 export const TEST_ACCESS_KEY = 't'.repeat(43);
+/** The host name the guard tests start byway's server with (B-188): set as BYWAY_ACCESS_HOST before a server starts. */
+export const TEST_ACCESS_HOST = `byway-${'0f'.repeat(12)}.localhost`;
 
 /** The access cookie for this start's key, unless the request names a Cookie of its own (B-188, guard.ts). */
 const withAccess = (headers: Record<string, string>): Record<string, string> =>

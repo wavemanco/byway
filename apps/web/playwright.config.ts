@@ -10,7 +10,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
-import { accessKey, accessState } from './e2e/access.ts';
+import { accessHost, accessKey, accessState } from './e2e/access.ts';
 import { E2E_KEYS } from './e2e/keys.ts';
 
 const external = process.env.BYWAY_E2E_BASE_URL;
@@ -69,6 +69,7 @@ export default defineConfig({
             PORT: String(port),
             BYWAY_TEMPORAL_PORT: ownTemporalPort(),
             BYWAY_ACCESS_KEY: accessKey(),
+            BYWAY_ACCESS_HOST: accessHost(),
           },
         },
       }),

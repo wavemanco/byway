@@ -38,7 +38,7 @@ pnpm install
 pnpm demo
 ```
 
-Then open the link byway prints on its "web" line, `http://127.0.0.1:3000/open?key=…`, in your browser. The key is new each time byway starts, and byway answers only the browser that opened that link, so no other program on your computer can use it. Everything you see there is sample output: no AI is used and nothing is charged. To stop byway, press Ctrl+C in the window where it runs.
+Then open the link byway prints on its "web" line, `http://byway-….localhost:3000/open?key=…`, in Chrome, Edge or Firefox. Its address and key are new each time byway starts, and byway's pages answer only the browser that opened that link, so no other program on your computer can use them. byway's engine has a door of its own, which programs on your computer can still reach: [ADR-0117](docs/adr/0117-byway-answers-only-the-person-who-started-it.md) (item 5) says what they can do there. Everything you see there is sample output: no AI is used and nothing is charged. To stop byway, press Ctrl+C in the window where it runs.
 
 ## Use it with your own AI accounts
 

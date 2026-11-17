@@ -23,6 +23,7 @@ import { createWriteStream, existsSync, mkdtempSync, readdirSync, readFileSync, 
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { E2E_KEYS, SENTINEL } from '../apps/web/e2e/keys.ts';
 import { removeLeftovers } from './e2e-leftovers.ts';
@@ -88,8 +89,10 @@ async function main(): Promise<number> {
   const temporalPort = await freePort();
   const baseUrl = `http://127.0.0.1:${webPort}`;
   const logFile = path.join(tmpdir(), 'byway-e2e-server.log');
-  // The per-start secret (B-188): byway starts with this key, and the suite's browsers carry its cookie (e2e/access.ts).
+  // The per-start secret (B-188): byway starts with this key and host name, and the suite's browsers carry its cookie
+  // (e2e/access.ts).
   const accessKey = randomBytes(32).toString('base64url');
+  const accessHost = `byway-${randomBytes(12).toString('hex')}.localhost`;
   const log = createWriteStream(logFile);
 
   console.log(`e2e: starting byway in demo mode at ${baseUrl} (engine port ${temporalPort}, data ${dataDir})`);
@@ -106,10 +109,11 @@ async function main(): Promise<number> {
       PORT: String(webPort),
       BYWAY_TEMPORAL_PORT: String(temporalPort),
       BYWAY_ACCESS_KEY: accessKey,
+      BYWAY_ACCESS_HOST: accessHost,
     },
   });
-  server.stdout?.pipe(log);
-  server.stderr?.pipe(log);
+  // The log is a file on disk, which the key never reaches: byway prints it in its start link.
+  for (const stream of [server.stdout, server.stderr]) if (stream) createInterface({ input: stream, crlfDelay: Infinity }).on('line', (line) => log.write(`${line.replaceAll(accessKey, '<key>')}\n`));
   // The start-up lines, kept until the "renderer" line has been printed.
   let startup = '';
   const keep = (d: Buffer) => {
@@ -127,7 +131,7 @@ async function main(): Promise<number> {
       cwd: WEB,
       stdio: 'inherit',
       // The engine's address too: the specs that seed going runs park a workflow for each on it (apps/web/e2e/seed.ts).
-      env: { ...process.env, BYWAY_E2E_BASE_URL: baseUrl, BYWAY_E2E_DATA_DIR: dataDir, BYWAY_E2E_TEMPORAL_ADDRESS: `127.0.0.1:${temporalPort}`, BYWAY_E2E_ACCESS_KEY: accessKey },
+      env: { ...process.env, BYWAY_E2E_BASE_URL: baseUrl, BYWAY_E2E_DATA_DIR: dataDir, BYWAY_E2E_TEMPORAL_ADDRESS: `127.0.0.1:${temporalPort}`, BYWAY_E2E_ACCESS_KEY: accessKey, BYWAY_E2E_ACCESS_HOST: accessHost },
     });
     code = (await exited(suite)) ?? 1;
     if (code !== 0) console.error(`e2e: the server's output is in ${logFile}`);

@@ -20,7 +20,7 @@ import http, { type IncomingHttpHeaders, type IncomingMessage, type ServerRespon
 import { createRequire } from 'node:module';
 import type { Duplex } from 'node:stream';
 import { ACCESS_COOKIE, checkAccess, checkRequest, type AccessResult, type GuardResult } from './guard.ts';
-import { refusalPage } from './refusal-page.ts';
+import { openedPage, refusalPage } from './refusal-page.ts';
 
 /**
  * The part of Next's custom-server API used here (`next()` in next/dist/server/next.d.ts, Next 16). It is typed here
@@ -131,6 +131,7 @@ export function guardRequest(req: Pick<IncomingMessage, 'method' | 'url' | 'head
     host: header(req.headers, 'host'),
     origin: header(req.headers, 'origin'),
     secFetchSite: header(req.headers, 'sec-fetch-site'),
+    accessHost: process.env.BYWAY_ACCESS_HOST,
   });
   if (!verdict.ok) return verdict;
   if (requestPaths(req.url).some((p) => NEXT_INTERNALS.test(p)) && fromAnotherSite(req.headers)) {
@@ -144,10 +145,10 @@ function refuse(res: ServerResponse, verdict: Extract<GuardResult, { ok: false }
   res.end(html ? refusalPage(verdict.message) : JSON.stringify({ error: verdict.message }));
 }
 
-/** The per-start secret's verdict on one request (B-188, guard.ts), with this start's key from BYWAY_ACCESS_KEY. */
+/** The per-start secret's verdict on one request (B-188, guard.ts), with this start's key and host name from BYWAY_ACCESS_KEY and BYWAY_ACCESS_HOST. */
 export function accessOf(req: Pick<IncomingMessage, 'url' | 'headers'>): AccessResult {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1');
-  return checkAccess({ path: url.pathname, linkKey: url.searchParams.get('key'), cookieHeader: header(req.headers, 'cookie'), key: process.env.BYWAY_ACCESS_KEY });
+  return checkAccess({ path: url.pathname, linkKey: url.searchParams.get('key'), cookieHeader: header(req.headers, 'cookie'), key: process.env.BYWAY_ACCESS_KEY, host: header(req.headers, 'host'), accessHost: process.env.BYWAY_ACCESS_HOST });
 }
 
 function refuseUpgrade(socket: Duplex, status: number, reason: string): void {
@@ -172,8 +173,8 @@ export function createGuardedServer(handle: RequestHandler): GuardedServer {
     if (!verdict.ok) return refuse(res, verdict);
     const access = accessOf(req);
     if (access.ok === 'open') {
-      res.writeHead(303, { Location: access.location, 'Set-Cookie': access.setCookie, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
-      return res.end();
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Set-Cookie': access.setCookie, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+      return res.end(openedPage());
     }
     if (!access.ok) return refuse(res, access, (header(req.headers, 'accept') ?? '').includes('text/html'));
     Promise.resolve()

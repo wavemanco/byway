@@ -50,6 +50,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ENGINE_STOPPED_MESSAGE, watchEngine } from '../apps/web/src/server/engine-watch.ts';
+import { ACCESS_HOST } from '../apps/web/src/server/guard.ts';
 import { parseServeArgs } from '../apps/web/src/server/serving.ts';
 import { createGateway, loadEnvFile, withoutSecrets } from '../packages/gateway/src/index.ts';
 import { createPromptRenderer } from '../packages/prompts/src/index.ts';
@@ -197,11 +198,13 @@ async function main(): Promise<void> {
 
   // The engine starts while the app builds. With BYWAY_WORKFLOWS_BUNDLE, the workflow bundle is built into that file
   // first and the worker runs it; otherwise the worker builds dist/workflows.js itself.
-  // The per-start secret (B-188, apps/web/src/server/guard.ts): a new random key at each start, in this process and the
-  // web server's environment only, never on disk. BYWAY_ACCESS_KEY may name one of 32 characters or more, for the e2e
-  // suite, which sets its browser's cookie from it.
+  // The per-start secret (B-188, apps/web/src/server/guard.ts): a new random key and host name at each start, in this
+  // process and the web server's environment only, never on disk. BYWAY_ACCESS_KEY may name a key of 32 characters or
+  // more, and BYWAY_ACCESS_HOST a host name of guard.ts's form, for the e2e suite, which sets its browser's cookie from them.
   const given = process.env.BYWAY_ACCESS_KEY?.trim();
   const accessKey = given !== undefined && given.length >= 32 ? given : randomBytes(32).toString('base64url');
+  const givenHost = process.env.BYWAY_ACCESS_HOST?.trim().toLowerCase();
+  const accessHost = givenHost !== undefined && ACCESS_HOST.test(givenHost) ? givenHost : `byway-${randomBytes(12).toString('hex')}.localhost`;
   console.log('  engine     starting Temporal and the runner worker…');
   const bundle = process.env.BYWAY_WORKFLOWS_BUNDLE?.trim();
   const workflowsBuilt = bundle ? buildWorkflows({ outfile: path.join(path.dirname(DEFAULT_WORKFLOWS_BUNDLE), bundle) }) : Promise.resolve(undefined);
@@ -241,7 +244,7 @@ async function main(): Promise<void> {
   const browsers = await browsersFolder();
   if (browsers) console.log(`             Playwright's browsers folder: ${browsers}`);
 
-  const webEnv = { ...env, BYWAY_DATA_DIR: dataDir, BYWAY_DEMO: demo ? '1' : '0', BYWAY_TEMPORAL_ADDRESS: engine.address, PORT: String(webPort), BYWAY_ACCESS_KEY: accessKey };
+  const webEnv = { ...env, BYWAY_DATA_DIR: dataDir, BYWAY_DEMO: demo ? '1' : '0', BYWAY_TEMPORAL_ADDRESS: engine.address, PORT: String(webPort), BYWAY_ACCESS_KEY: accessKey, BYWAY_ACCESS_HOST: accessHost };
   let web: ChildProcess;
   if (mode === 'start') {
     // With an IPC channel, which the app's instrumentation hook listens on: byway's stop closes its services (stopWeb).
@@ -251,8 +254,8 @@ async function main(): Promise<void> {
     // asked to stop, and it stops by itself if this process goes away.
     web = spawn(process.execPath, [path.join(ROOT, 'scripts', 'dev-web.ts')], { cwd: WEB, stdio: ['ignore', 'inherit', 'inherit', 'ipc'], env: { ...webEnv, NODE_ENV: 'development' } });
   }
-  console.log(`  web        http://127.0.0.1:${webPort}/open?key=${accessKey}${mode === 'dev' ? ' (next dev inside byway’s guard: every request and WebSocket is checked first)' : ''}`);
-  console.log('             open this link: byway answers only the browser that opened it, until it stops');
+  console.log(`  web        http://${accessHost}:${webPort}/open?key=${accessKey}${mode === 'dev' ? ' (next dev inside byway’s guard: every request and WebSocket is checked first)' : ''}`);
+  console.log('             open this link in Chrome, Edge or Firefox: byway answers only the browser that opened it, until it stops');
 
   let stopping: Promise<void> | undefined;
   const stop = (code: number) =>

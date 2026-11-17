@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withHash } from '@byway/recipe';
 import { RESOLVE_UPDATE } from '@byway/contracts';
 import { answerSigned, signAnswer } from '../src/answer-check.ts';
+import { REFUSED_START_MESSAGE } from '../src/activities/claim.ts';
 import { createActivities } from '../src/activities/index.ts';
 import { startDigest } from '../src/start-digest.ts';
 import { RUN_WORKFLOW, workflowIdFor, type RunInput } from '../src/types.ts';
@@ -67,26 +68,36 @@ describe('a workflow started through the port by another program', () => {
     await h.runner.cancel(run.id);
   }, 120_000);
 
-  it('a workflow for a run byway made, not yet claimed, but with any other input, stops at its first step; with its own input it runs', async () => {
+  it('a workflow for a run byway made, not yet claimed, but with any other input, stops at its first step, and the run fails plainly; with its own input it runs', async () => {
     // As if another program read a new run's input from Temporal's history and, before its first step, stopped its
     // workflow and started its own with another recipe, profile, budget or routes.
     const run = await h.start(tiny);
     const own = await startedWith(run.id);
     await h.runner.cancel(run.id);
-    const id = randomUUID();
-    const input: RunInput = { ...own, runId: id };
-    await h.store.createRun({ id, workspaceId: input.workspaceId, recipeId: tiny.id, recipeHash: withHash(tiny).hash!, profileId: input.profileId, title: 'Bound', problem: 'p', medium: input.medium, budgetUsd: input.budgetUsd, status: 'queued', startDigest: startDigest(input) });
-    for (const other of [{ ...input, profileId: 'best' }, { ...input, routes: { any: 'other' } }, { ...input, budgetUsd: input.budgetUsd + 1 }]) {
-      const handle = await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: h.taskQueue, workflowId: workflowIdFor(id), args: [other] });
+    const made = async (): Promise<RunInput> => {
+      const input: RunInput = { ...own, runId: randomUUID() };
+      await h.store.createRun({ id: input.runId, workspaceId: input.workspaceId, recipeId: tiny.id, recipeHash: withHash(tiny).hash!, profileId: input.profileId, title: 'Bound', problem: 'p', medium: input.medium, budgetUsd: input.budgetUsd, status: 'queued', startDigest: startDigest(input) });
+      return input;
+    };
+    for (const change of [{ profileId: 'best' }, { routes: { any: 'other' } }, { budgetUsd: own.budgetUsd + 1 }]) {
+      const input = await made();
+      const handle = await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: h.taskQueue, workflowId: workflowIdFor(input.runId), args: [{ ...input, ...change }] });
       await expect(handle.result()).rejects.toThrow();
-      expect(await h.store.runClaim(id)).toBeUndefined();
+      expect(await h.store.runClaim(input.runId)).toBeUndefined();
+      expect(h.ledger(input.runId)).toHaveLength(0);
+      // Its own workflow refused, the run could never start: it says so now, not at the next lost-run pass.
+      expect(await h.store.getRun(input.runId)).toMatchObject({ status: 'failed', error: REFUSED_START_MESSAGE });
     }
-    expect(h.ledger(id)).toHaveLength(0);
-    await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: h.taskQueue, workflowId: workflowIdFor(id), args: [input] });
-    await openQuestion(id);
-    expect(await h.store.runClaim(id)).toEqual(expect.any(String));
-    await h.runner.cancel(id);
-  }, 180_000);
+    // Under a workflow id of another program's choosing, the refusal leaves the run alone, and its own input runs it.
+    const input = await made();
+    const elsewhere = await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: h.taskQueue, workflowId: `${workflowIdFor(input.runId)}-elsewhere`, args: [{ ...input, profileId: 'best' }] });
+    await expect(elsewhere.result()).rejects.toThrow();
+    expect((await h.store.getRun(input.runId))?.status).toBe('queued');
+    await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: h.taskQueue, workflowId: workflowIdFor(input.runId), args: [input] });
+    await openQuestion(input.runId);
+    expect(await h.store.runClaim(input.runId)).toEqual(expect.any(String));
+    await h.runner.cancel(input.runId);
+  }, 240_000);
 });
 
 describe("a checkpoint's answer", () => {
@@ -102,6 +113,22 @@ describe("a checkpoint's answer", () => {
     // byway's own client signs, and its answer is recorded.
     await h.runner.resolve({ checkpointId: cp.id, text: 'from byway' });
     expect((await h.store.getCheckpoint(cp.id))?.status).toBe('resolved');
+    await h.runner.cancel(run.id);
+  }, 120_000);
+
+  it('is recorded only as it was signed, and a worker without this start’s key records none', async () => {
+    const run = await h.start(tiny);
+    const cp = await openQuestion(run.id);
+    const inWorker = new MockActivityEnvironment({ workflowExecution: { workflowId: workflowIdFor(run.id), runId: (await h.store.runClaim(run.id))! } } as never);
+    const call = { stepId: 'react', attempt: 1 } as never;
+    const signed = { checkpointId: cp.id, text: 'what byway sent', signature: signAnswer(HARNESS_ACCESS_KEY, run.id, { checkpointId: cp.id, text: 'what byway sent' }) };
+    // The signed answer with another resolution beside it: what would be written is not what was signed.
+    const keyed = createActivities({ gateway: h.gateway, store: h.store, prompts: h.prompts, pages: h.pages, accessKey: HARNESS_ACCESS_KEY });
+    await expect(inWorker.run(keyed.recordResolution, { runId: run.id, call, resolution: { checkpointId: cp.id, text: 'something else' }, answer: signed })).rejects.toThrow(/not sent by byway/);
+    // A worker with no key refuses even a signed answer.
+    const keyless = createActivities({ gateway: h.gateway, store: h.store, prompts: h.prompts, pages: h.pages });
+    await expect(inWorker.run(keyless.recordResolution, { runId: run.id, call, resolution: { checkpointId: cp.id, text: 'what byway sent' }, answer: signed })).rejects.toThrow(/not sent by byway/);
+    expect((await h.store.getCheckpoint(cp.id))?.status).toBe('open');
     await h.runner.cancel(run.id);
   }, 120_000);
 

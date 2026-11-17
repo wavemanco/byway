@@ -8,6 +8,7 @@
 import { routeChoice } from '@byway/catalog';
 import { ApplicationFailure } from '@temporalio/activity';
 import { answerSigned } from '../answer-check.ts';
+import { currentExecution } from './claim.ts';
 import type { Medium } from '@byway/contracts';
 import { withoutMarks } from '@byway/gateway';
 import { voiceWrite } from '@byway/recipe/semantics';
@@ -325,10 +326,13 @@ function plainChoice(recipeId: string, routeId: string, cp: OpenCheckpointInput[
 /** Write the person's answer to the store (the workflow already validated it) and announce it. */
 export async function recordResolution(deps: RunnerDeps, input: RecordResolutionInput): Promise<void> {
   // Only an answer byway's app sent (B-188, answer-check.ts): one sent through Temporal's port by any other program
-  // carries no valid signature, and is refused before anything is written.
-  if (deps.accessKey !== undefined) {
-    const answer = input.answer;
-    if (!answer || answer.checkpointId !== input.resolution.checkpointId || !answerSigned(deps.accessKey, input.runId, answer)) {
+  // carries no valid signature, and is refused before anything is written. What is written must be what was signed,
+  // and a worker without this start's key records no answer at all. (The runner's own tests call activities outside a
+  // worker, with no key.)
+  if (deps.accessKey !== undefined || currentExecution() !== undefined) {
+    const { answer, resolution } = input;
+    const written = answer !== undefined && answer.checkpointId === resolution.checkpointId && (['choice', 'text', 'approved'] as const).every((k) => resolution[k] === undefined || JSON.stringify(resolution[k]) === JSON.stringify(answer[k]));
+    if (deps.accessKey === undefined || answer === undefined || !written || !answerSigned(deps.accessKey, input.runId, answer)) {
       throw ApplicationFailure.nonRetryable('This answer was not sent by byway, so it is not recorded: an answer came through the engine’s port from another program.', 'AnswerNotSigned');
     }
   }

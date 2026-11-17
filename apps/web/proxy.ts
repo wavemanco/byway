@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { checkAccess, checkRequest } from './src/server/guard.ts';
-import { refusalPage } from './src/server/refusal-page.ts';
+import { openedPage, refusalPage } from './src/server/refusal-page.ts';
 
 /**
  * The local guard (src/server/guard.ts): only loopback hosts (no DNS rebinding) and no cross-site writes, on every
@@ -12,11 +12,13 @@ import { refusalPage } from './src/server/refusal-page.ts';
  * thing listening (src/server/dev-server.ts). Never run `next dev` on its own.
  */
 export function proxy(request: NextRequest) {
+  const accessHost = process.env.BYWAY_ACCESS_HOST;
   const result = checkRequest({
     method: request.method,
     host: request.headers.get('host'),
     origin: request.headers.get('origin'),
     secFetchSite: request.headers.get('sec-fetch-site'),
+    accessHost,
   });
   if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status });
   // Then the per-start secret (B-188): the start link sets the access cookie, and every other request must carry it.
@@ -25,13 +27,11 @@ export function proxy(request: NextRequest) {
     linkKey: request.nextUrl.searchParams.get('key'),
     cookieHeader: request.headers.get('cookie'),
     key: process.env.BYWAY_ACCESS_KEY,
+    host: request.headers.get('host'),
+    accessHost,
   });
   if (access.ok === 'open') {
-    const res = NextResponse.redirect(new URL(access.location, request.url), 303);
-    res.headers.append('Set-Cookie', access.setCookie);
-    res.headers.set('Cache-Control', 'no-store');
-    res.headers.set('Referrer-Policy', 'no-referrer');
-    return res;
+    return new NextResponse(openedPage(), { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Set-Cookie': access.setCookie, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' } });
   }
   if (!access.ok) {
     if ((request.headers.get('accept') ?? '').includes('text/html')) {

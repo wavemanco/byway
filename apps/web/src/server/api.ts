@@ -532,8 +532,11 @@ export async function artifactResponse(
   const requested = url.searchParams.get('download') === '1' ? (url.searchParams.get('name') ?? 'byway-result').slice(0, 200) : undefined;
   const download = requested ?? (media === 'attachment' ? 'byway-media' : undefined);
   const scripts = { asked: url.searchParams.has('scripts'), granted: route === 'artifacts' && download === undefined && pageScriptsGranted(url, headers) };
-  // A downloaded page or Markdown file carries its images inline, so it works away from byway (EXP-1).
-  if (requested !== undefined && exportsInline(record.mediaType)) {
+  // A downloaded page or Markdown file carries its images inline, so it works away from byway (EXP-1). So does a page
+  // shown in byway's frame: the frame is sandboxed, so its own requests count as another site's and carry no access
+  // cookie, which /api/artifacts needs (B-188). A Markdown file is shown in byway's own page, which carries it.
+  const page = (record.mediaType.split(';')[0]?.trim().toLowerCase() ?? '') === 'text/html';
+  if ((requested !== undefined && exportsInline(record.mediaType)) || (route === 'artifacts' && download === undefined && page)) {
     const text = await selfContained(new TextDecoder().decode(bytes), services.store.artifacts);
     return new Response(text, { status: 200, headers: artifactHeaders(record.mediaType, origin, download, scripts) });
   }
