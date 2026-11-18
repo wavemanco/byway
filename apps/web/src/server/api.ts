@@ -18,7 +18,8 @@ import { auditText } from '../view/spending.ts';
 import { takesRefs } from '../view/refs.ts';
 import { onlyProtocolChecks } from '../view/composed.ts';
 import type { QuestionCosts } from '../view/questions.ts';
-import { COMPOSED_CHANGED, COMPOSED_REFUSED } from '../view/refusals.ts';
+import { COMPOSED_CHANGED, COMPOSED_REFUSED, MODE_CHANGED } from '../view/refusals.ts';
+import { DEMO_PROFILE_ID } from '../services/config.ts';
 import { isEnded } from '../view/run.ts';
 import type { UnusedAnswerNote } from '../view/rundata.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
@@ -255,7 +256,10 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
     if (!intake.composed.ok) {
       throw new HttpError(400, onlyProtocolChecks(intake.composed.violations) ? 'The composed recipe did not pass the protocol checks, so it cannot run.' : 'The composed recipe cannot run. The screen says why; build your own again.');
     }
-    recipe = await admitComposed(deps, intake.id, intake.composed, intake.problem);
+    // A Start sent again under its run's id runs the recipe that run was started with: admitted again under the mode as
+    // it is now, it could read differently and be refused although its run is under way, and the run's own explanation
+    // would be overwritten (B-199's second check). The runner still refuses any mismatch of recipe, intake or problem.
+    recipe = before !== undefined ? intake.composed.recipe : await admitComposed(deps, intake.id, intake.composed, intake.problem);
   }
   const refs = input.refs ?? [];
   if (refs.length > 0) {
@@ -311,16 +315,40 @@ function refuseChangedMode(deps: Deps, demo: boolean, what: string): void {
     demo
       ? `Demo mode was turned off since this page was shown: reload it to see what ${what} costs.`
       : `Demo mode was turned on since this page was shown: reload it to see ${what} with sample outputs.`,
+    MODE_CHANGED,
   );
 }
 
 /**
- * The stored composed recipe as the Recommendation screen shows it, its estimate made again with the profile a run would
- * use now (B-199's check): one built in demo mode was estimated at nothing, and demo mode may have been turned off since.
+ * The stored composed recipe as the Recommendation screen shows it: admitted again as a Start would admit it (no model
+ * call), with the profile a run would use now, so its estimate and its explanation are what the run would get (B-199's
+ * checks: one built in demo mode was estimated at nothing, and its image steps explained as no image made). The result
+ * is kept on the intake when it differs, as a Start keeps it, so a Start from this screen is not refused for explaining
+ * it differently. One built from a recipe byway no longer has is shown as it was stored; its Start says why it cannot run.
  */
-export function composedNow(deps: Deps, intake: IntakeRecord): ComposeView | null {
+export async function composedNow(deps: Deps, intake: IntakeRecord): Promise<ComposeView | null> {
   if (!intake.composed) return null;
-  return composeView({ ...intake.composed, estimate: deps.services.advisor.estimate(intake.composed.recipe, deps.profileId, intake.problem) });
+  let again: ComposeResult;
+  try {
+    again = deps.services.advisor.admit(intake.composed, { problem: intake.problem, profileId: deps.profileId });
+  } catch (err) {
+    if (!unknownRecipe(err)) throw err;
+    return composeView(intake.composed);
+  }
+  if (JSON.stringify(again) !== JSON.stringify(intake.composed)) await deps.services.store.updateIntake(intake.id, { composed: again });
+  return composeView(again);
+}
+
+/**
+ * Whether `run` uses real models although byway is in demo mode (B-199's second check): runs keep the models they started
+ * with, so a run started on a real profile goes on with it after Settings' demo switch is turned on. Only that switch
+ * does it: with no provider key, or under pnpm demo, every call goes to the mock, the run's own included.
+ */
+export function runUsesRealModels(context: { services: Services; workspaceId: string; preferences: Preferences; demoForced: boolean }, run: RunRecord | undefined): boolean {
+  const { services } = context;
+  if (services.mode !== 'demo' || !context.preferences.demoMode || context.demoForced) return false;
+  if (!services.gateway.providers().some((p) => p.provider !== 'mock' && p.configured)) return false;
+  return run !== undefined && run.workspaceId === context.workspaceId && run.profileId !== DEMO_PROFILE_ID;
 }
 
 /** The violation a stored composed recipe gets when the recipe it was built from is no longer in the catalog. */

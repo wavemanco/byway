@@ -29,6 +29,7 @@ import {
   recommendCommand,
   workspaceRemaining,
   composedNow,
+  runUsesRealModels,
 } from '../src/server/api.ts';
 import { AnswerWaitPatch, RecommendInput } from '../src/server/schemas.ts';
 import { artifactInfo, getRunData } from '../src/server/run-data.ts';
@@ -206,7 +207,7 @@ describe('route handler logic', () => {
     const { intakeId } = await createIntake(d, { text: 'A memo' });
     const compose = vi.spyOn(d.services.advisor, 'compose');
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
-    await expect(composeCommand(d, intakeId, { demo: false })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/turned on since this page was shown/) });
+    await expect(composeCommand(d, intakeId, { demo: false })).rejects.toMatchObject({ status: 409, code: 'mode-changed', message: expect.stringMatching(/turned on since this page was shown/) });
     await expect(recommendCommand(d, intakeId, { ensure: true, demo: false })).rejects.toMatchObject({ status: 409 });
     await expect(recommendCommand(d, intakeId, { answers: [], demo: false })).rejects.toMatchObject({ status: 409 });
     expect(compose).not.toHaveBeenCalled();
@@ -231,22 +232,59 @@ describe('route handler logic', () => {
     expect(intakeId).toBeTruthy();
   });
 
-  it('shows a recipe built in demo mode with what it would cost now, not the nothing it cost then (B-199)', async () => {
-    const d = await deps();
-    const { intakeId } = await createIntake(d, { text: 'A memo for the board' });
-    await composeCommand(d, intakeId, { demo: true });
-    const stored = await d.services.store.getIntake(intakeId);
-    expect(stored?.composed?.estimate.highUsd).toBe(0);
-    // The same intake read by a byway that spends.
-    const liveServices = testHost({ demo: false, env: { ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000000000' } });
-    try {
-      const services: Services = liveServices.host.services(false);
-      const live: Deps = { ...d, services, profileId: 'balanced' };
-      expect(composedNow(live, stored!)?.estimate.highUsd).toBeGreaterThan(0);
-      expect(composedNow(d, stored!)?.estimate.highUsd).toBe(0);
-    } finally {
-      await liveServices.dispose();
-    }
+  /** One byway with a provider key: demo mode on in Settings (`demo`) and off (`live`). */
+  async function bothModes(): Promise<{ demo: Deps; live: Deps }> {
+    await current?.dispose();
+    current = testHost({ demo: false, env: { ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000000000' } });
+    const live: Services = current.host.services(false);
+    const ws = await live.store.ensureDefaultWorkspace();
+    const base = { workspaceId: ws.id, heldKeyIn: current.host.heldKeyIn, questionEstimates: current.host.questionEstimates, pricesCheckedOn: current.host.pricesCheckedOn, modelWaits: current.host.modelWaits };
+    return { demo: { ...base, services: current.host.services(true), profileId: 'demo' }, live: { ...base, services: live, profileId: 'balanced' } };
+  }
+
+  it('shows a recipe built in demo mode as a Start would admit it now, estimate and explanation, so its Start is not refused (B-199)', async () => {
+    const { demo, live } = await bothModes();
+    const { intakeId } = await createIntake(demo, { text: 'A landing page for my pottery studio' });
+    await composeCommand(demo, intakeId, { demo: true });
+    const built = (await demo.services.store.getIntake(intakeId))!;
+    expect(built.composed?.estimate.highUsd).toBe(0);
+    // Demo mode turned off, and the screen drawn again: what a run would cost now, and its steps as they would run.
+    const shown = await composedNow(live, built);
+    expect(shown?.estimate.highUsd).toBeGreaterThan(0);
+    const { recipe: _recipe, ...admitted } = live.services.advisor.admit(built.composed!, { problem: built.problem, profileId: 'balanced' });
+    expect(shown).toMatchObject(admitted);
+    // Its Start from that screen starts.
+    expect(await startRun(live, { demo: false, intakeId, budgetUsd: 5 })).toEqual({ runId: expect.any(String) });
+  });
+
+  it('gives a resent Start of a recipe you built its run back across a mode change, and keeps the recipe that run started with (B-199)', async () => {
+    const { demo, live } = await bothModes();
+    const { intakeId } = await createIntake(live, { text: 'A landing page for my pottery studio' });
+    await composeCommand(demo, intakeId, { demo: true });
+    await composedNow(live, (await live.services.store.getIntake(intakeId))!);
+    const runId = '6e7f8091-a2b3-4c4d-9e5f-6a7b8c9d0e1f';
+    expect(await startRun(live, { demo: false, intakeId, budgetUsd: 5, runId })).toEqual({ runId });
+    const started = (await live.services.store.getIntake(intakeId))!.composed;
+    // Its answer was lost, and demo mode was turned on before the screen sent it again.
+    expect(await startRun(demo, { demo: false, intakeId, budgetUsd: 5, runId })).toEqual({ runId });
+    expect((await live.services.store.getIntake(intakeId))!.composed).toEqual(started);
+    expect(started?.estimate.highUsd).toBeGreaterThan(0);
+  });
+
+  it('says a run started with real models uses them while demo mode is on, and only then (B-199)', async () => {
+    const { demo, live } = await bothModes();
+    const { intakeId } = await createIntake(live, { text: 'A memo' });
+    const { runId } = await startRun(live, { demo: false, intakeId, recipeId: 'c4', budgetUsd: 2 });
+    const run = await live.services.store.getRun(runId);
+    const prefs = await live.services.store.getPreferences(live.workspaceId);
+    const on = { ...prefs, demoMode: true };
+    expect(runUsesRealModels({ services: demo.services, workspaceId: demo.workspaceId, preferences: on, demoForced: false }, run)).toBe(true);
+    // Demo mode off, under pnpm demo, another workspace's run, or a run of the demo profile: no.
+    expect(runUsesRealModels({ services: live.services, workspaceId: live.workspaceId, preferences: prefs, demoForced: false }, run)).toBe(false);
+    expect(runUsesRealModels({ services: demo.services, workspaceId: demo.workspaceId, preferences: on, demoForced: true }, run)).toBe(false);
+    expect(runUsesRealModels({ services: demo.services, workspaceId: 'another', preferences: on, demoForced: false }, run)).toBe(false);
+    expect(runUsesRealModels({ services: demo.services, workspaceId: demo.workspaceId, preferences: on, demoForced: false }, run && { ...run, profileId: 'demo' })).toBe(false);
+    expect(runUsesRealModels({ services: demo.services, workspaceId: demo.workspaceId, preferences: on, demoForced: false }, undefined)).toBe(false);
   });
 
   it('refuses unknown intakes, a missing composed recipe, and budgets over what the workspace has left', async () => {

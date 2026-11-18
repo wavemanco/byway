@@ -221,11 +221,18 @@ export function RecommendationView(props: Props) {
             <h1>byway could not recommend a recipe</h1>
             <p>{state.problem}</p>
             <div className="empty-actions">
-              {/* A refusal asking again cannot fix makes the Library the way on; Try again stays for after the cause is fixed (B-178). */}
-              <ActionButton className={state.tryAgainHelps ? 'button button-primary' : 'button'} onClick={retry} busy={retrying.busy}>
-                {retrying.busy ? 'Trying again…' : 'Try again'}
-              </ActionButton>
-              <Link className={state.tryAgainHelps ? 'button' : 'button button-primary'} href="/library">
+              {/* A refusal asking again cannot fix makes the Library the way on; Try again stays for after the cause is fixed (B-178).
+                  byway's mode changed since this screen was drawn: a reload is the way on, and Try again would be refused again (B-199). */}
+              {state.reload ? (
+                <button type="button" className="button button-primary" onClick={() => window.location.reload()}>
+                  Reload this page
+                </button>
+              ) : (
+                <ActionButton className={state.tryAgainHelps ? 'button button-primary' : 'button'} onClick={retry} busy={retrying.busy}>
+                  {retrying.busy ? 'Trying again…' : 'Try again'}
+                </ActionButton>
+              )}
+              <Link className={state.tryAgainHelps || state.reload ? 'button' : 'button button-primary'} href="/library">
                 Choose from the Library
               </Link>
             </div>
