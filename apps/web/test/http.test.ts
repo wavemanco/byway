@@ -16,7 +16,7 @@ const env = { ANTHROPIC_API_KEY: ANTHROPIC, FAL_KEY: `0d1e2f3a-4b5c-4d6e-8f70-81
 const heldKeyIn = (value: unknown) => findHeldKey(env, stringsIn(value));
 
 const post = (body: unknown, type = 'application/json') => new Request('http://127.0.0.1:3000/api/x', { method: 'POST', headers: { 'content-type': type }, body: typeof body === 'string' ? body : JSON.stringify(body) });
-const START = { intakeId: '6f1d2c3b-4a5e-4f60-8172-93a4b5c6d7e8', budgetUsd: 2 };
+const START = { intakeId: '6f1d2c3b-4a5e-4f60-8172-93a4b5c6d7e8', budgetUsd: 2, demo: true };
 
 async function refused(result: Awaited<ReturnType<typeof parseBody>>): Promise<{ status: number; error: string }> {
   if (result.ok) throw new Error('expected a refusal');
