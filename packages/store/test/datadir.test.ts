@@ -58,7 +58,7 @@ describe('sameLocation (B-188: a fixed demo key never guards the default data fo
     expect(sameLocation(`\\\\?\\${real}`, real)).toBe(process.platform === 'win32');
     if (process.platform !== 'win32') return;
     // \\localhost\C$ reaches the same folder where administrative shares are on, as they are by default.
-    const unc = `\\\\localhost\\${real[0]}${real.slice(2)}`;
+    const unc = `\\\\localhost\\${real[0]}$${real.slice(2)}`;
     let reachable = true;
     try {
       statSync(unc);
@@ -67,9 +67,26 @@ describe('sameLocation (B-188: a fixed demo key never guards the default data fo
     }
     if (reachable) {
       expect(sameLocation(unc, real)).toBe(true);
-      expect(sameLocation(`\\\\?\\UNC\\localhost\\${real[0]}${real.slice(2)}`, real)).toBe(true);
+      expect(sameLocation(`\\\\?\\UNC\\localhost\\${real[0]}$${real.slice(2)}`, real)).toBe(true);
     }
     expect(sameLocation(unc, root)).toBe(false);
+  });
+});
+
+describe('a data folder named two ways on Windows (B-188’s check 5)', () => {
+  it('is refused when a part of its path ends in a dot or a space, which Windows keeps for Node and drops for SQLite', () => {
+    for (const dir of ['/data/byway.', '/data/Local./byway', '/data/byway ', '/data/Local /byway']) {
+      expect(unsafeLocationReason(dir, {}, 'win32'), dir).toMatchObject({ kind: 'name', message: expect.stringMatching(/ends in a dot or a space/) });
+    }
+    for (const dir of ['/data/byway', '/data/by.way', '/data/.byway', '/data/by way']) expect(unsafeLocationReason(dir, {}, 'win32'), dir).toBeUndefined();
+    // Elsewhere such a name is one folder to every program.
+    expect(unsafeLocationReason('/data/byway.', {}, 'linux')).toBeUndefined();
+  });
+
+  it('stops byway before it opens anything there', () => {
+    if (process.platform !== 'win32') return;
+    const dotted = `${join(tempDir(), 'byway')}.`;
+    expect(() => resolveDataDir({ env: { BYWAY_DATA_DIR: dotted } })).toThrow(UnsafeDataDirError);
   });
 });
 

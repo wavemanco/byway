@@ -17,13 +17,13 @@ export interface DataDirOptions {
   platform?: NodeJS.Platform;
   /** Defaults to `os.homedir()`. */
   homedir?: string;
-  /** Skip the OneDrive and git checks. Only for deliberate setups and tests. */
+  /** Skip the OneDrive, git and folder-name checks. Only for deliberate setups and tests. */
   allowUnsafeLocation?: boolean;
 }
 
 export interface UnsafeLocation {
-  kind: 'onedrive' | 'git';
-  /** The OneDrive folder or repository root that contains the path. */
+  kind: 'onedrive' | 'git' | 'name';
+  /** The OneDrive folder or repository root that contains the path, or for 'name' the path itself. */
   root: string;
   message: string;
 }
@@ -50,7 +50,7 @@ export function resolveDataDir(opts: DataDirOptions = {}): string {
   return dir;
 }
 
-/** Throws {@link UnsafeDataDirError} when `dir` is inside OneDrive or a git working tree. */
+/** Throws {@link UnsafeDataDirError} when `dir` is inside OneDrive or a git working tree, or names a folder two ways. */
 export function assertSafeDataDir(dir: string, env: Env = process.env): void {
   const unsafe = unsafeLocationReason(dir, env);
   if (unsafe) throw new UnsafeDataDirError(path.resolve(dir), unsafe.kind, unsafe.message);
@@ -60,8 +60,23 @@ export function assertSafeDataDir(dir: string, env: Env = process.env): void {
  * Why `dir` is an unsafe place for product data, or undefined when it is fine. The folder need not exist yet. Both the
  * path as written and its real location (through junctions and symlinks of the part that exists) are checked.
  */
-export function unsafeLocationReason(dir: string, env: Env = process.env): UnsafeLocation | undefined {
+export function unsafeLocationReason(dir: string, env: Env = process.env, platform: NodeJS.Platform = process.platform): UnsafeLocation | undefined {
   const abs = path.resolve(dir);
+  // On Windows a part of the path ending in a dot or a space names one folder to Node, which keeps it, and another to
+  // SQLite and most programs, which drop it: byway's database would be one folder's and its artifacts and ledger
+  // another's, and a check of the folder (sameLocation) would see the wrong one (B-188's check 5).
+  if (platform === 'win32') {
+    const odd = abs.split(/[\\/]+/).find((part) => part !== '.' && part !== '..' && /[. ]$/.test(part));
+    if (odd !== undefined) {
+      return {
+        kind: 'name',
+        root: abs,
+        message:
+          `Refusing to keep byway data in ${abs}: its part "${odd}" ends in a dot or a space, which Windows keeps for some ` +
+          "programs and drops for others, so byway's database and its files would end up in two folders. Set BYWAY_DATA_DIR to a folder whose names do not end in a dot or a space.",
+      };
+    }
+  }
   const candidates = [abs];
   const real = realLocation(abs);
   if (real !== undefined && real !== abs) candidates.push(real);

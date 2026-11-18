@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, createElement, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { Preferences } from '@byway/contracts';
 import { get } from './api.ts';
 
@@ -102,37 +102,48 @@ export function announceSingleKeys(on: boolean): void {
 
 export function SingleKeysProvider({ value, children }: { value: boolean; children: ReactNode }) {
   const [on, setOn] = useState(value);
+  // Each change this tab hears (its render, the channel, its own save) is counted, so a read sent before one and
+  // answered after it is not applied over it (B-188's check 5): it may carry the value from before the change.
+  const changes = useRef(0);
+  const change = useCallback((next: boolean) => {
+    changes.current++;
+    setOn(next);
+  }, []);
   // A new value from the server (this tab saved it, or navigated) replaces whatever the channel said before.
-  useEffect(() => setOn(value), [value]);
+  useEffect(() => change(value), [change, value]);
   useEffect(() => {
     if (typeof BroadcastChannel === 'undefined') return;
     const channel = new BroadcastChannel(SETTINGS_CHANNEL);
     channel.onmessage = (event: MessageEvent) => {
       const next = (event.data as { singleKeyShortcuts?: unknown } | null)?.singleKeyShortcuts;
-      if (typeof next === 'boolean') setOn(next);
+      if (typeof next === 'boolean') change(next);
     };
     return () => channel.close();
-  }, []);
+  }, [change]);
   // And from byway itself, once this page has loaded and whenever it comes back into view (B-188's check 4): a change made
   // while this page was loading reached it by neither its render nor the channel, and a tab in another browser profile
-  // or a private window never hears the channel. A read that fails changes nothing.
+  // or a private window never hears the channel; a window kept in view beside another reads again when it gets focus.
+  // A read that fails, or is answered after a newer change, changes nothing.
   useEffect(() => {
     let current = true;
     const reread = () => {
       if (document.visibilityState !== 'visible') return;
+      const sent = changes.current;
       get<Preferences>('/api/settings').then(
-        (prefs) => current && typeof prefs.singleKeyShortcuts === 'boolean' && setOn(prefs.singleKeyShortcuts),
+        (prefs) => current && changes.current === sent && typeof prefs.singleKeyShortcuts === 'boolean' && change(prefs.singleKeyShortcuts),
         () => undefined,
       );
     };
     reread();
     document.addEventListener('visibilitychange', reread);
+    window.addEventListener('focus', reread);
     return () => {
       current = false;
       document.removeEventListener('visibilitychange', reread);
+      window.removeEventListener('focus', reread);
     };
-  }, []);
-  const switchState = useMemo(() => ({ on, set: setOn }), [on]);
+  }, [change]);
+  const switchState = useMemo(() => ({ on, set: change }), [on, change]);
   return createElement(SingleKeys, { value: switchState }, children);
 }
 

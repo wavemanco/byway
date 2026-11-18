@@ -175,6 +175,47 @@ test.describe('Settings’ single-key shortcuts, kept with byway’s settings (B
       await other.close();
     }
   });
+
+  test('a read of the switch answered after a newer change does not undo it (B-188’s check 5)', async ({ page, context }) => {
+    const { runId } = data().confirm;
+    // The Run tab's first read is made while the switch is on, and held until the switch has been turned off elsewhere.
+    let read: 'waiting' | 'held' | 'done' = 'waiting';
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    const settingsRead = (url: URL) => url.pathname === '/api/settings';
+    await page.route(settingsRead, async (route) => {
+      if (route.request().method() !== 'GET' || read !== 'waiting') return route.continue();
+      const answer = await route.fetch();
+      read = 'held';
+      await released;
+      await route.fulfill({ response: answer });
+      read = 'done';
+    });
+    const listedY = () => turn(page).locator('.shortcuts kbd', { hasText: /^Y$/ });
+    await page.goto(`/runs/${runId}`);
+    await expect.poll(() => read).toBe('held');
+    const settings = await context.newPage();
+    await settings.goto('/settings');
+    const toggle = settings.getByRole('switch', { name: 'Single-key shortcuts' });
+    try {
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-checked', 'false');
+      await expect(listedY()).toHaveCount(0);
+      // The read made before the change comes back saying on: the tab stays off.
+      release();
+      await expect.poll(() => read).toBe('done');
+      await page.waitForTimeout(500);
+      await expect(listedY()).toHaveCount(0);
+    } finally {
+      release();
+      await page.unroute(settingsRead);
+      if ((await toggle.getAttribute('aria-checked')) === 'false') {
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-checked', 'true');
+      }
+      await settings.close();
+    }
+  });
 });
 
 test.describe('a control that starts something keeps focus, and a second press sends nothing (R5)', () => {
