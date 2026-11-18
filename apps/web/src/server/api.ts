@@ -237,6 +237,16 @@ export async function addRef(deps: Deps, input: z.infer<typeof RefInput>): Promi
 }
 
 export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): Promise<{ runId: string }> {
+  // The mode the screen showed must still be byway's (B-199): a Recommendation screen drawn in demo mode says nothing is
+  // charged, and demo mode can be turned off in another tab, or keys added, while it is open.
+  if (input.demo !== (deps.services.mode === 'demo')) {
+    throw new HttpError(
+      409,
+      input.demo
+        ? 'Demo mode was turned off since this page was shown: reload it to see what the run costs.'
+        : 'Demo mode was turned on since this page was shown: reload it to see the run with sample outputs.',
+    );
+  }
   const intake = await requireIntake(deps, input.intakeId);
   const { services } = deps;
   let recipe: Recipe | undefined;

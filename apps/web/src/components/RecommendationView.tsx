@@ -449,6 +449,8 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
       const refs = option.takesRefs && exampleCount(examples) > 0 ? await storeExamples(examples, onExampleRefused) : [];
       const body = {
         intakeId,
+        // The mode this screen showed, which byway checks is still its own (B-199).
+        demo,
         budgetUsd: budget,
         ...(recipeId ? { recipeId } : {}),
         ...(routes && Object.keys(routes).length > 0 ? { routes } : {}),

@@ -36,6 +36,12 @@ export const RecommendInput = z.union([z.strictObject({ ensure: z.literal(true) 
 
 export const StartInput = z.object({
   intakeId: z.string().uuid(),
+  /**
+   * Whether the screen that sent this Start showed demo mode (B-199): a Start whose mode has changed since the screen was
+   * drawn is refused, so a screen that said nothing is charged never starts a run that spends. Required, so a client
+   * that leaves it out is refused rather than unchecked.
+   */
+  demo: z.boolean(),
   /** A canonical recipe id; omitted to start the intake's composed recipe. */
   recipeId: z.string().regex(/^[a-z0-9-]{1,64}$/).optional(),
   budgetUsd: z.number().positive().max(MAX_BUDGET_USD),

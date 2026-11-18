@@ -42,7 +42,7 @@ describe('starting a composed recipe admits it again', () => {
   it('an unchanged recipe starts with the hash that was offered', async () => {
     const d = await deps();
     const { intakeId, stored } = await composed(d);
-    const { runId } = await startRun(d, { intakeId, budgetUsd: 2 });
+    const { runId } = await startRun(d, { demo: true, intakeId, budgetUsd: 2 });
     expect((await d.services.store.getRun(runId))?.recipeHash).toBe(stored.recipe.hash);
   });
 
@@ -56,7 +56,7 @@ describe('starting a composed recipe admits it again', () => {
     d3.steps.push({ ...revise, id: 'ai-polish', writes: false, produces: [] });
     delete recipe.hash;
     await d.services.store.updateIntake(intakeId, { composed: { ...stored, recipe: withHash(recipe) } });
-    await expect(startRun(d, { intakeId, budgetUsd: 2 })).rejects.toMatchObject({ status: 400, code: COMPOSED_REFUSED });
+    await expect(startRun(d, { demo: true, intakeId, budgetUsd: 2 })).rejects.toMatchObject({ status: 400, code: COMPOSED_REFUSED });
     const after = (await d.services.store.getIntake(intakeId))!.composed!;
     expect(after.ok).toBe(false);
     expect(after.violations.map((v) => v.ruleId)).toEqual(expect.arrayContaining(['ST12', 'PR6', 'COMPOSED-VOICE']));
@@ -66,14 +66,14 @@ describe('starting a composed recipe admits it again', () => {
     const d = await deps();
     const { intakeId, stored } = await composed(d);
     await d.services.store.updateIntake(intakeId, { composed: { ...stored, recipe: { ...stored.recipe, hash: `sha256:${'0'.repeat(64)}` } } });
-    await expect(startRun(d, { intakeId, budgetUsd: 2 })).rejects.toMatchObject({ status: 400, code: COMPOSED_REFUSED });
+    await expect(startRun(d, { demo: true, intakeId, budgetUsd: 2 })).rejects.toMatchObject({ status: 400, code: COMPOSED_REFUSED });
   });
 
   it('a recipe built from one byway no longer has is refused (400), asking for a new one; the intake says so', async () => {
     const d = await deps();
     const { intakeId, stored } = await composed(d);
     await d.services.store.updateIntake(intakeId, { composed: { ...stored, nearestRecipeId: 'c0-retired' } });
-    const refused = await startRun(d, { intakeId, budgetUsd: 2 }).catch((e: unknown) => e);
+    const refused = await startRun(d, { demo: true, intakeId, budgetUsd: 2 }).catch((e: unknown) => e);
     expect(refused).toMatchObject({ status: 400, code: COMPOSED_REFUSED });
     expect((refused as Error).message).toMatch(/Build your own again/);
     const shown = (refused as { body?: { composed?: { ok: boolean; violations: { ruleId: string }[] } } }).body?.composed;
@@ -91,13 +91,13 @@ describe('starting a composed recipe admits it again', () => {
     const d = await deps();
     const { intakeId, stored } = await composed(d);
     await d.services.store.updateIntake(intakeId, { composed: { ...stored, diff: ['The same steps as Memo Polish.'] } });
-    const refused = await startRun(d, { intakeId, budgetUsd: 2 }).catch((e: unknown) => e);
+    const refused = await startRun(d, { demo: true, intakeId, budgetUsd: 2 }).catch((e: unknown) => e);
     expect(refused).toMatchObject({ status: 409, code: COMPOSED_CHANGED });
     const shown = (refused as { body?: { composed?: { diff: string[]; ok: boolean } } }).body?.composed;
     expect(shown?.diff).toEqual(stored.diff);
     expect(shown).not.toHaveProperty('recipe');
     expect((await d.services.store.getIntake(intakeId))!.composed!.diff).toEqual(stored.diff);
-    const { runId } = await startRun(d, { intakeId, budgetUsd: 2 });
+    const { runId } = await startRun(d, { demo: true, intakeId, budgetUsd: 2 });
     expect((await d.services.store.getRun(runId))?.recipeHash).toBe(stored.recipe.hash);
   });
 });
@@ -118,7 +118,7 @@ describe("the engine's own refusal at start (F02, ADR-0092 stage 2)", () => {
         },
       },
     };
-    const refused = await startRun(refusing, { intakeId, budgetUsd: 2 }).catch((e: unknown) => e);
+    const refused = await startRun(refusing, { demo: true, intakeId, budgetUsd: 2 }).catch((e: unknown) => e);
     expect(refused).toBeInstanceOf(HttpError);
     expect(refused).toMatchObject({ status: 400 });
     expect((refused as Error).message).toBe('byway cannot run this recipe: up to 600 steps can run at once; the engine allows 500. Build your own again.');

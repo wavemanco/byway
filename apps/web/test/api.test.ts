@@ -72,7 +72,7 @@ describe('route handler logic', () => {
     expect((await currentRecommendation(d, intakeId)).recipeId).toBe(again.recipeId);
     expect((await d.services.store.getIntake(intakeId))?.answers?.find((a) => a.questionId === 'visual')).toMatchObject({ answer: false, setBy: 'user' });
 
-    const { runId } = await startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 3 });
+    const { runId } = await startRun(d, { demo: true, intakeId, recipeId: 'c1', budgetUsd: 3 });
     const data = await getRunData(d.services, runId);
     expect(data.view.run).toMatchObject({ recipeId: 'c1', budgetUsd: 3, intakeId, profileId: 'demo' });
   });
@@ -93,7 +93,7 @@ describe('route handler logic', () => {
     expect(composed).not.toHaveProperty('recipe');
     const kept = (await d.services.store.getIntake(intakeId))?.composed;
     expect(kept?.recipe.kind).toBe('composed');
-    const { runId } = await startRun(d, { intakeId, budgetUsd: 2 });
+    const { runId } = await startRun(d, { demo: true, intakeId, budgetUsd: 2 });
     const run = await d.services.store.getRun(runId);
     if (!run) throw new Error('run missing');
     expect(run.intakeId).toBe(intakeId);
@@ -109,7 +109,7 @@ describe('route handler logic', () => {
   it('presents library runs from the catalog with a computed label and a step index', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
-    const { runId } = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 });
+    const { runId } = await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2 });
     const run = await d.services.store.getRun(runId);
     if (!run) throw new Error('run missing');
     const shown = await recipeForRun(d, run);
@@ -124,7 +124,7 @@ describe('route handler logic', () => {
   it('prices each open question that commits money, with the run\'s own profile, on its problem and the work beside it, for the Run screen', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
-    const { runId } = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 });
+    const { runId } = await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2 });
     const run = await d.services.store.getRun(runId);
     if (!run) throw new Error('run missing');
     const { recipe } = await recipeForRun(d, run);
@@ -171,7 +171,7 @@ describe('route handler logic', () => {
   it("prices a failed gate's question in both its wordings, with or without a retry, at Yes (ENGINE-1)", async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A launch page', recipeId: 'c5' });
-    const { runId } = await startRun(d, { intakeId, recipeId: 'c5', budgetUsd: 5 });
+    const { runId } = await startRun(d, { demo: true, intakeId, recipeId: 'c5', budgetUsd: 5 });
     const run = await d.services.store.getRun(runId);
     if (!run) throw new Error('run missing');
     const open = (prompt: string): CheckpointRecord => ({ id: `${runId}/cp-${prompt.length}`, runId, stepId: 'launch-gate', kind: 'confirm', prompt, status: 'open', openedAt: '2026-10-28T10:00:00.000Z' });
@@ -183,27 +183,44 @@ describe('route handler logic', () => {
     expect(costs?.[oneShot.id]).toEqual(costs?.[retried.id]);
   });
 
+  it('refuses a Start whose screen showed another mode than byway is in now, and starts nothing (B-199)', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo' });
+    await expect(startRun(d, { demo: false, intakeId, recipeId: 'c4', budgetUsd: 2 })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/turned on since this page was shown/) });
+    expect(await d.services.store.listRuns(d.workspaceId)).toEqual([]);
+    await current?.dispose();
+    // With a provider key and demo mode off, byway spends: a screen drawn in demo mode, which said nothing is charged, is refused.
+    current = testHost({ demo: false, env: { ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000000000' } });
+    const services: Services = current.host.services(false);
+    expect(services.mode).toBe('live');
+    const ws = await services.store.ensureDefaultWorkspace();
+    const live: Deps = { ...d, services, workspaceId: ws.id };
+    const other = await createIntake(live, { text: 'A memo' });
+    await expect(startRun(live, { demo: true, intakeId: other.intakeId, recipeId: 'c4', budgetUsd: 2 })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/turned off since this page was shown: reload it to see what the run costs/) });
+    expect(await services.store.listRuns(ws.id)).toEqual([]);
+  });
+
   it('refuses unknown intakes, a missing composed recipe, and budgets over what the workspace has left', async () => {
     const d = await deps();
     await expect(recommendIntake(d, '0b7f2f5e-3c1a-4d2e-9f00-5a3c2b1d4e6f')).rejects.toBeInstanceOf(HttpError);
     const { intakeId } = await createIntake(d, { text: 'A memo' });
-    await expect(startRun(d, { intakeId, budgetUsd: 2 })).rejects.toMatchObject({ status: 400 });
-    await expect(startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 500 })).rejects.toThrow(/workspace budget/);
+    await expect(startRun(d, { demo: true, intakeId, budgetUsd: 2 })).rejects.toMatchObject({ status: 400 });
+    await expect(startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 500 })).rejects.toThrow(/workspace budget/);
   });
 
   it('starts one run for a Start sent twice with the same run id; the id for another problem or recipe is a conflict (F03 P3)', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
     const runId = '5d6e7f80-91a2-4b3c-8d4e-5f6a7b8c9d0e';
-    const first = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2, runId });
+    const first = await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2, runId });
     expect(first).toEqual({ runId });
     // The answer was lost and the browser sends the same Start again.
-    expect(await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2, runId })).toEqual({ runId });
+    expect(await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2, runId })).toEqual({ runId });
     expect((await d.services.store.listRuns(d.workspaceId)).filter((r) => r.id === runId)).toHaveLength(1);
     const { intakeId: other } = await createIntake(d, { text: 'Another memo', recipeId: 'c4' });
-    await expect(startRun(d, { intakeId: other, recipeId: 'c4', budgetUsd: 2, runId })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/another problem/) });
+    await expect(startRun(d, { demo: true, intakeId: other, recipeId: 'c4', budgetUsd: 2, runId })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/another problem/) });
     // The same Start id asking for another recipe is another start, whatever its id says (the screen mints a new id then).
-    await expect(startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 2, runId })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/another problem or recipe/) });
+    await expect(startRun(d, { demo: true, intakeId, recipeId: 'c1', budgetUsd: 2, runId })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/another problem or recipe/) });
   });
 
   it("returns the same run for a Start sent again after the run's first call has lowered what is left; another budget is still checked (WEB-1)", async () => {
@@ -211,13 +228,13 @@ describe('route handler logic', () => {
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
     const runId = '6e7f8091-a2b3-4c5d-9e0f-6a7b8c9d0e1f';
     const budgetUsd = (await workspaceRemaining(d)).remainingUsd;
-    expect(await startRun(d, { intakeId, recipeId: 'c4', budgetUsd, runId })).toEqual({ runId });
+    expect(await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd, runId })).toEqual({ runId });
     await d.services.store.spendBook.admit({ opId: 'first-call', owner: 'worker', leaseMs: 60_000, workspaceId: d.workspaceId, runId, purpose: 'build:prose', kind: 'completion', provider: 'google', model: 'gemini-3-pro', reserveUsd: 0.5, paid: true, caps: { workspaceUsd: 1000 } });
     // The answer was lost; the same Start again is the same run, though what is left is now below its budget.
-    expect(await startRun(d, { intakeId, recipeId: 'c4', budgetUsd, runId })).toEqual({ runId });
+    expect(await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd, runId })).toEqual({ runId });
     expect((await d.services.store.listRuns(d.workspaceId)).filter((r) => r.id === runId)).toHaveLength(1);
     // A resend under that id with another budget is checked as a new Start is.
-    await expect(startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 500, runId })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/workspace budget/) });
+    await expect(startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 500, runId })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/workspace budget/) });
   });
 
   it('leaves a damaged artifact out of what the Run screen polls, as a missing one is, and shows the rest (WEB-4)', async () => {
@@ -235,7 +252,7 @@ describe('route handler logic', () => {
   it('prices an open question beside a damaged artifact, leaving that artifact out, and the Run screen still loads (DATA-1)', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
-    const { runId } = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 });
+    const { runId } = await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2 });
     const bad = await d.services.store.artifacts.putText('# Bad!', 'text/markdown');
     const hex = bad.id.slice('sha256:'.length);
     writeFileSync(path.join(current!.dataDir, 'artifacts', 'sha256', hex.slice(0, 2), hex.slice(2)), '# Bad?');
@@ -251,7 +268,7 @@ describe('route handler logic', () => {
   it('resolves a question only within its own run, and passes validation messages through', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page', recipeId: 'c1' });
-    const { runId } = await startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 5 });
+    const { runId } = await startRun(d, { demo: true, intakeId, recipeId: 'c1', budgetUsd: 5 });
     const cp = await openQuestion(d, runId);
     expect(cp.kind).toBe(FIRST_QUESTION.kind);
     await expect(resolveInRun(d, 'run-other', cp.id, { choice: ['seed'] })).rejects.toMatchObject({ status: 404 });
@@ -265,7 +282,7 @@ describe('route handler logic', () => {
   it('says a question was withdrawn, not answered, when its run ended while it was open (API-1)', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page', recipeId: 'c1' });
-    const { runId } = await startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 5 });
+    const { runId } = await startRun(d, { demo: true, intakeId, recipeId: 'c1', budgetUsd: 5 });
     const cp = await openQuestion(d, runId);
     await controlRun(d, runId, 'cancel');
     await d.services.store.withdrawCheckpoints(runId);
@@ -278,7 +295,7 @@ describe('route handler logic', () => {
   it('pauses, resumes and cancels runs through the runner, and leaves ended runs alone', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
-    const { runId } = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 });
+    const { runId } = await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2 });
     await controlRun(d, runId, 'pause');
     expect((await d.services.store.getRun(runId))?.status).toBe('paused');
     await controlRun(d, runId, 'resume');
@@ -368,7 +385,7 @@ describe('examples you admire (ADR-0071)', () => {
 
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
     const start = vi.spyOn(d.services.runner, 'start');
-    await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2, refs: [text.artifactId, image.artifactId, text.artifactId] });
+    await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2, refs: [text.artifactId, image.artifactId, text.artifactId] });
     expect(start.mock.calls[0]?.[0]).toMatchObject({ intakeId, inputs: { refs: [text.artifactId, image.artifactId] } });
   });
 
@@ -380,8 +397,8 @@ describe('examples you admire (ADR-0071)', () => {
 
     const { intakeId } = await createIntake(d, { text: 'A landing page', recipeId: 'c1' });
     const ref = await addRef(d, { text: 'A page I admire.' });
-    await expect(startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 2, refs: [ref.artifactId] })).rejects.toThrow(/does not use examples/);
-    await expect(startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2, refs: [`sha256:${'0'.repeat(64)}`] })).rejects.toThrow(/not found/);
+    await expect(startRun(d, { demo: true, intakeId, recipeId: 'c1', budgetUsd: 2, refs: [ref.artifactId] })).rejects.toThrow(/does not use examples/);
+    await expect(startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2, refs: [`sha256:${'0'.repeat(64)}`] })).rejects.toThrow(/not found/);
   });
 });
 
@@ -695,7 +712,7 @@ describe('Settings: Spending records (F03, ADR-0095)', () => {
 describe('what the Run screen polls once its run has ended (ADR-0111)', () => {
   async function startedRun(d: Deps): Promise<string> {
     const { intakeId } = await createIntake(d, { text: 'Tighten my quarterly memo', recipeId: 'c4' });
-    return (await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 })).runId;
+    return (await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2 })).runId;
   }
   const call = (d: Deps, opId: string, runId?: string) => ({
     opId,
