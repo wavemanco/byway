@@ -142,7 +142,7 @@ export function RecommendationView(props: Props) {
   const retrying = useAction(async (first: boolean) => {
     setError(null);
     try {
-      const result = await post<RecommendResult>(`/api/intakes/${intakeId}/recommend`, { ensure: true });
+      const result = await post<RecommendResult>(`/api/intakes/${intakeId}/recommend`, { ensure: true, demo });
       setState((s) => recovered(s, result));
       void remaining.now();
       const title = recipeTitle(result.recommendation.presentation, technical);
@@ -170,7 +170,7 @@ export function RecommendationView(props: Props) {
     setState((s) => ({ ...s, rec: { ...rec, answers } }));
     setError(null);
     try {
-      const result = await post<RecommendResult>(`/api/intakes/${intakeId}/recommend`, { answers });
+      const result = await post<RecommendResult>(`/api/intakes/${intakeId}/recommend`, { answers, demo });
       const next = result.recommendation;
       const changed = next.recipeId !== rec.recipeId;
       setState((s) => rerouted(s, result));
@@ -186,7 +186,7 @@ export function RecommendationView(props: Props) {
   const composing = useAction(async () => {
     setError(null);
     try {
-      const result = await post<ComposeResultView>(`/api/intakes/${intakeId}/compose`, {});
+      const result = await post<ComposeResultView>(`/api/intakes/${intakeId}/compose`, { demo });
       setState((s) => composedReady(s, result));
       void remaining.now();
       setFocusProposal((n) => n + 1);

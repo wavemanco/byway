@@ -142,7 +142,7 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
               {demoForced
                 ? 'byway was started with pnpm demo, so every run uses sample outputs and costs nothing. Start it with pnpm start to use real models.'
                 : realConfigured
-                ? 'Use sample outputs instead of real models, at no cost.'
+                ? 'Use sample outputs instead of real models, at no cost. Runs already under way keep their models: pause or cancel them to stop spending.'
                 : 'No provider key is set, so every run uses sample outputs and costs nothing. Add a key to use real models.'}
             </p>
           </div>

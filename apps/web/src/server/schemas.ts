@@ -32,14 +32,18 @@ export const AnswersInput = z.object({
  * answers as the person left them; `{ ensure: true }` is "Try again", which returns the intake's stored recommendation,
  * or makes and stores one when there is none. Anything else, an empty body included, is refused.
  */
-export const RecommendInput = z.union([z.strictObject({ ensure: z.literal(true) }), AnswersInput]);
+export const RecommendInput = z.union([z.strictObject({ ensure: z.literal(true), demo: z.boolean() }), AnswersInput.extend({ demo: z.boolean() })]);
+
+/** POST /api/intakes/:id/compose ("Build my own"): the mode the screen showed, which byway checks is still its own (B-199). */
+export const ComposeInput = z.strictObject({ demo: z.boolean() });
 
 export const StartInput = z.object({
   intakeId: z.string().uuid(),
   /**
    * Whether the screen that sent this Start showed demo mode (B-199): a Start whose mode has changed since the screen was
-   * drawn is refused, so a screen that said nothing is charged never starts a run that spends. Required, so a client
-   * that leaves it out is refused rather than unchecked.
+   * drawn is refused, so a screen that said nothing is charged never starts a run that spends (a Start sent again under
+   * the id of a run it already started gets that run back). Required, so a client that leaves it out is refused rather
+   * than unchecked. The recommend and compose commands carry it too.
    */
   demo: z.boolean(),
   /** A canonical recipe id; omitted to start the intake's composed recipe. */

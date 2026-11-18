@@ -28,6 +28,7 @@ import {
   composeCommand,
   recommendCommand,
   workspaceRemaining,
+  composedNow,
 } from '../src/server/api.ts';
 import { AnswerWaitPatch, RecommendInput } from '../src/server/schemas.ts';
 import { artifactInfo, getRunData } from '../src/server/run-data.ts';
@@ -198,6 +199,54 @@ describe('route handler logic', () => {
     const other = await createIntake(live, { text: 'A memo' });
     await expect(startRun(live, { demo: true, intakeId: other.intakeId, recipeId: 'c4', budgetUsd: 2 })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/turned off since this page was shown: reload it to see what the run costs/) });
     expect(await services.store.listRuns(ws.id)).toEqual([]);
+  });
+
+  it('refuses Build my own and a re-route from a screen drawn in another mode before any call is bought (B-199)', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo' });
+    const compose = vi.spyOn(d.services.advisor, 'compose');
+    const recommend = vi.spyOn(d.services.advisor, 'recommend');
+    await expect(composeCommand(d, intakeId, { demo: false })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/turned on since this page was shown/) });
+    await expect(recommendCommand(d, intakeId, { ensure: true, demo: false })).rejects.toMatchObject({ status: 409 });
+    await expect(recommendCommand(d, intakeId, { answers: [], demo: false })).rejects.toMatchObject({ status: 409 });
+    expect(compose).not.toHaveBeenCalled();
+    expect(recommend).not.toHaveBeenCalled();
+  });
+
+  it('gives a Start sent again under its id its run back, whatever the mode is now; a new Start is checked (B-199)', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo' });
+    await current?.dispose();
+    current = testHost({ demo: false, env: { ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000000000' } });
+    const services: Services = current.host.services(false);
+    const ws = await services.store.ensureDefaultWorkspace();
+    const live: Deps = { ...d, services, workspaceId: ws.id, profileId: 'balanced' };
+    const memo = await createIntake(live, { text: 'A memo' });
+    const runId = '5d6e7f80-91a2-4b3c-8d4e-5f6a7b8c9d0e';
+    expect(await startRun(live, { demo: false, intakeId: memo.intakeId, recipeId: 'c4', budgetUsd: 2, runId })).toEqual({ runId });
+    // Its answer was lost, and demo mode was turned on before the screen sent it again.
+    const demoNow: Deps = { ...live, services: current.host.services(true), profileId: 'demo' };
+    expect(await startRun(demoNow, { demo: false, intakeId: memo.intakeId, recipeId: 'c4', budgetUsd: 2, runId })).toEqual({ runId });
+    await expect(startRun(demoNow, { demo: false, intakeId: memo.intakeId, recipeId: 'c4', budgetUsd: 2 })).rejects.toMatchObject({ status: 409 });
+    expect(intakeId).toBeTruthy();
+  });
+
+  it('shows a recipe built in demo mode with what it would cost now, not the nothing it cost then (B-199)', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo for the board' });
+    await composeCommand(d, intakeId, { demo: true });
+    const stored = await d.services.store.getIntake(intakeId);
+    expect(stored?.composed?.estimate.highUsd).toBe(0);
+    // The same intake read by a byway that spends.
+    const liveServices = testHost({ demo: false, env: { ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000000000' } });
+    try {
+      const services: Services = liveServices.host.services(false);
+      const live: Deps = { ...d, services, profileId: 'balanced' };
+      expect(composedNow(live, stored!)?.estimate.highUsd).toBeGreaterThan(0);
+      expect(composedNow(d, stored!)?.estimate.highUsd).toBe(0);
+    } finally {
+      await liveServices.dispose();
+    }
   });
 
   it('refuses unknown intakes, a missing composed recipe, and budgets over what the workspace has left', async () => {
@@ -539,9 +588,9 @@ describe('model errors while recommending or composing (UX-2)', () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo' });
     vi.spyOn(d.services.advisor, 'recommend').mockRejectedValueOnce(gatewayError('rate-limited'));
-    await expect(recommendCommand(d, intakeId, { ensure: true })).rejects.toMatchObject({ message: expect.stringMatching(/busy/) });
+    await expect(recommendCommand(d, intakeId, { ensure: true, demo: true })).rejects.toMatchObject({ message: expect.stringMatching(/busy/) });
     expect((await d.services.store.getIntake(intakeId))?.recommendation).toBeUndefined();
-    const second = await recommendCommand(d, intakeId, { ensure: true });
+    const second = await recommendCommand(d, intakeId, { ensure: true, demo: true });
     expect(second.recommendation.recipeId).toBeTruthy();
   });
 });
@@ -554,15 +603,15 @@ describe('Recommendation screen commands return everything they change (F14, ADR
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
     recommend.mockRejectedValueOnce(rateLimited());
-    await expect(recommendCommand(d, intakeId, { ensure: true })).rejects.toMatchObject({ message: expect.stringMatching(/busy/) });
+    await expect(recommendCommand(d, intakeId, { ensure: true, demo: true })).rejects.toMatchObject({ message: expect.stringMatching(/busy/) });
     expect(recommend).toHaveBeenCalledTimes(1);
 
-    const first = await recommendCommand(d, intakeId, { ensure: true });
+    const first = await recommendCommand(d, intakeId, { ensure: true, demo: true });
     expect(first.recommendation.recipeId).toBe('c1');
     expect((await d.services.store.getIntake(intakeId))?.recommendation?.recipeId).toBe('c1');
     expect(first.remainingUsd).toBe((await workspaceRemaining(d)).remainingUsd);
     // Asking again returns the stored one: no second model call.
-    const second = await recommendCommand(d, intakeId, { ensure: true });
+    const second = await recommendCommand(d, intakeId, { ensure: true, demo: true });
     expect(second.recommendation).toEqual(first.recommendation);
     expect(recommend).toHaveBeenCalledTimes(2);
   });
@@ -570,9 +619,9 @@ describe('Recommendation screen commands return everything they change (F14, ADR
   it('re-routing with flipped answers still works through the same command', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
-    const { recommendation } = await recommendCommand(d, intakeId, { ensure: true });
+    const { recommendation } = await recommendCommand(d, intakeId, { ensure: true, demo: true });
     const answers = recommendation.answers.map((a) => (a.questionId === 'visual' ? { ...a, answer: false, setBy: 'user' as const } : a));
-    const next = await recommendCommand(d, intakeId, { answers });
+    const next = await recommendCommand(d, intakeId, { answers, demo: true });
     expect(next.recommendation.recipeId).not.toBe('c1');
     expect(typeof next.remainingUsd).toBe('number');
   });
@@ -584,7 +633,7 @@ describe('Recommendation screen commands return everything they change (F14, ADR
     recommend.mockRejectedValueOnce(rateLimited());
     await expect(currentRecommendation(d, intakeId)).rejects.toBeInstanceOf(HttpError);
     const calls = recommend.mock.calls.length;
-    const result = await composeCommand(d, intakeId);
+    const result = await composeCommand(d, intakeId, { demo: true });
     expect(result.composed.ok).toBe(true);
     expect(result.remainingUsd).toBe((await workspaceRemaining(d)).remainingUsd);
     expect(recommend.mock.calls.length).toBe(calls);
@@ -601,8 +650,11 @@ describe('Recommendation screen commands return everything they change (F14, ADR
   });
 
   it('accepts exactly two request bodies: { ensure: true } or { answers }; an empty body is still refused', () => {
-    expect(RecommendInput.safeParse({ ensure: true }).success).toBe(true);
-    expect(RecommendInput.safeParse({ answers: [] }).success).toBe(true);
+    expect(RecommendInput.safeParse({ ensure: true, demo: true }).success).toBe(true);
+    expect(RecommendInput.safeParse({ answers: [], demo: false }).success).toBe(true);
+    // Each says the mode its screen showed (B-199).
+    expect(RecommendInput.safeParse({ ensure: true }).success).toBe(false);
+    expect(RecommendInput.safeParse({ answers: [] }).success).toBe(false);
     expect(RecommendInput.safeParse({}).success).toBe(false);
     expect(RecommendInput.safeParse({ ensure: false }).success).toBe(false);
     expect(RecommendInput.safeParse({ ensure: 'yes' }).success).toBe(false);
@@ -793,12 +845,12 @@ describe('the first recommendation is asked for once per intake (F03, ADR-0091)'
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
-    const [a, b] = await Promise.all([recommendCommand(d, intakeId, { ensure: true }), recommendCommand(d, intakeId, { ensure: true })]);
+    const [a, b] = await Promise.all([recommendCommand(d, intakeId, { ensure: true, demo: true }), recommendCommand(d, intakeId, { ensure: true, demo: true })]);
     expect(a.recommendation).toEqual(b.recommendation);
     expect(recommend).toHaveBeenCalledTimes(1);
     expect(intakeCalls()).toBe(1);
     // Later asks read the stored one.
-    await recommendCommand(d, intakeId, { ensure: true });
+    await recommendCommand(d, intakeId, { ensure: true, demo: true });
     expect(recommend).toHaveBeenCalledTimes(1);
   });
 
@@ -806,7 +858,7 @@ describe('the first recommendation is asked for once per intake (F03, ADR-0091)'
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'Tighten my quarterly memo' });
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
-    const [first, command] = await Promise.all([currentRecommendation(d, intakeId), recommendCommand(d, intakeId, { ensure: true })]);
+    const [first, command] = await Promise.all([currentRecommendation(d, intakeId), recommendCommand(d, intakeId, { ensure: true, demo: true })]);
     expect(first).toEqual(command.recommendation);
     expect(recommend).toHaveBeenCalledTimes(1);
     expect(intakeCalls()).toBe(1);
@@ -817,13 +869,13 @@ describe('the first recommendation is asked for once per intake (F03, ADR-0091)'
     const { intakeId } = await createIntake(d, { text: 'A memo' });
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
     recommend.mockRejectedValueOnce(new GatewayError('rate-limited', 'rate-limited from the provider'));
-    const both = await Promise.allSettled([recommendCommand(d, intakeId, { ensure: true }), recommendCommand(d, intakeId, { ensure: true })]);
+    const both = await Promise.allSettled([recommendCommand(d, intakeId, { ensure: true, demo: true }), recommendCommand(d, intakeId, { ensure: true, demo: true })]);
     expect(both).toEqual([
       { status: 'rejected', reason: expect.objectContaining({ message: expect.stringMatching(/busy/) }) },
       { status: 'rejected', reason: expect.objectContaining({ message: expect.stringMatching(/busy/) }) },
     ]);
     expect(recommend).toHaveBeenCalledTimes(1);
-    expect((await recommendCommand(d, intakeId, { ensure: true })).recommendation.recipeId).toBeTruthy();
+    expect((await recommendCommand(d, intakeId, { ensure: true, demo: true })).recommendation.recipeId).toBeTruthy();
     expect(recommend).toHaveBeenCalledTimes(2);
   });
 
@@ -845,15 +897,15 @@ describe('"Build my own" and a re-route asked again while under way join the cal
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
     const compose = vi.spyOn(d.services.advisor, 'compose');
-    const [a, b] = await Promise.all([composeCommand(d, intakeId), composeCommand(d, intakeId)]);
+    const [a, b] = await Promise.all([composeCommand(d, intakeId, { demo: true }), composeCommand(d, intakeId, { demo: true })]);
     expect(a.composed).toEqual(b.composed);
     expect(compose).toHaveBeenCalledTimes(1);
     // "Try building again" once nothing is under way composes again, as it always has.
-    await composeCommand(d, intakeId);
+    await composeCommand(d, intakeId, { demo: true });
     expect(compose).toHaveBeenCalledTimes(2);
     // Another intake's compose is its own.
     const other = await createIntake(d, { text: 'Tighten my quarterly memo' });
-    await Promise.all([composeCommand(d, intakeId), composeCommand(d, other.intakeId)]);
+    await Promise.all([composeCommand(d, intakeId, { demo: true }), composeCommand(d, other.intakeId, { demo: true })]);
     expect(compose).toHaveBeenCalledTimes(4);
   });
 
@@ -863,10 +915,10 @@ describe('"Build my own" and a re-route asked again while under way join the cal
     const { answers } = await currentRecommendation(d, intakeId);
     const flipped = answers.map((a, i) => (i === 0 ? { ...a, answer: !a.answer, confidence: 1, setBy: 'user' as const } : a));
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
-    const [a, b] = await Promise.all([recommendCommand(d, intakeId, { answers: flipped }), recommendCommand(d, intakeId, { answers: flipped })]);
+    const [a, b] = await Promise.all([recommendCommand(d, intakeId, { answers: flipped, demo: true }), recommendCommand(d, intakeId, { answers: flipped, demo: true })]);
     expect(a.recommendation).toEqual(b.recommendation);
     expect(recommend).toHaveBeenCalledTimes(1);
-    await Promise.all([recommendCommand(d, intakeId, { answers: flipped }), recommendCommand(d, intakeId, { answers })]);
+    await Promise.all([recommendCommand(d, intakeId, { answers: flipped, demo: true }), recommendCommand(d, intakeId, { answers, demo: true })]);
     expect(recommend).toHaveBeenCalledTimes(3);
   });
 
@@ -875,10 +927,10 @@ describe('"Build my own" and a re-route asked again while under way join the cal
     const { intakeId } = await createIntake(d, { text: 'A memo' });
     const compose = vi.spyOn(d.services.advisor, 'compose');
     compose.mockRejectedValueOnce(new GatewayError('rate-limited', 'rate-limited from the provider'));
-    const both = await Promise.allSettled([composeCommand(d, intakeId), composeCommand(d, intakeId)]);
+    const both = await Promise.allSettled([composeCommand(d, intakeId, { demo: true }), composeCommand(d, intakeId, { demo: true })]);
     expect(both.map((r) => r.status)).toEqual(['rejected', 'rejected']);
     expect(compose).toHaveBeenCalledTimes(1);
-    expect((await composeCommand(d, intakeId)).composed).toBeTruthy();
+    expect((await composeCommand(d, intakeId, { demo: true })).composed).toBeTruthy();
     expect(compose).toHaveBeenCalledTimes(2);
   });
 });

@@ -30,7 +30,7 @@ import type { HeldKeyIn } from './http.ts';
 import { modelProblem } from './model-errors.ts';
 import { RefError, storeRef } from './refs.ts';
 import { readIntact } from './run-data.ts';
-import type { AnswerWaitPatch, ControlInput, ProblemInput, RecommendInput, RefInput, RendererPatch, ResolutionInput, SettingsPatch, SpendAction, StartInput } from './schemas.ts';
+import type { AnswerWaitPatch, ComposeInput, ControlInput, ProblemInput, RecommendInput, RefInput, RendererPatch, ResolutionInput, SettingsPatch, SpendAction, StartInput } from './schemas.ts';
 
 export class HttpError extends Error {
   override name = 'HttpError';
@@ -216,12 +216,14 @@ export interface ComposeResultView {
  * sequence, ensure asks the model at most once, and two at the same time share one call (currentRecommendation).
  */
 export async function recommendCommand(deps: Deps, intakeId: string, input: z.infer<typeof RecommendInput>): Promise<RecommendResult> {
+  refuseChangedMode(deps, input.demo, 'this');
   const recommendation = 'ensure' in input ? await currentRecommendation(deps, intakeId) : await recommendIntake(deps, intakeId, input.answers);
   return { recommendation, remainingUsd: (await workspaceRemaining(deps)).remainingUsd };
 }
 
 /** POST /compose ("Build my own"). It never asks for a recommendation, so it works while recommending is refused. */
-export async function composeCommand(deps: Deps, intakeId: string): Promise<ComposeResultView> {
+export async function composeCommand(deps: Deps, intakeId: string, input: z.infer<typeof ComposeInput>): Promise<ComposeResultView> {
+  refuseChangedMode(deps, input.demo, 'this');
   const composed = await composeIntake(deps, intakeId);
   return { composed, remainingUsd: (await workspaceRemaining(deps)).remainingUsd };
 }
@@ -237,16 +239,10 @@ export async function addRef(deps: Deps, input: z.infer<typeof RefInput>): Promi
 }
 
 export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): Promise<{ runId: string }> {
-  // The mode the screen showed must still be byway's (B-199): a Recommendation screen drawn in demo mode says nothing is
-  // charged, and demo mode can be turned off in another tab, or keys added, while it is open.
-  if (input.demo !== (deps.services.mode === 'demo')) {
-    throw new HttpError(
-      409,
-      input.demo
-        ? 'Demo mode was turned off since this page was shown: reload it to see what the run costs.'
-        : 'Demo mode was turned on since this page was shown: reload it to see the run with sample outputs.',
-    );
-  }
+  // A Start sent again under its id is that run (ADR-0099 decision 7), whatever the mode is now: it has started already,
+  // and refusing it would hide a run that is under way (B-199's check). Any other Start is checked for the mode first.
+  const before = input.runId !== undefined ? await deps.services.store.getRun(input.runId) : undefined;
+  if (before === undefined) refuseChangedMode(deps, input.demo, 'the run');
   const intake = await requireIntake(deps, input.intakeId);
   const { services } = deps;
   let recipe: Recipe | undefined;
@@ -271,14 +267,14 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
   const spend = await workspaceRemaining(deps);
   // A Start sent again under its id, with the same budget, is that run (ADR-0099 decision 7): its own first call has
   // already lowered what is left, so it is not checked again. The runner still decides same run or conflict.
-  const before = input.runId !== undefined ? await services.store.getRun(input.runId) : undefined;
   const problem = before !== undefined && before.budgetUsd === input.budgetUsd ? null : budgetProblem(input.budgetUsd, spend);
   if (problem) throw new HttpError(400, problem);
   const run = await refusedAsHttp(!input.recipeId, () => startOnce(services, {
     workspaceId: spend.workspaceId,
     recipe,
     problem: intake.problem,
-    profileId: deps.profileId,
+    // A Start sent again is the same Start: the profile it was first sent with, not the one demo mode may give now.
+    profileId: before?.profileId ?? deps.profileId,
     budgetUsd: input.budgetUsd,
     intakeId: intake.id,
     ...(input.routes ? { routes: input.routes } : {}),
@@ -302,6 +298,29 @@ async function refusedAsHttp<T>(composed: boolean, start: () => Promise<T>): Pro
     const why = Array.isArray(problems) && problems.length ? problems.join('; ') : err.message;
     throw new HttpError(400, `byway cannot run this recipe: ${why}.${composed ? ' Build your own again.' : ''}`);
   }
+}
+
+/**
+ * The mode a screen showed must still be byway's before anything it sends that may spend (B-199): a screen drawn in demo
+ * mode says nothing is charged, and demo mode can be turned off in another tab while it is open, or on.
+ */
+function refuseChangedMode(deps: Deps, demo: boolean, what: string): void {
+  if (demo === (deps.services.mode === 'demo')) return;
+  throw new HttpError(
+    409,
+    demo
+      ? `Demo mode was turned off since this page was shown: reload it to see what ${what} costs.`
+      : `Demo mode was turned on since this page was shown: reload it to see ${what} with sample outputs.`,
+  );
+}
+
+/**
+ * The stored composed recipe as the Recommendation screen shows it, its estimate made again with the profile a run would
+ * use now (B-199's check): one built in demo mode was estimated at nothing, and demo mode may have been turned off since.
+ */
+export function composedNow(deps: Deps, intake: IntakeRecord): ComposeView | null {
+  if (!intake.composed) return null;
+  return composeView({ ...intake.composed, estimate: deps.services.advisor.estimate(intake.composed.recipe, deps.profileId, intake.problem) });
 }
 
 /** The violation a stored composed recipe gets when the recipe it was built from is no longer in the catalog. */

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { Nav } from '../src/components/Nav.tsx';
+import { DemoBanner } from '../src/components/DemoBanner.tsx';
 import { RestartedNotice } from '../src/components/RestartedNotice.tsx';
 import { SandboxBanner } from '../src/components/SandboxBanner.tsx';
 import { TechNamesProvider } from '../src/components/TechNames.tsx';
@@ -47,13 +48,8 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <a className="skip-link" href="#main">
           Skip to content
         </a>
-        {services.mode === 'demo' ? (
-          <div className="demo-banner" role="note">
-            <p>
-              Demo mode — sample outputs, no AI calls. <Link href="/settings#providers">Set up providers</Link>
-            </p>
-          </div>
-        ) : null}
+        {/* Read again on each screen and while the tab is in view, as the sandbox banner is (B-199). */}
+        <DemoBanner demo={services.mode === 'demo'} />
         {/* On every screen while the page renderer's OS sandbox is off, or on but unable to start (ADR-0105): from the
             server's state, then read again on each navigation and while the tab is visible. */}
         <SandboxBanner renderer={renderer} />
