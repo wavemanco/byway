@@ -48,9 +48,12 @@ export interface AccessInput {
   host: string | null;
   /** This start's host name (ACCESS_HOST); undefined when byway was started without one. */
   accessHost: string | undefined;
+  /** The request's Sec-Fetch-Site and Sec-Fetch-Mode headers, which browsers send and scripts do not. */
+  secFetchSite?: string | null;
+  secFetchMode?: string | null;
 }
 
-export type AccessResult = { ok: true } | { ok: false; status: number; message: string } | { ok: 'open'; setCookie: string };
+export type AccessResult = { ok: true } | { ok: false; status: number; message: string; code?: string } | { ok: 'open'; setCookie: string };
 
 /** Two secrets compared in constant time, by every runtime the guard runs in. */
 function sameKey(a: string, b: string): boolean {
@@ -90,6 +93,10 @@ export function checkAccess(input: AccessInput): AccessResult {
   }
   const cookie = cookieValue(input.cookieHeader, ACCESS_COOKIE);
   if (cookie !== null && sameKey(cookie, input.key)) return { ok: true };
+  // A page's own request (not a page being opened) from a browser at an address other than this start's name: the cookie
+  // belongs to that name alone, so this is a tab from before byway last started, one at 127.0.0.1 from before B-188
+  // among them, and it is told so (B-188's check 4). A page being opened gets the page below; a script, this answer.
+  if (input.secFetchSite && input.secFetchMode !== 'navigate' && hostName(input.host) !== input.accessHost) return { ok: false, status: 401, message: RESTARTED, code: RESTARTED_CODE };
   return { ok: false, status: 401, message: 'byway answers only the browser that opened the link it printed when it started. Open that link, shown in the window where byway runs.' };
 }
 

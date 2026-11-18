@@ -91,7 +91,7 @@ async function pressTwiceWhileRefused(page: Page, control: Locator, sends: { cou
 const turn = (page: Page) => page.locator('section.turn');
 
 test.describe('Settings’ single-key shortcuts, kept with byway’s settings (B-188)', () => {
-  test('turned off in Settings, Y no longer answers a confirm: in another open tab at once, and after a reload', async ({ page, context }) => {
+  test('turned off in Settings, Y no longer answers a confirm: in another open tab at once, after a reload, and in the Settings tab itself', async ({ page, context }) => {
     const { runId } = data().confirm;
     const sends = await refuseSlowly(page, (p) => p.startsWith(`/api/runs/${runId}/checkpoints/`), 'e2e: that answer was not sent');
     const listedY = () => turn(page).locator('.shortcuts kbd', { hasText: /^Y$/ });
@@ -125,6 +125,16 @@ test.describe('Settings’ single-key shortcuts, kept with byway’s settings (B
       await page.keyboard.press('y');
       await page.waitForTimeout(SLOW_MS);
       expect(sends.count(), 'answers sent by Y after a reload').toBe(1);
+      // The tab where it was turned off goes on to the question: Y does nothing there either.
+      const own = await refuseSlowly(settings, (p) => p.startsWith(`/api/runs/${runId}/checkpoints/`), 'e2e: that answer was not sent');
+      await settings.goto(`/runs/${runId}`);
+      await expect(turn(settings).getByRole('button', { name: 'Yes', exact: true })).toBeVisible();
+      await expect(turn(settings).locator('.shortcuts kbd', { hasText: /^Y$/ })).toHaveCount(0);
+      await turn(settings).getByRole('button', { name: 'Yes', exact: true }).focus();
+      await settings.keyboard.press('y');
+      await settings.waitForTimeout(SLOW_MS);
+      expect(own.count(), 'answers sent by Y in the tab that turned it off').toBe(0);
+      await settings.goto('/settings');
     } finally {
       // The rest of the suite has it on.
       if ((await toggle.getAttribute('aria-checked')) === 'false') {
@@ -132,6 +142,37 @@ test.describe('Settings’ single-key shortcuts, kept with byway’s settings (B
         await expect(toggle).toHaveAttribute('aria-checked', 'true');
       }
       await settings.close();
+    }
+  });
+
+  test('a tab in another browser profile, which hears no other tab, reads the switch again when it comes into view', async ({ page, context, browser }) => {
+    const { runId } = data().confirm;
+    const origin = test.info().project.use.baseURL ?? '';
+    const other = await browser.newContext();
+    await other.addCookies(await context.cookies());
+    const away = await other.newPage();
+    const sends = await refuseSlowly(away, (p) => p.startsWith(`/api/runs/${runId}/checkpoints/`), 'e2e: that answer was not sent');
+    const listedY = () => turn(away).locator('.shortcuts kbd', { hasText: /^Y$/ });
+    await away.goto(`${origin}/runs/${runId}`);
+    await expect(listedY()).toHaveCount(1);
+    await page.goto('/settings');
+    const toggle = page.getByRole('switch', { name: 'Single-key shortcuts' });
+    try {
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-checked', 'false');
+      // The other profile's tab comes back into view.
+      await away.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      await expect(listedY()).toHaveCount(0);
+      await turn(away).getByRole('button', { name: 'Yes', exact: true }).focus();
+      await away.keyboard.press('y');
+      await away.waitForTimeout(SLOW_MS);
+      expect(sends.count(), 'answers sent by Y in the other profile').toBe(0);
+    } finally {
+      if ((await toggle.getAttribute('aria-checked')) === 'false') {
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-checked', 'true');
+      }
+      await other.close();
     }
   });
 });

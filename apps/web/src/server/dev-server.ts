@@ -148,7 +148,7 @@ function refuse(res: ServerResponse, verdict: Extract<GuardResult, { ok: false }
 /** The per-start secret's verdict on one request (B-188, guard.ts), with this start's key and host name from BYWAY_ACCESS_KEY and BYWAY_ACCESS_HOST. */
 export function accessOf(req: Pick<IncomingMessage, 'url' | 'headers'>): AccessResult {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1');
-  return checkAccess({ path: url.pathname, linkKey: url.searchParams.get('key'), cookieHeader: header(req.headers, 'cookie'), key: process.env.BYWAY_ACCESS_KEY, host: header(req.headers, 'host'), accessHost: process.env.BYWAY_ACCESS_HOST });
+  return checkAccess({ path: url.pathname, linkKey: url.searchParams.get('key'), cookieHeader: header(req.headers, 'cookie'), key: process.env.BYWAY_ACCESS_KEY, host: header(req.headers, 'host'), accessHost: process.env.BYWAY_ACCESS_HOST, secFetchSite: header(req.headers, 'sec-fetch-site'), secFetchMode: header(req.headers, 'sec-fetch-mode') });
 }
 
 function refuseUpgrade(socket: Duplex, status: number, reason: string): void {

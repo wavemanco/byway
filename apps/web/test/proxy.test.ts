@@ -69,6 +69,17 @@ describe("proxy.ts, the production server's guard", () => {
     expect(await polled.json()).toEqual({ error: expect.stringMatching(/started again/), code: 'RESTARTED' });
   });
 
+  it('tells a tab from before byway last started, at 127.0.0.1, that it did, on its polls; a page opened there gets the link page (B-188)', async () => {
+    started();
+    const polled = at('127.0.0.1:3000', '/api/waiting', { 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'cors' });
+    expect(polled.status).toBe(401);
+    expect(await polled.json()).toEqual({ error: expect.stringMatching(/started again/), code: 'RESTARTED' });
+    const opened = at('127.0.0.1:3000', '/', { accept: 'text/html', 'sec-fetch-site': 'none', 'sec-fetch-mode': 'navigate' });
+    expect(opened.status).toBe(401);
+    expect(await opened.text()).toMatch(/opened the link/);
+    expect(await at('127.0.0.1:3000', '/api/waiting').json()).toEqual({ error: expect.stringMatching(/opened the link/) });
+  });
+
   it('refuses a foreign Host before anything else, and everything when byway was started without its key', () => {
     started();
     expect(at('rebind.evil.example', '/settings', { cookie: COOKIE }).status).toBe(403);

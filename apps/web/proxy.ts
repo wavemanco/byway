@@ -33,6 +33,8 @@ export function proxy(request: NextRequest) {
     key: process.env.BYWAY_ACCESS_KEY,
     host: request.headers.get('host'),
     accessHost,
+    secFetchSite: request.headers.get('sec-fetch-site'),
+    secFetchMode: request.headers.get('sec-fetch-mode'),
   });
   if (access.ok === 'open') {
     return new NextResponse(openedPage(), { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Set-Cookie': access.setCookie, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' } });
@@ -41,7 +43,7 @@ export function proxy(request: NextRequest) {
     if (html) {
       return new NextResponse(refusalPage(access.message), { status: access.status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
     }
-    return NextResponse.json({ error: access.message }, { status: access.status, headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json({ error: access.message, ...(access.code ? { code: access.code } : {}) }, { status: access.status, headers: { 'Cache-Control': 'no-store' } });
   }
   return NextResponse.next();
 }

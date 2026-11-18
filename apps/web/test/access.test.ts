@@ -77,6 +77,23 @@ describe("byway's start link and access cookie", () => {
     }
   });
 
+  it('a page’s own request from a browser at 127.0.0.1, which can never hold the cookie, is told byway started again; a page being opened, a script and this start’s name are not (B-188)', () => {
+    const at = (host: string, secFetchSite: string | null, secFetchMode: string | null) =>
+      checkAccess({ path: '/api/waiting', linkKey: null, cookieHeader: null, key: KEY, host, accessHost: HOST, secFetchSite, secFetchMode });
+    // A tab from before byway last started: before B-188 its pages were at 127.0.0.1:3000.
+    for (const host of ['127.0.0.1:3000', 'localhost:3000', '[::1]:3000']) {
+      expect(at(host, 'same-origin', 'cors'), host).toMatchObject({ ok: false, status: 401, code: RESTARTED_CODE, message: expect.stringMatching(/started again/) });
+    }
+    // A page being opened there gets the page that says to open the link, not "started again".
+    expect(at('127.0.0.1:3000', 'none', 'navigate')).not.toHaveProperty('code');
+    // A script sends no Sec-Fetch headers: the plain refusal.
+    expect(at('127.0.0.1:3000', null, null)).not.toHaveProperty('code');
+    // At this start's own name a browser that has lost its cookie is not a tab from before.
+    expect(at(`${HOST}:3000`, 'same-origin', 'cors')).not.toHaveProperty('code');
+    // And the cookie still lets everything through, at either address.
+    expect(checkAccess({ path: '/api/waiting', linkKey: null, cookieHeader: `${ACCESS_COOKIE}=${KEY}`, key: KEY, host: '127.0.0.1:3000', accessHost: HOST, secFetchSite: 'same-origin', secFetchMode: 'cors' })).toEqual({ ok: true });
+  });
+
   it('a cookie from an earlier start is refused: the key is new at each start', () => {
     expect(ask('/', { cookie: `${ACCESS_COOKIE}=${KEY}`, key: 'n'.repeat(43) })).toMatchObject({ ok: false, status: 401 });
   });

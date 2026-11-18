@@ -3,7 +3,7 @@
  * `~/.byway` elsewhere. Never inside OneDrive (a synced live database corrupts, ADR-0063) and never inside a git working
  * tree (product data must not be committed or mix with research material, ADR-0041 rule 3).
  */
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync, statSync } from 'node:fs';
 import { homedir as osHomedir } from 'node:os';
 import path from 'node:path';
 import { UnsafeDataDirError } from './errors.ts';
@@ -131,9 +131,22 @@ function realLocation(p: string): string | undefined {
  * and a trailing separator do not tell them apart (B-188's re-check 3).
  */
 export function sameLocation(a: string, b: string): boolean {
+  // Two folders that exist are the same when the file system says so: a volume and a file id, whatever path reached them
+  // (a network path to this computer and the \\?\Volume{…} form too; B-188's check 4).
+  const identity = (p: string) => {
+    try {
+      const s = statSync(p, { bigint: true });
+      return s.ino === 0n ? undefined : `${s.dev}:${s.ino}`;
+    } catch {
+      return undefined;
+    }
+  };
+  const [ia, ib] = [identity(a), identity(b)];
+  if (ia !== undefined && ib !== undefined) return ia === ib;
+  // Otherwise by real path, a folder not made yet by the path it will have.
   const real = (p: string) => {
-    const plain = path.resolve(p.replace(/^\\\\\?\\/, ''));
-    return (realLocation(plain) ?? plain).replace(/^\\\\\?\\/, '');
+    const plain = path.resolve(p.replace(/^\\\\\?\\(?=[a-z]:)/i, ''));
+    return (realLocation(plain) ?? plain).replace(/^\\\\\?\\(?=[a-z]:)/i, '');
   };
   return path.relative(real(a), real(b)) === '';
 }

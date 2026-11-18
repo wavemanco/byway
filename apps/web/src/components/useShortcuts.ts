@@ -1,6 +1,8 @@
 'use client';
 
-import { createContext, createElement, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { createContext, createElement, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import type { Preferences } from '@byway/contracts';
+import { get } from './api.ts';
 
 export type ShortcutMap = Partial<Record<string, (event: KeyboardEvent) => void>>;
 
@@ -81,7 +83,7 @@ function describe(event: KeyboardEvent, scope: HTMLElement | null | undefined): 
  * Settings' "Single-key shortcuts", a Store preference (Preferences.singleKeyShortcuts) the root layout hands down, so it
  * stays as set when byway starts again at a new address (B-188's re-check 2). On by default (WCAG 2.1.4 lets it be off).
  */
-const SingleKeys = createContext(true);
+const SingleKeys = createContext<{ on: boolean; set(on: boolean): void }>({ on: true, set: () => undefined });
 
 /**
  * The channel byway's open tabs hear a change of the switch on (B-188's re-check 3): a tab other than the one that saved
@@ -111,12 +113,47 @@ export function SingleKeysProvider({ value, children }: { value: boolean; childr
     };
     return () => channel.close();
   }, []);
-  return createElement(SingleKeys, { value: on }, children);
+  // And from byway itself, once this page has loaded and whenever it comes back into view (B-188's check 4): a change made
+  // while this page was loading reached it by neither its render nor the channel, and a tab in another browser profile
+  // or a private window never hears the channel. A read that fails changes nothing.
+  useEffect(() => {
+    let current = true;
+    const reread = () => {
+      if (document.visibilityState !== 'visible') return;
+      get<Preferences>('/api/settings').then(
+        (prefs) => current && typeof prefs.singleKeyShortcuts === 'boolean' && setOn(prefs.singleKeyShortcuts),
+        () => undefined,
+      );
+    };
+    reread();
+    document.addEventListener('visibilitychange', reread);
+    return () => {
+      current = false;
+      document.removeEventListener('visibilitychange', reread);
+    };
+  }, []);
+  const switchState = useMemo(() => ({ on, set: setOn }), [on]);
+  return createElement(SingleKeys, { value: switchState }, children);
 }
 
 /** Whether single-key shortcuts are on (Settings), for panels that list them. */
 export function useSingleKeyShortcuts(): boolean {
-  return useContext(SingleKeys);
+  return useContext(SingleKeys).on;
+}
+
+/**
+ * Settings' own switch: the value every screen of this tab uses, and `saved(on)`, which a successful save calls so that
+ * this tab and byway's others take it at once.
+ */
+export function useSingleKeysSwitch(): [on: boolean, saved: (on: boolean) => void] {
+  const { on, set } = useContext(SingleKeys);
+  return [
+    on,
+    (next) => {
+      set(next);
+      announceSingleKeys(next);
+    },
+  ];
 }
 
 /**

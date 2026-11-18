@@ -1,4 +1,4 @@
-import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, posix, win32 } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { UnsafeDataDirError, createStore, defaultDataDir, resolveDataDir, sameLocation, unsafeLocationReason } from '../src/index.ts';
@@ -49,6 +49,27 @@ describe('sameLocation (B-188: a fixed demo key never guards the default data fo
     mkdirSync(other);
     expect(sameLocation(other, real)).toBe(false);
     expect(sameLocation(join(real, 'inside'), real)).toBe(false);
+  });
+
+  it('knows the folder by the file system’s own identity once it exists, through a network path to this computer too (B-188’s check 4)', () => {
+    const root = tempDir();
+    const real = join(root, 'byway');
+    mkdirSync(real);
+    expect(sameLocation(`\\\\?\\${real}`, real)).toBe(process.platform === 'win32');
+    if (process.platform !== 'win32') return;
+    // \\localhost\C$ reaches the same folder where administrative shares are on, as they are by default.
+    const unc = `\\\\localhost\\${real[0]}${real.slice(2)}`;
+    let reachable = true;
+    try {
+      statSync(unc);
+    } catch {
+      reachable = false;
+    }
+    if (reachable) {
+      expect(sameLocation(unc, real)).toBe(true);
+      expect(sameLocation(`\\\\?\\UNC\\localhost\\${real[0]}${real.slice(2)}`, real)).toBe(true);
+    }
+    expect(sameLocation(unc, root)).toBe(false);
   });
 });
 
