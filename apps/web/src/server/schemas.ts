@@ -50,6 +50,11 @@ export const StartInput = z.object({
   recipeId: z.string().regex(/^[a-z0-9-]{1,64}$/).optional(),
   budgetUsd: z.number().positive().max(MAX_BUDGET_USD),
   routes: z.record(z.string().max(64), z.string().max(64)).optional(),
+  /**
+   * For a composed recipe, the digest of the view the sending tab showed (ComposeView.shown; B-199's third check): its
+   * Start is compared with what that tab showed. A Start without it is compared with what is stored.
+   */
+  composedShown: z.string().regex(/^[0-9a-f]{64}$/).optional(),
   /** "Examples you admire", already stored through /api/refs (StartRunInput.inputs.refs). */
   refs: z.array(ArtifactId).max(MAX_REFS, `Add at most ${MAX_REFS} examples.`).optional(),
   /**

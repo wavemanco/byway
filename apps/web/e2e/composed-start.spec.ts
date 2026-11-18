@@ -75,10 +75,15 @@ test('a composed recipe that no longer passes the checks is refused at Start (40
 });
 
 test('a composed recipe whose explanation changed does not start (409); the new one shows, and a second Start runs it', async ({ page }) => {
-  const intakeId = await buildMyOwn(page);
-  // Stored as an older byway explained it, after this screen was drawn: the screen's Start is admitted again and differs.
-  await storedAs(intakeId, (c) => ({ ...c, diff: ['The same steps as Memo Polish.'] }));
+  await buildMyOwn(page);
+  // As a tab drawn before the change would send it: what it showed is not what byway would run now (B-199's third check).
+  const starts = (url: URL) => url.pathname === '/api/runs';
+  await page.route(starts, async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    await route.continue({ postData: JSON.stringify({ ...route.request().postDataJSON(), composedShown: '0'.repeat(64) }) });
+  });
   expect(await startAndRead(page)).toBe(409);
+  await page.unroute(starts);
   await expect(page.locator('.start-bar-error')).toContainText('now explains it differently');
   await expect(page.locator('.composed')).toContainText('repeats up to 1 round instead of 2');
   await expect(page.locator('.composed')).not.toContainText('The same steps as Memo Polish.');

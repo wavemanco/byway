@@ -458,6 +458,8 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
         intakeId,
         // The mode this screen showed, which byway checks is still its own (B-199).
         demo,
+        // And, for a recipe you built, what this tab showed of it, which byway compares its Start with (B-199).
+        ...(composed ? { composedShown: composed.shown } : {}),
         budgetUsd: budget,
         ...(recipeId ? { recipeId } : {}),
         ...(routes && Object.keys(routes).length > 0 ? { routes } : {}),

@@ -52,7 +52,7 @@ export default async function RecommendPage({ params, searchParams }: PageProps<
   }
   const recommendation = chosenRecipeId ? null : (intake.recommendation ?? null);
   // The composed recipe stays on the server; the page gets what it shows.
-  const composed = await composedNow(deps, intake);
+  const composed = composedNow(deps, intake);
   const spend = await workspaceRemaining(deps);
 
   return (

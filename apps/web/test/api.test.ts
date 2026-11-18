@@ -29,6 +29,7 @@ import {
   recommendCommand,
   workspaceRemaining,
   composedNow,
+  composeView,
   runUsesRealModels,
 } from '../src/server/api.ts';
 import { AnswerWaitPatch, RecommendInput } from '../src/server/schemas.ts';
@@ -242,31 +243,61 @@ describe('route handler logic', () => {
     return { demo: { ...base, services: current.host.services(true), profileId: 'demo' }, live: { ...base, services: live, profileId: 'balanced' } };
   }
 
-  it('shows a recipe built in demo mode as a Start would admit it now, estimate and explanation, so its Start is not refused (B-199)', async () => {
+  it('shows a recipe built in demo mode as a Start would admit it now, estimate and explanation, and stores nothing (B-199)', async () => {
     const { demo, live } = await bothModes();
     const { intakeId } = await createIntake(demo, { text: 'A landing page for my pottery studio' });
     await composeCommand(demo, intakeId, { demo: true });
     const built = (await demo.services.store.getIntake(intakeId))!;
     expect(built.composed?.estimate.highUsd).toBe(0);
     // Demo mode turned off, and the screen drawn again: what a run would cost now, and its steps as they would run.
-    const shown = await composedNow(live, built);
-    expect(shown?.estimate.highUsd).toBeGreaterThan(0);
+    const shown = composedNow(live, built)!;
+    expect(shown.estimate.highUsd).toBeGreaterThan(0);
     const { recipe: _recipe, ...admitted } = live.services.advisor.admit(built.composed!, { problem: built.problem, profileId: 'balanced' });
     expect(shown).toMatchObject(admitted);
-    // Its Start from that screen starts.
-    expect(await startRun(live, { demo: false, intakeId, budgetUsd: 5 })).toEqual({ runId: expect.any(String) });
+    expect((await live.services.store.getIntake(intakeId))!.composed).toEqual(built.composed);
+    // A tab still showing what it was built with is refused, and shown the recipe as it would run; the tab drawn again starts.
+    const stale = composeView(built.composed!).shown;
+    await expect(startRun(live, { demo: false, intakeId, budgetUsd: 5, composedShown: stale })).rejects.toMatchObject({ status: 409, code: 'composed-changed', body: { composed: expect.objectContaining({ shown: shown.shown }) } });
+    expect(await startRun(live, { demo: false, intakeId, budgetUsd: 5, composedShown: shown.shown })).toEqual({ runId: expect.any(String) });
+  });
+
+  it('compares a composed Start with what its own tab showed, not with what another tab drew since (B-199)', async () => {
+    const { demo, live } = await bothModes();
+    const { intakeId } = await createIntake(live, { text: 'A landing page for my pottery studio' });
+    await composeCommand(demo, intakeId, { demo: true });
+    const stored = (await live.services.store.getIntake(intakeId))!;
+    // Tab A was drawn under one profile; the profile changes, and tab B draws the screen under the new one.
+    const tabA = composedNow(live, stored)!;
+    const best: Deps = { ...live, profileId: 'best' };
+    const tabB = composedNow(best, stored)!;
+    expect(tabB.shown).not.toBe(tabA.shown);
+    await expect(startRun(best, { demo: false, intakeId, budgetUsd: 20, composedShown: tabA.shown })).rejects.toMatchObject({ status: 409, code: 'composed-changed' });
+    expect(await live.services.store.listRuns(live.workspaceId)).toEqual([]);
+    expect(await startRun(best, { demo: false, intakeId, budgetUsd: 20, composedShown: tabB.shown })).toEqual({ runId: expect.any(String) });
+  });
+
+  it('shows a recipe that no longer passes as stored, so drawing the screen never lifts its refusal (B-199)', async () => {
+    const { demo, live } = await bothModes();
+    const { intakeId } = await createIntake(live, { text: 'A memo' });
+    await composeCommand(demo, intakeId, { demo: true });
+    const stored = (await live.services.store.getIntake(intakeId))!;
+    const refused = { ...stored.composed!, ok: false, violations: [{ ruleId: 'ADMIT-HASH', message: 'it is not the recipe you were shown' }] };
+    await live.services.store.updateIntake(intakeId, { composed: refused });
+    const view = composedNow(live, (await live.services.store.getIntake(intakeId))!)!;
+    expect(view).toMatchObject({ ok: false, violations: [{ ruleId: 'ADMIT-HASH' }] });
+    expect((await live.services.store.getIntake(intakeId))!.composed).toEqual(refused);
   });
 
   it('gives a resent Start of a recipe you built its run back across a mode change, and keeps the recipe that run started with (B-199)', async () => {
     const { demo, live } = await bothModes();
     const { intakeId } = await createIntake(live, { text: 'A landing page for my pottery studio' });
     await composeCommand(demo, intakeId, { demo: true });
-    await composedNow(live, (await live.services.store.getIntake(intakeId))!);
+    const shown = composedNow(live, (await live.services.store.getIntake(intakeId))!)!;
     const runId = '6e7f8091-a2b3-4c4d-9e5f-6a7b8c9d0e1f';
-    expect(await startRun(live, { demo: false, intakeId, budgetUsd: 5, runId })).toEqual({ runId });
+    expect(await startRun(live, { demo: false, intakeId, budgetUsd: 5, runId, composedShown: shown.shown })).toEqual({ runId });
     const started = (await live.services.store.getIntake(intakeId))!.composed;
     // Its answer was lost, and demo mode was turned on before the screen sent it again.
-    expect(await startRun(demo, { demo: false, intakeId, budgetUsd: 5, runId })).toEqual({ runId });
+    expect(await startRun(demo, { demo: false, intakeId, budgetUsd: 5, runId, composedShown: shown.shown })).toEqual({ runId });
     expect((await live.services.store.getIntake(intakeId))!.composed).toEqual(started);
     expect(started?.estimate.highUsd).toBeGreaterThan(0);
   });

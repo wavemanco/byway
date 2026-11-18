@@ -6,7 +6,7 @@
  * Everything here goes through the four contracts: intakes and preferences live in the Store, recipes come from
  * Advisor.recipe (or the intake's composed recipe), and pause and resume are the Runner's.
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { AnswerWait, CheckpointRecord, ChooserAnswer, ComposeResult, EvidenceLabel, IntakeRecord, ModelWait, Preferences, Recommendation, RecipePresentation, RendererSettings, RunRecord, SpendRecords } from '@byway/contracts';
 import type { Recipe } from '@byway/recipe';
 import type { z } from 'zod';
@@ -136,11 +136,21 @@ export async function currentRecommendation(deps: Deps, intakeId: string): Promi
 export type ComposeView = Omit<ComposeResult, 'recipe'> & {
   /** Whether it takes your examples (the "Examples you admire" field). */
   takesRefs: boolean;
+  /**
+   * A digest of what the screen shows of it (shownDigest), which its Start sends back (B-199's third check): byway
+   * compares a Start's admission with what the sending tab showed, not with what another tab's screen drew since.
+   */
+  shown: string;
 };
 
 export function composeView(result: ComposeResult): ComposeView {
   const { recipe, ...view } = result;
-  return { ...view, takesRefs: takesRefs(recipe) };
+  return { ...view, takesRefs: takesRefs(recipe), shown: shownDigest(result) };
+}
+
+/** What a screen shows of a composed recipe, which a Start must still find: how it explains its steps, and what it costs. */
+export function shownDigest(result: Pick<ComposeResult, 'diff' | 'presentation' | 'estimate'>): string {
+  return createHash('sha256').update(JSON.stringify([result.diff, result.presentation, result.estimate])).digest('hex');
 }
 
 /**
@@ -259,7 +269,7 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
     // A Start sent again under its run's id runs the recipe that run was started with: admitted again under the mode as
     // it is now, it could read differently and be refused although its run is under way, and the run's own explanation
     // would be overwritten (B-199's second check). The runner still refuses any mismatch of recipe, intake or problem.
-    recipe = before !== undefined ? intake.composed.recipe : await admitComposed(deps, intake.id, intake.composed, intake.problem);
+    recipe = before !== undefined ? intake.composed.recipe : await admitComposed(deps, intake.id, intake.composed, intake.problem, input.composedShown);
   }
   const refs = input.refs ?? [];
   if (refs.length > 0) {
@@ -322,21 +332,20 @@ function refuseChangedMode(deps: Deps, demo: boolean, what: string): void {
 /**
  * The stored composed recipe as the Recommendation screen shows it: admitted again as a Start would admit it (no model
  * call), with the profile a run would use now, so its estimate and its explanation are what the run would get (B-199's
- * checks: one built in demo mode was estimated at nothing, and its image steps explained as no image made). The result
- * is kept on the intake when it differs, as a Start keeps it, so a Start from this screen is not refused for explaining
- * it differently. One built from a recipe byway no longer has is shown as it was stored; its Start says why it cannot run.
+ * checks: one built in demo mode was estimated at nothing, and its image steps explained as no image made). Nothing is
+ * stored: the view's digest goes back with its Start, which is compared with what this tab showed (B-199's third check).
+ * One that no longer passes is shown as stored, so drawing the screen never lifts its refusal; one built from a recipe
+ * byway no longer has is shown as stored too, and its Start says why it cannot run.
  */
-export async function composedNow(deps: Deps, intake: IntakeRecord): Promise<ComposeView | null> {
+export function composedNow(deps: Deps, intake: IntakeRecord): ComposeView | null {
   if (!intake.composed) return null;
-  let again: ComposeResult;
+  if (!intake.composed.ok) return composeView(intake.composed);
   try {
-    again = deps.services.advisor.admit(intake.composed, { problem: intake.problem, profileId: deps.profileId });
+    return composeView(deps.services.advisor.admit(intake.composed, { problem: intake.problem, profileId: deps.profileId }));
   } catch (err) {
     if (!unknownRecipe(err)) throw err;
     return composeView(intake.composed);
   }
-  if (JSON.stringify(again) !== JSON.stringify(intake.composed)) await deps.services.store.updateIntake(intake.id, { composed: again });
-  return composeView(again);
 }
 
 /**
@@ -368,7 +377,7 @@ const unknownRecipe = (err: unknown): boolean => err instanceof Error && err.nam
  * does not start until the person has seen the new one, which the refusal carries. One built from a recipe the catalog
  * no longer has cannot be checked again, and is refused too (NEAREST_GONE).
  */
-async function admitComposed(deps: Deps, intakeId: string, stored: ComposeResult, problem: IntakeRecord['problem']): Promise<Recipe> {
+async function admitComposed(deps: Deps, intakeId: string, stored: ComposeResult, problem: IntakeRecord['problem'], shown?: string): Promise<Recipe> {
   let again: ComposeResult;
   try {
     again = deps.services.advisor.admit(stored, { problem, profileId: deps.profileId });
@@ -384,7 +393,10 @@ async function admitComposed(deps: Deps, intakeId: string, stored: ComposeResult
   if (!again.ok) {
     throw new HttpError(400, "This recipe no longer passes byway's checks, so it cannot run. Build your own again for one that does.", COMPOSED_REFUSED, { composed: composeView(again) });
   }
-  if (JSON.stringify(again.diff) !== JSON.stringify(stored.diff) || JSON.stringify(again.presentation) !== JSON.stringify(stored.presentation)) {
+  // Compared with what the sending tab showed, when it says (the view's digest; B-199's third check): another tab's screen
+  // drawn since does not stand in for this one having seen the change. Without it, with what is stored, as before.
+  const changed = shown !== undefined ? shownDigest(again) !== shown : JSON.stringify(again.diff) !== JSON.stringify(stored.diff) || JSON.stringify(again.presentation) !== JSON.stringify(stored.presentation);
+  if (changed) {
     throw new HttpError(409, 'byway checked this recipe again and now explains it differently, so it did not start. Read what it does, then start it.', COMPOSED_CHANGED, { composed: composeView(again) });
   }
   return again.recipe;
