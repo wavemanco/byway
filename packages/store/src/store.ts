@@ -474,7 +474,7 @@ export class SqliteStore implements Store {
     return writeTransaction(this.#db, () => {
       if (!q.workspace.get(workspaceId)) throw new StoreError('not-found', `no workspace ${JSON.stringify(workspaceId)}`);
       const next = mergePreferences(toPreferences(q.preferences.get(workspaceId)), p);
-      q.upsertPreferences.run(workspaceId, next.profileId, next.demoMode ? 1 : 0, next.showTechnicalNames ? 1 : 0, this.#stamp());
+      q.upsertPreferences.run(workspaceId, next.profileId, next.demoMode ? 1 : 0, next.showTechnicalNames ? 1 : 0, next.singleKeyShortcuts ? 1 : 0, this.#stamp());
       return next;
     });
   }

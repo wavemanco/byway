@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { Nav } from '../src/components/Nav.tsx';
 import { SandboxBanner } from '../src/components/SandboxBanner.tsx';
 import { TechNamesProvider } from '../src/components/TechNames.tsx';
+import { SingleKeysProvider } from '../src/components/useShortcuts.ts';
 import { getContext } from '../src/services/index.ts';
 import { waitingRunCount } from '../src/view/run.ts';
 import './styles/tokens.css';
@@ -65,9 +66,11 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           </div>
         </header>
         <TechNamesProvider value={technical}>
-          <main id="main" tabIndex={-1}>
-            {children}
-          </main>
+          <SingleKeysProvider value={preferences.singleKeyShortcuts}>
+            <main id="main" tabIndex={-1}>
+              {children}
+            </main>
+          </SingleKeysProvider>
         </TechNamesProvider>
       </body>
     </html>

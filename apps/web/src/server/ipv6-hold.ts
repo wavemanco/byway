@@ -9,6 +9,24 @@ import net from 'node:net';
 export const ipv6TakenMessage = (port: number): string =>
   `Port ${port} on [::1] (IPv6 loopback) is already in use by another program. byway holds it so that no other program receives the link it prints: stop that program, or choose another port with PORT.`;
 
+/**
+ * Whether anything accepts a connection at host:`port` now (B-188's re-check 2). On Windows a bind beside another
+ * program's 0.0.0.0 or [::] listener succeeds, so a bind check misses that program; a connection does not. Nothing is
+ * sent; refused, unreachable or no answer within `timeoutMs` counts as nothing there.
+ */
+export function answersAt(host: string, port: number, timeoutMs = 1000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host, port });
+    const done = (yes: boolean) => {
+      socket.destroy();
+      resolve(yes);
+    };
+    socket.setTimeout(timeoutMs, () => done(false));
+    socket.once('connect', () => done(true));
+    socket.once('error', () => done(false));
+  });
+}
+
 export interface Ipv6Hold {
   close(): Promise<void>;
 }

@@ -263,6 +263,12 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
           byway is not answering. Retrying; check that it is still running.
         </p>
       ) : null}
+      {connection === 'restarted' ? (
+        <p className="notice notice-caution" role="alert">
+          byway has started again, at a new address, so this page can no longer reach it. Anything you typed here and have not sent stays only on this
+          screen: copy it before you reload or leave, then open the link byway printed this time.
+        </p>
+      ) : null}
       {shownError ? (
         <p className="notice notice-danger" role="alert">
           {shownError}

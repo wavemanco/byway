@@ -9,14 +9,18 @@
  * - `now()` issues a request at once and aborts the one before it (an action needs the state after itself).
  * - `poll()` joins the request in flight, if any, so timer and visibility polls never overlap.
  * - A request this instance aborted itself never sets the connection state; one that fails, or takes longer than
- *   `timeoutMs` (its body included), sets it to 'lost' when it is still the latest, and applies nothing.
+ *   `timeoutMs` (its body included), sets it to 'lost' when it is still the latest, and applies nothing. One refused
+ *   because byway has started again at a new address sets it to 'restarted': nothing at this address answers again.
  * - `dispose()` makes the instance inert and is final for this instance only; its owner creates a new one.
  *
  * For a local, single-user app this gives the ordering a server-side snapshot revision would: each applied snapshot was
  * read by the server after the previous applied one arrived. Pure (no React, no DOM beyond AbortController).
  */
 
-export type Connection = 'ok' | 'lost';
+export type Connection = 'ok' | 'lost' | 'restarted';
+
+/** byway's refusal of a request at an earlier start's address (guard.ts RESTARTED_CODE; B-188's re-check 2). */
+export const restartedBy = (err: unknown): boolean => typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'RESTARTED';
 
 export interface RefresherOptions<T> {
   fetch(signal: AbortSignal): Promise<T>;
@@ -72,11 +76,11 @@ export function createRefresher<T>(opts: RefresherOptions<T>): Refresher {
           opts.apply(data);
           opts.status('ok');
         },
-        () => {
+        (err: unknown) => {
           // Superseded or disposed: a newer request, or nobody, owns the state now.
           if (!latest()) return;
           if (ctl.signal.aborted && !timedOut) return;
-          opts.status('lost');
+          opts.status(restartedBy(err) ? 'restarted' : 'lost');
         },
       )
       .finally(() => {

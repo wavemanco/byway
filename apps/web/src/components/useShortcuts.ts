@@ -1,7 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useRef, type RefObject } from 'react';
-import { SINGLE_KEY_SHORTCUTS, useViewerFlag } from './viewerFlags.ts';
+import { createContext, createElement, useContext, useEffect, useRef, type ReactNode, type RefObject } from 'react';
 
 export type ShortcutMap = Partial<Record<string, (event: KeyboardEvent) => void>>;
 
@@ -78,9 +77,19 @@ function describe(event: KeyboardEvent, scope: HTMLElement | null | undefined): 
   };
 }
 
-/** Whether single-key shortcuts are on in this browser (Settings), for panels that list them. */
+/**
+ * Settings' "Single-key shortcuts", a Store preference (Preferences.singleKeyShortcuts) the root layout hands down, so it
+ * stays as set when byway starts again at a new address (B-188's re-check 2). On by default (WCAG 2.1.4 lets it be off).
+ */
+const SingleKeys = createContext(true);
+
+export function SingleKeysProvider({ value, children }: { value: boolean; children: ReactNode }) {
+  return createElement(SingleKeys, { value }, children);
+}
+
+/** Whether single-key shortcuts are on (Settings), for panels that list them. */
 export function useSingleKeyShortcuts(): boolean {
-  return useViewerFlag(SINGLE_KEY_SHORTCUTS)[0];
+  return useContext(SingleKeys);
 }
 
 /**

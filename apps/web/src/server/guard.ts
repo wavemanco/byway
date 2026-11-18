@@ -13,7 +13,10 @@ export interface GuardInput {
   accessHost?: string | undefined;
 }
 
-export type GuardResult = { ok: true } | { ok: false; status: number; message: string };
+export type GuardResult = { ok: true } | { ok: false; status: number; message: string; code?: string };
+
+/** The refusal code of a request at an earlier start's name, which a polling screen tells apart (view/refresh.ts). */
+export const RESTARTED_CODE = 'RESTARTED';
 
 /**
  * The per-start secret (backlog row B-188). `pnpm start` makes a random key and a random host name each time it starts,
@@ -72,7 +75,7 @@ function hostName(host: string | null): string | null {
   return m ? m[1]!.toLowerCase() : null;
 }
 
-const RESTARTED = 'byway has started again since this page was opened, at a new address. Open the link it printed this time, shown in the window where byway runs.';
+const RESTARTED = 'byway has started again since this page was opened, at a new address. Anything typed in that page and not sent stays behind with it. Open the link byway printed this time, shown in the window where it runs.';
 
 const NOT_THE_LINK = 'This is not the link byway printed when it last started. Open the link shown in the window where byway runs, as it is shown.';
 
@@ -97,7 +100,7 @@ export function checkRequest(input: GuardInput): GuardResult {
   const own = input.accessHost !== undefined && ACCESS_HOST.test(input.accessHost) && hostName(input.host) === input.accessHost;
   if (!input.host || !(own || LOOPBACK.test(input.host))) {
     // An earlier start's name: a tab or bookmark kept from before byway started again.
-    if (ACCESS_HOST.test(hostName(input.host) ?? '')) return { ok: false, status: 403, message: RESTARTED };
+    if (ACCESS_HOST.test(hostName(input.host) ?? '')) return { ok: false, status: 403, message: RESTARTED, code: RESTARTED_CODE };
     return { ok: false, status: 403, message: 'byway only answers requests addressed to this computer (127.0.0.1).' };
   }
   if (SAFE_METHODS.has(input.method.toUpperCase())) return { ok: true };

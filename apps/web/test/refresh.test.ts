@@ -4,7 +4,8 @@
  * promises the test settles by hand, so every arrival order is exact.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createRefresher, type Connection } from '../src/view/refresh.ts';
+import { RESTARTED_CODE } from '../src/server/guard.ts';
+import { createRefresher, restartedBy, type Connection } from '../src/view/refresh.ts';
 
 interface Pending {
   signal: AbortSignal;
@@ -105,6 +106,17 @@ describe('refresh sequencing (F15)', () => {
     requests[1]!.resolve('back');
     await next;
     expect(statuses).toEqual(['lost', 'ok']);
+  });
+
+  it('marks the connection restarted when byway answers that it started again at a new address (B-188)', async () => {
+    const { refresher, requests, statuses } = harness();
+    const failing = refresher.now();
+    await tick();
+    requests[0]!.reject(Object.assign(new Error('byway has started again'), { code: RESTARTED_CODE }));
+    await failing;
+    expect(statuses).toEqual(['restarted']);
+    expect(restartedBy({ code: RESTARTED_CODE })).toBe(true);
+    expect([restartedBy(new Error('500')), restartedBy(null), restartedBy({ code: 'OTHER' })]).toEqual([false, false, false]);
   });
 
   it('applies nothing after dispose, and a new instance for the same run applies normally (StrictMode remount)', async () => {

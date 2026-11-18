@@ -5,7 +5,7 @@
  * dev-server.ts, both through checkAccess.
  */
 import { describe, expect, it } from 'vitest';
-import { ACCESS_COOKIE, ACCESS_HOST, checkAccess, checkRequest, cookieValue, OPEN_PATH } from '../src/server/guard.ts';
+import { ACCESS_COOKIE, ACCESS_HOST, checkAccess, checkRequest, cookieValue, OPEN_PATH, RESTARTED_CODE } from '../src/server/guard.ts';
 import { openedPage, refusalPage } from '../src/server/refusal-page.ts';
 
 const KEY = 'k'.repeat(43);
@@ -50,8 +50,10 @@ describe("byway's start link and access cookie", () => {
 
   it('a tab or bookmark at an earlier start’s name is told that byway started again, and to open the new link', () => {
     const old = checkRequest({ method: 'GET', host: `byway-${'b2'.repeat(12)}.localhost:3000`, origin: null, secFetchSite: null, accessHost: HOST });
-    expect(old).toMatchObject({ ok: false, status: 403, message: expect.stringMatching(/started again since this page was opened/) });
-    expect(checkRequest({ method: 'GET', host: 'rebind.evil.example', origin: null, secFetchSite: null, accessHost: HOST })).toMatchObject({ message: expect.stringMatching(/only answers requests addressed to this computer/) });
+    expect(old).toMatchObject({ ok: false, status: 403, code: RESTARTED_CODE, message: expect.stringMatching(/started again since this page was opened.*not sent stays behind/) });
+    const foreign = checkRequest({ method: 'GET', host: 'rebind.evil.example', origin: null, secFetchSite: null, accessHost: HOST });
+    expect(foreign).toMatchObject({ message: expect.stringMatching(/only answers requests addressed to this computer/) });
+    expect(foreign).not.toHaveProperty('code');
   });
 
   it('the guard answers this start’s host name and the loopback names, and no other name', () => {

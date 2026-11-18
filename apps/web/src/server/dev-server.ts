@@ -142,7 +142,7 @@ export function guardRequest(req: Pick<IncomingMessage, 'method' | 'url' | 'head
 
 function refuse(res: ServerResponse, verdict: Extract<GuardResult, { ok: false }>, html = false): void {
   res.writeHead(verdict.status, { 'Content-Type': html ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-  res.end(html ? refusalPage(verdict.message) : JSON.stringify({ error: verdict.message }));
+  res.end(html ? refusalPage(verdict.message) : JSON.stringify({ error: verdict.message, ...(verdict.code ? { code: verdict.code } : {}) }));
 }
 
 /** The per-start secret's verdict on one request (B-188, guard.ts), with this start's key and host name from BYWAY_ACCESS_KEY and BYWAY_ACCESS_HOST. */

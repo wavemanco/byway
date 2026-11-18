@@ -341,7 +341,7 @@ export async function recordResolution(deps: RunnerDeps, input: RecordResolution
         await emit(deps.store, input.runId, 'checkpoint-resolved', { checkpointId: resolution.checkpointId }, at(input.call, `checkpoint/${resolution.checkpointId}/resolved`));
         return;
       }
-      throw ApplicationFailure.nonRetryable('This answer was not sent by byway, so it is not recorded: an answer came through the engine’s port from another program.', 'AnswerNotSigned');
+      throw ApplicationFailure.nonRetryable('This answer was not signed with this start’s key, so it is not recorded: another program sent it through the engine’s port, or byway stopped before an answer sent at its earlier start was written. If you answered this question before byway started again, answer it again.', 'AnswerNotSigned');
     }
   }
   try {

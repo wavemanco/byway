@@ -67,19 +67,18 @@ const freePort = () =>
 
 const exited = (child: ChildProcess) => new Promise<number | null>((resolve) => (child.exitCode !== null ? resolve(child.exitCode) : child.once('exit', (code) => resolve(code))));
 
-async function waitUntilReady(url: string, server: ChildProcess, timeoutMs: number, accessKey: string): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (server.exitCode !== null) throw new Error(`byway exited with code ${server.exitCode} before it was ready.`);
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(30_000), headers: { cookie: `byway_access=${accessKey}` } });
-      if (res.ok) return;
-    } catch {
-      // Not listening yet.
-    }
-    await new Promise((r) => setTimeout(r, 1000));
+async function waitForLink(server: ChildProcess, printed: Promise<void>, timeoutMs: number): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const gone = new Promise<never>((_, reject) => server.once('exit', (code) => reject(new Error(`byway exited with code ${code} before it was ready.`))));
+  gone.catch(() => undefined);
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`byway did not print its start link within ${timeoutMs / 1000} s.`)), timeoutMs);
+  });
+  try {
+    await Promise.race([printed, gone, late]);
+  } finally {
+    clearTimeout(timer);
   }
-  throw new Error(`byway was not ready at ${url} within ${timeoutMs / 1000} s.`);
 }
 
 async function main(): Promise<number> {
@@ -121,10 +120,15 @@ async function main(): Promise<number> {
     if (/^ {2}renderer {3}.*\n/m.test(startup)) server.stdout?.off('data', keep);
   };
   server.stdout?.on('data', keep);
+  // byway prints its start link only once its web server listens (serve.ts), so the suite waits for that line, and no
+  // request carrying the key goes out to find out (B-188's re-check 2).
+  const linkPrinted = new Promise<void>((resolve) => {
+    if (server.stdout) createInterface({ input: server.stdout, crlfDelay: Infinity }).on('line', (line) => line.includes('/open?key=') && resolve());
+  });
 
   let code = 1;
   try {
-    await waitUntilReady(`${baseUrl}/`, server, 240_000, accessKey);
+    await waitForLink(server, linkPrinted, 240_000);
     console.log('e2e: byway is ready; running the suite');
     const cli = path.join(WEB, 'node_modules', '@playwright', 'test', 'cli.js');
     const suite = spawn(process.execPath, [cli, 'test', ...process.argv.slice(2)], {

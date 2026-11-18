@@ -289,11 +289,12 @@ describe('route handler logic', () => {
     await expect(controlRun(d, 'run-missing', 'cancel')).rejects.toMatchObject({ status: 404 });
   });
 
-  it('saves the profile, demo mode and technical names as Store preferences, and refuses unknown profiles', async () => {
+  it('saves the profile, demo mode, technical names and single-key shortcuts as Store preferences, and refuses unknown profiles', async () => {
     const d = await deps();
     const next = await updateSettings(d, { profileId: 'best', workspaceBudgetUsd: 50, showTechnicalNames: true });
-    expect(next).toEqual({ profileId: 'best', demoMode: false, showTechnicalNames: true });
-    expect(await d.services.store.getPreferences(d.workspaceId)).toEqual(next);
+    expect(next).toEqual({ profileId: 'best', demoMode: false, showTechnicalNames: true, singleKeyShortcuts: true });
+    expect(await updateSettings(d, { singleKeyShortcuts: false })).toMatchObject({ profileId: 'best', singleKeyShortcuts: false });
+    expect(await d.services.store.getPreferences(d.workspaceId)).toEqual({ ...next, singleKeyShortcuts: false });
     expect((await d.services.store.getWorkspace(d.workspaceId))?.budgetUsd).toBe(50);
     await expect(updateSettings(d, { profileId: 'nope' })).rejects.toMatchObject({ status: 400 });
   });

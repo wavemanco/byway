@@ -23,7 +23,7 @@ export function proxy(request: NextRequest) {
   const html = (request.headers.get('accept') ?? '').includes('text/html');
   if (!result.ok) {
     if (html) return new NextResponse(refusalPage(result.message), { status: result.status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
-    return NextResponse.json({ error: result.message }, { status: result.status });
+    return NextResponse.json({ error: result.message, ...(result.code ? { code: result.code } : {}) }, { status: result.status });
   }
   // Then the per-start secret (B-188): the start link sets the access cookie, and every other request must carry it.
   const access = checkAccess({

@@ -204,6 +204,11 @@ export interface Preferences {
   /** Force the mock provider even when keys exist. */
   demoMode: boolean;
   showTechnicalNames: boolean;
+  /**
+   * Single-key shortcuts (Y/N, J/K, Space, Enter) on a Your turn (UX-1, WCAG 2.1.4). Kept here, not in the browser, so it
+   * stays as set when byway starts again at a new address, which the browser's own storage does not follow (B-188).
+   */
+  singleKeyShortcuts: boolean;
 }
 
 /**

@@ -455,7 +455,7 @@ export async function controlRun(deps: Deps, runId: string, action: z.infer<type
   return action === 'pause' ? runner.pause(runId) : runner.resume(runId);
 }
 
-/** Settings: the profile, demo mode and technical names are Store preferences; the budget is the workspace's. */
+/** Settings: the profile, demo mode, technical names and single-key shortcuts are Store preferences; the budget is the workspace's. */
 export async function updateSettings(deps: Deps, patch: z.infer<typeof SettingsPatch>): Promise<Preferences> {
   const { gateway, store } = deps.services;
   if (patch.profileId !== undefined && !gateway.profileStatus().some((s) => s.profile.id === patch.profileId)) {
@@ -466,6 +466,7 @@ export async function updateSettings(deps: Deps, patch: z.infer<typeof SettingsP
     ...(patch.profileId !== undefined ? { profileId: patch.profileId } : {}),
     ...(patch.demoMode !== undefined ? { demoMode: patch.demoMode } : {}),
     ...(patch.showTechnicalNames !== undefined ? { showTechnicalNames: patch.showTechnicalNames } : {}),
+    ...(patch.singleKeyShortcuts !== undefined ? { singleKeyShortcuts: patch.singleKeyShortcuts } : {}),
   });
 }
 

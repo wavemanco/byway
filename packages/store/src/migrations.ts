@@ -410,6 +410,16 @@ ALTER TABLE runs ADD COLUMN claimed_by TEXT CHECK (claimed_by IS NULL OR claimed
 UPDATE runs SET claimed_by = 'before-schema-12';
 `,
   },
+  {
+    version: 13,
+    name: 'single-key-shortcuts-setting',
+    sql: `
+-- Settings' "Single-key shortcuts" (UX-1), kept until now in the browser's own storage. Since B-188 byway answers at a new
+-- host name at each start, which that storage does not follow, so the switch came back on at every start; it is kept
+-- here instead. On by default, as before.
+ALTER TABLE preferences ADD COLUMN single_key_shortcuts INTEGER NOT NULL DEFAULT 1 CHECK (single_key_shortcuts IN (0, 1));
+`,
+  },
 ];
 
 /** The schema version this build writes. */

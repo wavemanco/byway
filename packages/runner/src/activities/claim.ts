@@ -3,8 +3,8 @@
  * any program on the computer, which can start a byway workflow, replay one from its history or reset one to an earlier
  * step. Runner.start keeps a digest of each run's workflow input with its record (start-digest.ts); the run's first
  * step claims the run for its Temporal execution, once, only with an input of that digest, and every later step that
- * names its run checks that it runs in the claiming execution. A workflow for a run byway never made, or with another
- * input, stops at its claim; one replayed or reset from outside runs in another execution, so its steps stop here;
+ * names its run checks that it runs in the claiming execution. A workflow for a run byway never made, with another
+ * input, or under another id than the run's own stops at its claim; one replayed or reset from outside runs in another execution, so its steps stop here;
  * either way before any paid call. A checkpoint's answer is checked apart (answer-check.ts).
  *
  * What this does not stop (ADR-0117 item 5): the claim binds a step to an execution, not to the code that scheduled it,
@@ -42,10 +42,13 @@ export const currentExecution = (): string | undefined => currentWorkflow()?.run
 export async function claimRun(deps: RunnerDeps, input: RunInput): Promise<void> {
   const workflow = currentWorkflow();
   if (workflow === undefined) return;
-  if (await deps.store.claimRun(input.runId, startDigest(input), workflow.runId)) return;
+  // Only under the run's own workflow id (B-188's re-check 2): one started under another id, even with the run's true
+  // input, would spend where byway's cancel, pause and answers, which address the run's own id, never reach.
+  const own = workflow.workflowId === workflowIdFor(input.runId);
+  if (own && (await deps.store.claimRun(input.runId, startDigest(input), workflow.runId))) return;
   // byway's own workflow for a run it made, refused before anything claimed the run, would leave the run queued until
   // the next lost-run pass: the run fails plainly now. A refused replay, reset or forged workflow leaves the run alone.
-  if (workflow.workflowId === workflowIdFor(input.runId) && (await deps.store.runClaim(input.runId)) === undefined && (await deps.store.getRun(input.runId))?.status === 'queued') {
+  if (own && (await deps.store.runClaim(input.runId)) === undefined && (await deps.store.getRun(input.runId))?.status === 'queued') {
     await settleLostRun(deps.store, input.runId, { status: 'failed', error: REFUSED_START_MESSAGE });
   }
   throw ApplicationFailure.nonRetryable(MESSAGE, NOT_STARTED_HERE);

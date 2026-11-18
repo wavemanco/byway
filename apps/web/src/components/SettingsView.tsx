@@ -14,7 +14,6 @@ import { PageRendererSettings } from './PageRendererSettings.tsx';
 import { PricesStaleNotice } from './PricesChecked.tsx';
 import { SpendingRecords } from './SpendingRecords.tsx';
 import { Switch } from './Switch.tsx';
-import { SINGLE_KEY_SHORTCUTS, useViewerFlag } from './viewerFlags.ts';
 
 const PROVIDERS: Record<ProviderId, { name: string; does: string; env?: string }> = {
   anthropic: { name: 'Anthropic', does: 'Claude models for drafting and judgment', env: 'ANTHROPIC_API_KEY' },
@@ -72,7 +71,7 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const realConfigured = providers.some((p) => p.provider !== 'mock' && p.configured);
-  const [singleKeys, setSingleKeys] = useViewerFlag(SINGLE_KEY_SHORTCUTS);
+  const singleKeys = prefs.singleKeyShortcuts;
 
   async function save(body: Record<string, unknown>, done: string) {
     setError(null);
@@ -255,15 +254,12 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
             <h2 id={`${ids}-keys`}>Single-key shortcuts</h2>
             <p id={`${ids}-keys-help`} className="muted">
               On a Your turn, keys such as Y and N, J and K, Space and Enter answer or move while the question has focus. Turn them off if you use speech
-              input or type into the page by accident. Ctrl+Enter still sends what you wrote. Saved in this browser only.
+              input or type into the page by accident. Ctrl+Enter still sends what you wrote. Kept with byway’s settings.
             </p>
           </div>
           <Switch
             checked={singleKeys}
-            onChange={(on) => {
-              setSingleKeys(on);
-              setSaved(on ? 'Single-key shortcuts on.' : 'Single-key shortcuts off.');
-            }}
+            onChange={(on) => void save({ singleKeyShortcuts: on }, on ? 'Single-key shortcuts on.' : 'Single-key shortcuts off.')}
             labelledBy={`${ids}-keys`}
             describedBy={`${ids}-keys-help`}
           />

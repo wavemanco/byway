@@ -64,6 +64,9 @@ describe("proxy.ts, the production server's guard", () => {
     expect(old.status).toBe(403);
     expect(old.headers.get('content-type')).toMatch(/^text\/html/);
     expect(await old.text()).toMatch(/^<!doctype html>.*started again since this page was opened/s);
+    // And a screen polling from it gets the refusal's code, so it can say so (view/refresh.ts).
+    const polled = at(`byway-${'b2'.repeat(12)}.localhost:3000`, '/api/runs/x', { cookie: COOKIE });
+    expect(await polled.json()).toEqual({ error: expect.stringMatching(/started again/), code: 'RESTARTED' });
   });
 
   it('refuses a foreign Host before anything else, and everything when byway was started without its key', () => {

@@ -46,9 +46,9 @@ export function prepareQueries(db: DatabaseSync) {
     updateIntake: p('UPDATE intakes SET problem = ?, answers = ?, recommendation = ?, composed = ?, updated_at = ? WHERE id = ?'),
 
     preferences: p('SELECT * FROM preferences WHERE workspace_id = ?'),
-    upsertPreferences: p(`INSERT INTO preferences (workspace_id, profile_id, demo_mode, show_technical_names, updated_at) VALUES (?, ?, ?, ?, ?)
+    upsertPreferences: p(`INSERT INTO preferences (workspace_id, profile_id, demo_mode, show_technical_names, single_key_shortcuts, updated_at) VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT (workspace_id) DO UPDATE SET profile_id = excluded.profile_id, demo_mode = excluded.demo_mode,
-      show_technical_names = excluded.show_technical_names, updated_at = excluded.updated_at`),
+      show_technical_names = excluded.show_technical_names, single_key_shortcuts = excluded.single_key_shortcuts, updated_at = excluded.updated_at`),
 
     answerWaits: p('SELECT * FROM answer_waits WHERE workspace_id = ? ORDER BY provider, model'),
     answerWait: p('SELECT * FROM answer_waits WHERE workspace_id = ? AND provider = ? AND model = ?'),

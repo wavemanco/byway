@@ -59,15 +59,15 @@ export const patch = <T>(url: string, body: unknown) => send<T>('PATCH', url, bo
  */
 export async function get<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { cache: 'no-store', ...(signal ? { signal } : {}) });
-  let data: { error?: string };
+  let data: { error?: string; code?: unknown };
   try {
-    data = (await res.json()) as { error?: string };
+    data = (await res.json()) as { error?: string; code?: unknown };
   } catch (err) {
     if (signal?.aborted) throw err;
     if (res.ok) throw new ApiError('byway sent an answer that could not be read. Try again.');
     data = {};
   }
-  if (!res.ok) throw new ApiError(data.error ?? `The request failed (${res.status}).`);
+  if (!res.ok) throw new ApiError(data.error ?? `The request failed (${res.status}).`, typeof data.code === 'string' ? data.code : undefined);
   return data as T;
 }
 

@@ -6,7 +6,7 @@ import http from 'node:http';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { holdIpv6Loopback, ipv6TakenMessage, type Ipv6Hold } from '../src/server/ipv6-hold.ts';
+import { answersAt, holdIpv6Loopback, ipv6TakenMessage, type Ipv6Hold } from '../src/server/ipv6-hold.ts';
 
 const closers: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -32,6 +32,24 @@ const hasIpv6 = await bind6(0).then(
   (s) => (s.close(), true),
   () => false,
 );
+
+describe('anything already answering at the web port (B-188’s re-check 2)', () => {
+  it('is seen by a connection, a listener on 0.0.0.0 or [::] included, which a bind check on Windows misses; a free port answers nothing', async () => {
+    const wildcard = net.createServer();
+    await new Promise<void>((resolve) => wildcard.listen({ host: '0.0.0.0', port: 0 }, resolve));
+    closers.push(() => new Promise((r) => wildcard.close(r)));
+    const port = (wildcard.address() as AddressInfo).port;
+    expect(await answersAt('127.0.0.1', port)).toBe(true);
+    await new Promise((r) => wildcard.close(r));
+    expect(await answersAt('127.0.0.1', port)).toBe(false);
+    if (hasIpv6) {
+      const dual = net.createServer();
+      await new Promise<void>((resolve) => dual.listen({ host: '::', port: 0 }, resolve));
+      closers.push(() => new Promise((r) => dual.close(r)));
+      expect(await answersAt('::1', (dual.address() as AddressInfo).port)).toBe(true);
+    }
+  });
+});
 
 describe.skipIf(!hasIpv6)("byway's web port on IPv6 loopback", () => {
   it('passes a connection to [::1] on to byway at 127.0.0.1, Host and all', async () => {

@@ -28,7 +28,8 @@ describe('byway’s stop reaches the web process’s services (follow-up (f); AD
   const instrumentation = read('apps/web/instrumentation.ts');
 
   it('starts next start with an IPC channel, which the app’s instrumentation hook listens on, and asks it to stop before ending it', () => {
-    expect(serve).toMatch(/\[nextBin\(\), 'start'[^\n]*stdio: \['ignore', 'inherit', 'inherit', 'ipc'\]/);
+    // Its output comes through serve.ts, which reads its "Ready in" line before printing the start link (B-188).
+    expect(serve).toMatch(/\[nextBin\(\), 'start'[^\n]*stdio: \['ignore', 'pipe', 'inherit', 'ipc'\]/);
     expect(instrumentation).toMatch(/stopOnRequest\(\)/);
     const stopWeb = serve.slice(serve.indexOf('async function stopWeb'), serve.indexOf('const exitCode'));
     expect(stopWeb.indexOf("child.send('stop')")).toBeGreaterThan(0);

@@ -38,6 +38,8 @@ export const LOST_RETRY_MS = 3000;
  */
 export function runPollDelay(data: Pick<RunData, 'view' | 'ended'>, connection: Connection): number | null {
   if (connection === 'lost') return LOST_RETRY_MS;
+  // byway answers at a new address now; this one never answers again.
+  if (connection === 'restarted') return null;
   const status = data.view.run.status;
   return pollDelay(status, isEnded(status) ? data.ended?.callsUnderWay : undefined);
 }

@@ -95,6 +95,13 @@ describe('a workflow started through the port by another program', () => {
     const elsewhere = await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: h.taskQueue, workflowId: `${workflowIdFor(input.runId)}-elsewhere`, args: [{ ...input, profileId: 'best' }] });
     await expect(elsewhere.result()).rejects.toThrow();
     expect((await h.store.getRun(input.runId))?.status).toBe('queued');
+    // Nor does one under another id with the run's own input claim it (B-188's re-check 2): it would spend where byway's
+    // cancel, pause and answers, which address the run's own id, never reach.
+    const copied = await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: h.taskQueue, workflowId: `${workflowIdFor(input.runId)}-copied`, args: [input] });
+    await expect(copied.result()).rejects.toThrow();
+    expect(await h.store.runClaim(input.runId)).toBeUndefined();
+    expect(h.ledger(input.runId)).toHaveLength(0);
+    expect((await h.store.getRun(input.runId))?.status).toBe('queued');
     await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: h.taskQueue, workflowId: workflowIdFor(input.runId), args: [input] });
     await openQuestion(input.runId);
     expect(await h.store.runClaim(input.runId)).toEqual(expect.any(String));
@@ -126,10 +133,10 @@ describe("a checkpoint's answer", () => {
     const signed = { checkpointId: cp.id, text: 'what byway sent', signature: signAnswer(HARNESS_ACCESS_KEY, run.id, { checkpointId: cp.id, text: 'what byway sent' }) };
     // The signed answer with another resolution beside it: what would be written is not what was signed.
     const keyed = createActivities({ gateway: h.gateway, store: h.store, prompts: h.prompts, pages: h.pages, accessKey: HARNESS_ACCESS_KEY });
-    await expect(inWorker.run(keyed.recordResolution, { runId: run.id, call, resolution: { checkpointId: cp.id, text: 'something else' }, answer: signed })).rejects.toThrow(/not sent by byway/);
+    await expect(inWorker.run(keyed.recordResolution, { runId: run.id, call, resolution: { checkpointId: cp.id, text: 'something else' }, answer: signed })).rejects.toThrow(/not signed with this start’s key/);
     // A worker with no key refuses even a signed answer.
     const keyless = createActivities({ gateway: h.gateway, store: h.store, prompts: h.prompts, pages: h.pages });
-    await expect(inWorker.run(keyless.recordResolution, { runId: run.id, call, resolution: { checkpointId: cp.id, text: 'what byway sent' }, answer: signed })).rejects.toThrow(/not sent by byway/);
+    await expect(inWorker.run(keyless.recordResolution, { runId: run.id, call, resolution: { checkpointId: cp.id, text: 'what byway sent' }, answer: signed })).rejects.toThrow(/not signed with this start’s key/);
     expect((await h.store.getCheckpoint(cp.id))?.status).toBe('open');
     await h.runner.cancel(run.id);
   }, 120_000);
@@ -148,7 +155,7 @@ describe("a checkpoint's answer", () => {
     await expect(inWorker.run(nextStart.recordResolution, { runId: run.id, call, resolution, answer: signedBefore })).resolves.toBeUndefined();
     // Anything other than what was recorded is still refused.
     const other = { checkpointId: cp.id, text: 'something else' };
-    await expect(inWorker.run(nextStart.recordResolution, { runId: run.id, call, resolution: other, answer: { ...other, signature: signAnswer(HARNESS_ACCESS_KEY, run.id, other) } })).rejects.toThrow(/not sent by byway/);
+    await expect(inWorker.run(nextStart.recordResolution, { runId: run.id, call, resolution: other, answer: { ...other, signature: signAnswer(HARNESS_ACCESS_KEY, run.id, other) } })).rejects.toThrow(/not signed with this start’s key/);
     expect((await h.store.getCheckpoint(cp.id))?.resolution).toEqual(resolution);
     await h.runner.cancel(run.id);
   }, 120_000);
@@ -159,7 +166,7 @@ describe("a checkpoint's answer", () => {
     const otherKey = createRunnerClient({ client: h.env.client, store: h.store, taskQueue: h.taskQueue, accessKey: 'o'.repeat(43) });
     const refused = await otherKey.resolve({ checkpointId: cp.id, text: 'signed with another key' }).catch((e: unknown) => e);
     expect(refused).toBeInstanceOf(ResolutionRejectedError);
-    expect((refused as Error).message).toMatch(/This answer was not sent by byway/);
+    expect((refused as Error).message).toMatch(/This answer was not signed with this start’s key/);
     expect((await h.store.getCheckpoint(cp.id))?.status).toBe('open');
     await h.runner.cancel(run.id);
   }, 120_000);

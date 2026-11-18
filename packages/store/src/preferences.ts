@@ -7,10 +7,10 @@ import type { SQLOutputValue } from 'node:sqlite';
 import type { Preferences } from '@byway/contracts';
 import { invalid, nonEmpty } from './validate.ts';
 
-/** The contract's defaults (Store.getPreferences): the balanced profile, real models when keys exist, plain names. */
-export const DEFAULT_PREFERENCES: Readonly<Preferences> = Object.freeze({ profileId: 'balanced', demoMode: false, showTechnicalNames: false });
+/** The contract's defaults (Store.getPreferences): the balanced profile, real models when keys exist, plain names, single-key shortcuts on. */
+export const DEFAULT_PREFERENCES: Readonly<Preferences> = Object.freeze({ profileId: 'balanced', demoMode: false, showTechnicalNames: false, singleKeyShortcuts: true });
 
-export const PREFERENCE_KEYS = ['profileId', 'demoMode', 'showTechnicalNames'] as const satisfies readonly (keyof Preferences)[];
+export const PREFERENCE_KEYS = ['profileId', 'demoMode', 'showTechnicalNames', 'singleKeyShortcuts'] as const satisfies readonly (keyof Preferences)[];
 
 function flag(what: string, value: unknown): boolean {
   if (typeof value !== 'boolean') throw invalid(`${what} must be true or false, got ${JSON.stringify(value)}`);
@@ -23,10 +23,11 @@ export function mergePreferences(current: Preferences, patch: Record<string, unk
     profileId: patch.profileId === undefined ? current.profileId : nonEmpty('profileId', patch.profileId),
     demoMode: patch.demoMode === undefined ? current.demoMode : flag('demoMode', patch.demoMode),
     showTechnicalNames: patch.showTechnicalNames === undefined ? current.showTechnicalNames : flag('showTechnicalNames', patch.showTechnicalNames),
+    singleKeyShortcuts: patch.singleKeyShortcuts === undefined ? current.singleKeyShortcuts : flag('singleKeyShortcuts', patch.singleKeyShortcuts),
   };
 }
 
 export function toPreferences(r: Record<string, SQLOutputValue> | undefined): Preferences {
   if (!r) return { ...DEFAULT_PREFERENCES };
-  return { profileId: String(r.profile_id), demoMode: Number(r.demo_mode) === 1, showTechnicalNames: Number(r.show_technical_names) === 1 };
+  return { profileId: String(r.profile_id), demoMode: Number(r.demo_mode) === 1, showTechnicalNames: Number(r.show_technical_names) === 1, singleKeyShortcuts: Number(r.single_key_shortcuts) === 1 };
 }
