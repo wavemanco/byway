@@ -126,6 +126,18 @@ function realLocation(p: string): string | undefined {
   }
 }
 
+/**
+ * Whether two paths name the same folder, by where they really lead: a junction or symbolic link, the `\\?\` form, case
+ * and a trailing separator do not tell them apart (B-188's re-check 3).
+ */
+export function sameLocation(a: string, b: string): boolean {
+  const real = (p: string) => {
+    const plain = path.resolve(p.replace(/^\\\\\?\\/, ''));
+    return (realLocation(plain) ?? plain).replace(/^\\\\\?\\/, '');
+  };
+  return path.relative(real(a), real(b)) === '';
+}
+
 function isInside(child: string, parent: string): boolean {
   const rel = path.relative(parent, child);
   return rel === '' || (!path.isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${path.sep}`));

@@ -1,7 +1,7 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, posix, win32 } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { UnsafeDataDirError, createStore, defaultDataDir, resolveDataDir, unsafeLocationReason } from '../src/index.ts';
+import { UnsafeDataDirError, createStore, defaultDataDir, resolveDataDir, sameLocation, unsafeLocationReason } from '../src/index.ts';
 import { openStore, tempDir } from './helpers.ts';
 
 describe('defaultDataDir', () => {
@@ -26,6 +26,29 @@ describe('defaultDataDir', () => {
 
   it('ignores an empty BYWAY_DATA_DIR', () => {
     expect(defaultDataDir({ env: { BYWAY_DATA_DIR: '  ' }, platform: 'linux', homedir: '/home/u' })).toBe('/home/u/.byway');
+  });
+});
+
+describe('sameLocation (B-188: a fixed demo key never guards the default data folder)', () => {
+  it('tells one folder by where it really leads: case, a trailing separator, a link to it and the \\\\?\\ form are the same folder', () => {
+    const root = tempDir();
+    const real = join(root, 'byway');
+    mkdirSync(real);
+    const link = join(root, 'alias');
+    symlinkSync(real, link, process.platform === 'win32' ? 'junction' : 'dir');
+    expect(sameLocation(real, real)).toBe(true);
+    expect(sameLocation(link, real)).toBe(true);
+    expect(sameLocation(`${real}${process.platform === 'win32' ? '\\' : '/'}`, real)).toBe(true);
+    if (process.platform === 'win32') {
+      expect(sameLocation(real.toUpperCase(), real)).toBe(true);
+      expect(sameLocation(`\\\\?\\${real}`, real)).toBe(true);
+    }
+    // A folder not made yet is compared by the path it will have.
+    expect(sameLocation(join(link, 'later'), join(real, 'later'))).toBe(true);
+    const other = join(root, 'other');
+    mkdirSync(other);
+    expect(sameLocation(other, real)).toBe(false);
+    expect(sameLocation(join(real, 'inside'), real)).toBe(false);
   });
 });
 

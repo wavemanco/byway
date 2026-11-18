@@ -66,6 +66,24 @@ test('byway holds its port on [::1], so no other program can listen where the br
 test.describe('at the start’s host name, as the person uses byway', () => {
   test.use({ baseURL: named });
 
+  test('a tab from before byway started again says so on any screen, from the first answer that says it (B-188)', async ({ page }) => {
+    await page.goto(`/open?key=${accessKey()}`);
+    await expect(page.getByLabel('What are you working on?')).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'byway has started again' })).toHaveCount(0);
+    // byway's answer to a request at an earlier start's name (proxy.test.ts holds the server's side of it).
+    const restarted = (url: URL) => url.pathname.startsWith('/api/');
+    await page.route(restarted, (route) =>
+      route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: 'byway has started again since this page was opened, at a new address.', code: 'RESTARTED' }) }),
+    );
+    try {
+      // The Start screen has no run to poll; the header's poll is the first to hear it.
+      await expect(page.getByRole('alert').filter({ hasText: 'byway has started again, at a new address' })).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByRole('alert').filter({ hasText: 'copy it before you reload or leave' })).toBeVisible();
+    } finally {
+      await page.unroute(restarted);
+    }
+  });
+
   test('a run is started there and its questions answered, signed by the app, to its result', async ({ page }) => {
     await page.goto(`/open?key=${accessKey()}`);
     await expect(page).toHaveURL(`${named}/`);

@@ -353,7 +353,7 @@ export interface Store {
    */
   memosWithPrefix(runId: string, prefix: string): Promise<string[]>;
 
-  /** Defaults when never set: profileId 'balanced', demoMode false, showTechnicalNames false. */
+  /** Defaults when never set: profileId 'balanced', demoMode false, showTechnicalNames false, singleKeyShortcuts true. */
   getPreferences(workspaceId: string): Promise<Preferences>;
   setPreferences(workspaceId: string, patch: Partial<Preferences>): Promise<Preferences>;
 

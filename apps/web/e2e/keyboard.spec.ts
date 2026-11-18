@@ -90,6 +90,52 @@ async function pressTwiceWhileRefused(page: Page, control: Locator, sends: { cou
 
 const turn = (page: Page) => page.locator('section.turn');
 
+test.describe('Settings’ single-key shortcuts, kept with byway’s settings (B-188)', () => {
+  test('turned off in Settings, Y no longer answers a confirm: in another open tab at once, and after a reload', async ({ page, context }) => {
+    const { runId } = data().confirm;
+    const sends = await refuseSlowly(page, (p) => p.startsWith(`/api/runs/${runId}/checkpoints/`), 'e2e: that answer was not sent');
+    const listedY = () => turn(page).locator('.shortcuts kbd', { hasText: /^Y$/ });
+    const yes = () => turn(page).getByRole('button', { name: 'Yes', exact: true });
+    await page.goto(`/runs/${runId}`);
+    // On, Y answers (refused here, so the question stays open).
+    await expect(listedY()).toHaveCount(1);
+    await yes().focus();
+    await page.keyboard.press('y');
+    await expect.poll(() => sends.count()).toBe(1);
+    await expect(page.getByRole('alert').filter({ hasText: 'e2e: that answer was not sent' })).toBeVisible();
+
+    const settings = await context.newPage();
+    await settings.goto('/settings');
+    const toggle = settings.getByRole('switch', { name: 'Single-key shortcuts' });
+    try {
+      await expect(toggle).toHaveAttribute('aria-checked', 'true');
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-checked', 'false');
+      // The Run tab, which did not save it, follows at once.
+      await expect(listedY()).toHaveCount(0);
+      await yes().focus();
+      await page.keyboard.press('y');
+      await page.waitForTimeout(SLOW_MS);
+      expect(sends.count(), 'answers sent by Y once it is off').toBe(1);
+      // And it is kept: after a reload it is still off.
+      await page.reload();
+      await expect(yes()).toBeVisible();
+      await expect(listedY()).toHaveCount(0);
+      await yes().focus();
+      await page.keyboard.press('y');
+      await page.waitForTimeout(SLOW_MS);
+      expect(sends.count(), 'answers sent by Y after a reload').toBe(1);
+    } finally {
+      // The rest of the suite has it on.
+      if ((await toggle.getAttribute('aria-checked')) === 'false') {
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-checked', 'true');
+      }
+      await settings.close();
+    }
+  });
+});
+
 test.describe('a control that starts something keeps focus, and a second press sends nothing (R5)', () => {
   test('Yes on a confirm, pressed with Enter twice, while the answer is on its way and after it is refused', async ({ page }) => {
     const { runId } = data().confirm;

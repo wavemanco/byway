@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, createElement, useContext, useEffect, useRef, type ReactNode, type RefObject } from 'react';
+import { createContext, createElement, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 
 export type ShortcutMap = Partial<Record<string, (event: KeyboardEvent) => void>>;
 
@@ -83,8 +83,35 @@ function describe(event: KeyboardEvent, scope: HTMLElement | null | undefined): 
  */
 const SingleKeys = createContext(true);
 
+/**
+ * The channel byway's open tabs hear a change of the switch on (B-188's re-check 3): a tab other than the one that saved
+ * it would otherwise keep the value it was rendered with, and a stray Y there would still answer a yes/no question. Only
+ * pages of byway's own address can use it; a generated page runs in a sandboxed frame of no address at all.
+ */
+const SETTINGS_CHANNEL = 'byway.settings';
+
+/** Tells byway's other open tabs that the switch changed; the tab that saved it reads it again from the server. */
+export function announceSingleKeys(on: boolean): void {
+  if (typeof BroadcastChannel === 'undefined') return;
+  const channel = new BroadcastChannel(SETTINGS_CHANNEL);
+  channel.postMessage({ singleKeyShortcuts: on });
+  channel.close();
+}
+
 export function SingleKeysProvider({ value, children }: { value: boolean; children: ReactNode }) {
-  return createElement(SingleKeys, { value }, children);
+  const [on, setOn] = useState(value);
+  // A new value from the server (this tab saved it, or navigated) replaces whatever the channel said before.
+  useEffect(() => setOn(value), [value]);
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return;
+    const channel = new BroadcastChannel(SETTINGS_CHANNEL);
+    channel.onmessage = (event: MessageEvent) => {
+      const next = (event.data as { singleKeyShortcuts?: unknown } | null)?.singleKeyShortcuts;
+      if (typeof next === 'boolean') setOn(next);
+    };
+    return () => channel.close();
+  }, []);
+  return createElement(SingleKeys, { value: on }, children);
 }
 
 /** Whether single-key shortcuts are on (Settings), for panels that list them. */

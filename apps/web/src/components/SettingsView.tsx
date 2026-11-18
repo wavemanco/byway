@@ -10,6 +10,7 @@ import { imageAvailability, profileNeeds, videoAvailability } from '../view/labe
 import type { AnswerWaitGroup } from '../view/waits.ts';
 import { AnswerWaits } from './AnswerWaits.tsx';
 import { patch } from './api.ts';
+import { announceSingleKeys } from './useShortcuts.ts';
 import { PageRendererSettings } from './PageRendererSettings.tsx';
 import { PricesStaleNotice } from './PricesChecked.tsx';
 import { SpendingRecords } from './SpendingRecords.tsx';
@@ -259,7 +260,7 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
           </div>
           <Switch
             checked={singleKeys}
-            onChange={(on) => void save({ singleKeyShortcuts: on }, on ? 'Single-key shortcuts on.' : 'Single-key shortcuts off.')}
+            onChange={(on) => void save({ singleKeyShortcuts: on }, on ? 'Single-key shortcuts on.' : 'Single-key shortcuts off.').then((saved) => saved && announceSingleKeys(on))}
             labelledBy={`${ids}-keys`}
             describedBy={`${ids}-keys-help`}
           />

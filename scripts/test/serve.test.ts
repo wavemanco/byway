@@ -100,7 +100,7 @@ describe("serve.ts's per-start secret (B-188)", () => {
     // Read before .env.agents is loaded, so a key or name kept there is never taken.
     expect(serve.findIndex((l) => l.startsWith('const shell = '))).toBeLessThan(serve.findIndex((l) => l.startsWith('const keys = loadEnvFile(')));
     expect(matching(serve, /\bfixed\b/)).toEqual([
-      "const fixed = demo && path.relative(dataDir, defaultDataDir({ env: { ...process.env, BYWAY_DATA_DIR: undefined } })) !== '';",
+      'const fixed = demo && !sameLocation(dataDir, defaultDataDir({ env: { ...process.env, BYWAY_DATA_DIR: undefined } }));',
       'const given = fixed ? shell.key : undefined;',
       'const givenHost = fixed ? shell.host : undefined;',
     ]);

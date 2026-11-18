@@ -5,7 +5,9 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RESTARTED_CODE } from '../src/server/guard.ts';
+import { get, patch } from '../src/components/api.ts';
 import { createRefresher, restartedBy, type Connection } from '../src/view/refresh.ts';
+import { isRestarted, onRestarted, RESTARTED } from '../src/view/restarted.ts';
 
 interface Pending {
   signal: AbortSignal;
@@ -117,6 +119,29 @@ describe('refresh sequencing (F15)', () => {
     expect(statuses).toEqual(['restarted']);
     expect(restartedBy({ code: RESTARTED_CODE })).toBe(true);
     expect([restartedBy(new Error('500')), restartedBy(null), restartedBy({ code: 'OTHER' })]).toEqual([false, false, false]);
+  });
+
+  it('any poll or action answered that byway started again marks this tab for the layout’s notice, once (B-188)', async () => {
+    expect(RESTARTED).toBe(RESTARTED_CODE);
+    const answers: Response[] = [
+      new Response(JSON.stringify({ error: 'The request failed.' }), { status: 500 }),
+      new Response(JSON.stringify({ error: 'byway has started again', code: RESTARTED_CODE }), { status: 403 }),
+      new Response(JSON.stringify({ error: 'byway has started again', code: RESTARTED_CODE }), { status: 403 }),
+    ];
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => answers.shift()!);
+    const heard = vi.fn();
+    const off = onRestarted(heard);
+    try {
+      await expect(get('/api/waiting')).rejects.toThrow('The request failed.');
+      expect(isRestarted()).toBe(false);
+      await expect(get('/api/waiting')).rejects.toMatchObject({ code: RESTARTED_CODE });
+      expect(isRestarted()).toBe(true);
+      await expect(patch('/api/settings', { singleKeyShortcuts: false })).rejects.toMatchObject({ code: RESTARTED_CODE });
+      expect(heard).toHaveBeenCalledTimes(1);
+    } finally {
+      off();
+      fetch.mockRestore();
+    }
   });
 
   it('applies nothing after dispose, and a new instance for the same run applies normally (StrictMode remount)', async () => {

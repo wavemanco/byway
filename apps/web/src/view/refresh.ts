@@ -17,10 +17,12 @@
  * read by the server after the previous applied one arrived. Pure (no React, no DOM beyond AbortController).
  */
 
+import { RESTARTED } from './restarted.ts';
+
 export type Connection = 'ok' | 'lost' | 'restarted';
 
 /** byway's refusal of a request at an earlier start's address (guard.ts RESTARTED_CODE; B-188's re-check 2). */
-export const restartedBy = (err: unknown): boolean => typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'RESTARTED';
+export const restartedBy = (err: unknown): boolean => typeof err === 'object' && err !== null && (err as { code?: unknown }).code === RESTARTED;
 
 export interface RefresherOptions<T> {
   fetch(signal: AbortSignal): Promise<T>;

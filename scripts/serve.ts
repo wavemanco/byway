@@ -57,7 +57,7 @@ import { parseServeArgs } from '../apps/web/src/server/serving.ts';
 import { createGateway, loadEnvFile, withoutSecrets } from '../packages/gateway/src/index.ts';
 import { createPromptRenderer } from '../packages/prompts/src/index.ts';
 import { assertPortFree, browsersFolder, buildWorkflows, checkRenderer, dataDirReport, DEFAULT_WORKFLOWS_BUNDLE, engineStartLines, rendererCheckWithin, rendererLine, reportLines, startDevEngine, storeCaps, type DevEngine, type RendererCheckProgress } from '../packages/runner/src/index.ts';
-import { createStore, defaultDataDir, resolveDataDir } from '../packages/store/src/index.ts';
+import { createStore, defaultDataDir, resolveDataDir, sameLocation } from '../packages/store/src/index.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = path.join(ROOT, 'apps', 'web');
@@ -230,7 +230,7 @@ async function main(): Promise<void> {
   // more, and BYWAY_ACCESS_HOST a host name of guard.ts's form, for the e2e suite, which sets its browser's cookie from them;
   // only in demo mode, which spends nothing, from the shell, and with a data folder other than the default one, so a key
   // or name kept in a file never guards byway, and a known one never guards the person's own runs and Settings.
-  const fixed = demo && path.relative(dataDir, defaultDataDir({ env: { ...process.env, BYWAY_DATA_DIR: undefined } })) !== '';
+  const fixed = demo && !sameLocation(dataDir, defaultDataDir({ env: { ...process.env, BYWAY_DATA_DIR: undefined } }));
   const given = fixed ? shell.key : undefined;
   const accessKey = given !== undefined && given.length >= 32 ? given : randomBytes(32).toString('base64url');
   const givenHost = fixed ? shell.host : undefined;
