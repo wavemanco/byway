@@ -117,6 +117,15 @@ describe('the records and the index agree', () => {
     }
   });
 
+  it('every record holds one title and each of its sections once (an edit script once wrote a record into itself, B-188)', () => {
+    for (const file of files.values()) {
+      const text = read(file);
+      expect(text.match(/^# ADR-\d{4}/gm), file).toHaveLength(1);
+      const sections: string[] = text.match(/^## .+$/gm) ?? [];
+      expect(sections.filter((s, i) => sections.indexOf(s) !== i), file).toEqual([]);
+    }
+  });
+
   it('an Accepted record’s Decision does not open as a proposal, except the records named here, whose note says why', () => {
     const opening = [...files.keys()].filter((n) => isAccepted(record(n).status) && opensAsProposal(record(n).Decision));
     expect(opening).toEqual(PROPOSAL_WORDING.map((p) => p.record));

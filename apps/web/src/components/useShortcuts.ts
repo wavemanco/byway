@@ -103,8 +103,11 @@ export function announceSingleKeys(on: boolean): void {
 export function SingleKeysProvider({ value, children }: { value: boolean; children: ReactNode }) {
   const [on, setOn] = useState(value);
   // Each change this tab hears (its render, the channel, its own save) is counted, so a read sent before one and
-  // answered after it is not applied over it (B-188's check 5): it may carry the value from before the change.
+  // answered after it is not applied over it (B-188's check 5): it may carry the value from before the change. Reads are
+  // numbered too, and a read's own answer is not a change: of two reads on their way, an older one answered after a
+  // newer one has been applied is dropped, and the newer one is never dropped for the older one's sake (B-188's check 6).
   const changes = useRef(0);
+  const reads = useRef({ sent: 0, applied: 0 });
   const change = useCallback((next: boolean) => {
     changes.current++;
     setOn(next);
@@ -128,9 +131,14 @@ export function SingleKeysProvider({ value, children }: { value: boolean; childr
     let current = true;
     const reread = () => {
       if (document.visibilityState !== 'visible') return;
-      const sent = changes.current;
+      const read = ++reads.current.sent;
+      const heard = changes.current;
       get<Preferences>('/api/settings').then(
-        (prefs) => current && changes.current === sent && typeof prefs.singleKeyShortcuts === 'boolean' && change(prefs.singleKeyShortcuts),
+        (prefs) => {
+          if (!current || changes.current !== heard || read < reads.current.applied || typeof prefs.singleKeyShortcuts !== 'boolean') return;
+          reads.current.applied = read;
+          setOn(prefs.singleKeyShortcuts);
+        },
         () => undefined,
       );
     };

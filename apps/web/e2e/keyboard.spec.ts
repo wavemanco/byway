@@ -216,6 +216,63 @@ test.describe('Settings’ single-key shortcuts, kept with byway’s settings (B
       await settings.close();
     }
   });
+
+  test('of two reads of the switch on their way, the one sent after the change stands, whichever comes back first (B-188’s check 6)', async ({ page, context, browser }) => {
+    const { runId } = data().confirm;
+    // A tab in another browser profile hears no other tab: only its reads tell it of a change.
+    const other = await browser.newContext();
+    await other.addCookies(await context.cookies());
+    const away = await other.newPage();
+    const held: (() => void)[] = [];
+    let holding = false;
+    await away.route(
+      (url) => url.pathname === '/api/settings',
+      async (route) => {
+        if (route.request().method() !== 'GET' || !holding) return route.continue();
+        const answer = await route.fetch();
+        await new Promise<void>((resolve) => held.push(resolve));
+        await route.fulfill({ response: answer });
+      },
+    );
+    const listedY = () => turn(away).locator('.shortcuts kbd', { hasText: /^Y$/ });
+    await away.goto(`${test.info().project.use.baseURL ?? ''}/runs/${runId}`);
+    await expect(listedY()).toHaveCount(1);
+    await page.goto('/settings');
+    const toggle = page.getByRole('switch', { name: 'Single-key shortcuts' });
+    try {
+      for (const order of ['older first', 'newer first'] as const) {
+        held.length = 0;
+        holding = true;
+        // Read 1 is made while the switch is on (the tab comes into view), read 2 after it is turned off (its window gets focus).
+        await away.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+        await expect.poll(() => held.length).toBe(1);
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-checked', 'false');
+        await away.evaluate(() => window.dispatchEvent(new Event('focus')));
+        await expect.poll(() => held.length).toBe(2);
+        const [first, second] = order === 'older first' ? [held[0]!, held[1]!] : [held[1]!, held[0]!];
+        first();
+        await away.waitForTimeout(300);
+        second();
+        await away.waitForTimeout(300);
+        await expect(listedY(), order).toHaveCount(0);
+        // On again, read again, for the other order.
+        holding = false;
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-checked', 'true');
+        await away.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+        await expect(listedY()).toHaveCount(1);
+      }
+    } finally {
+      holding = false;
+      for (const go of held) go();
+      if ((await toggle.getAttribute('aria-checked')) === 'false') {
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-checked', 'true');
+      }
+      await other.close();
+    }
+  });
 });
 
 test.describe('a control that starts something keeps focus, and a second press sends nothing (R5)', () => {

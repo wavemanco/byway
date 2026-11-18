@@ -83,6 +83,15 @@ describe('a data folder named two ways on Windows (B-188’s check 5)', () => {
     expect(unsafeLocationReason('/data/byway.', {}, 'linux')).toBeUndefined();
   });
 
+  it('is refused, on every system, when its path holds a #, % or ?, which the engine’s Temporal server reads as part of its database’s address (B-188’s check 6)', () => {
+    for (const platform of ['win32', 'linux'] as const) {
+      for (const dir of ['/data/a#b/byway', '/data/by%41way', '/data/what?/byway']) {
+        expect(unsafeLocationReason(dir, {}, platform), `${platform} ${dir}`).toMatchObject({ kind: 'name', message: expect.stringMatching(/no #, % or \?/) });
+      }
+    }
+    if (process.platform === 'win32') expect(unsafeLocationReason(`\\\\?\\${join(tempDir(), 'byway')}`)).toBeUndefined();
+  });
+
   it('stops byway before it opens anything there', () => {
     if (process.platform !== 'win32') return;
     const dotted = `${join(tempDir(), 'byway')}.`;

@@ -91,7 +91,7 @@ Dependencies point down the stack: the app uses the advisor, runner, store, gate
 
 ## Data
 
-Product data lives in `BYWAY_DATA_DIR`, by default `%LOCALAPPDATA%\byway` on Windows and `~/.byway` elsewhere. byway refuses a folder inside OneDrive or inside a git working tree, and on Windows one whose path has a part ending in a dot or a space (Windows reads such a name as one folder for Node and another for SQLite).
+Product data lives in `BYWAY_DATA_DIR`, by default `%LOCALAPPDATA%\byway` on Windows and `~/.byway` elsewhere. byway refuses a folder inside OneDrive or inside a git working tree, one whose path holds a #, % or ? (the engine's Temporal server opens its database by an address made from the path), and on Windows one whose path has a part ending in a dot or a space (Node keeps such a name, Windows drops the dot or space for most programs, and SQLite a single trailing dot).
 
 | File | Contents |
 |---|---|

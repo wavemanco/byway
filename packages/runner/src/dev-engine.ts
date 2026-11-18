@@ -248,7 +248,11 @@ export async function startDevEngine(opts: DevEngineOptions): Promise<DevEngine>
   );
   try {
     // The server we reached keeps its state in this data directory, so it is the one we started.
-    if (!existsSync(dbFilename)) throw new Error(`The Temporal server on port ${port} is not the one byway started (it does not use ${dbFilename}). ${portInUseMessage(port)}`);
+    if (!existsSync(dbFilename)) {
+      throw new Error(
+        `The Temporal server on port ${port} has not opened byway's engine database at ${dbFilename}. Either another program answered on that port (stop it, or choose another port with BYWAY_TEMPORAL_PORT), or the server kept its database somewhere else, which a data folder path it reads differently can cause.`,
+      );
+    }
     const worker = await createWorker({ connection: env.nativeConnection, namespace: env.namespace ?? 'default', gateway: opts.gateway, store: opts.store, accessKey: opts.accessKey, ...(opts.prompts ? { prompts: opts.prompts } : {}), ...(opts.pages ? { pages: opts.pages } : {}), ...(opts.workflowsPath ? { workflowsPath: opts.workflowsPath } : {}) });
     let atStart: EngineStartReport;
     try {

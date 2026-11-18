@@ -62,9 +62,23 @@ export function assertSafeDataDir(dir: string, env: Env = process.env): void {
  */
 export function unsafeLocationReason(dir: string, env: Env = process.env, platform: NodeJS.Platform = process.platform): UnsafeLocation | undefined {
   const abs = path.resolve(dir);
-  // On Windows a part of the path ending in a dot or a space names one folder to Node, which keeps it, and another to
-  // SQLite and most programs, which drop it: byway's database would be one folder's and its artifacts and ledger
-  // another's, and a check of the folder (sameLocation) would see the wrong one (B-188's check 5).
+  // Temporal's server opens its database by a SQLite address made from this path (file:<path>?…): a "#" ends the address,
+  // a "%" starts an escape and a "?" starts its options, so the engine's database would be kept somewhere else, or not
+  // open, while byway's own are kept here (B-188's check 6). The long-path prefix \\?\ is not part of the name.
+  const reserved = /[#%?]/.exec(abs.replace(/^\\\\\?\\/, ''));
+  if (reserved) {
+    return {
+      kind: 'name',
+      root: abs,
+      message:
+        `Refusing to keep byway data in ${abs}: its path holds "${reserved[0]}", which the engine's Temporal server reads as part of a ` +
+        'database address, not of a folder name, so it would keep its database somewhere else or fail to open it. Set BYWAY_DATA_DIR to a folder whose path has no #, % or ?.',
+    };
+  }
+  // On Windows a part of the path ending in a dot or a space is kept by Node and dropped by Windows for most programs,
+  // and SQLite drops a single trailing dot from a folder in its path: byway's database could be one folder's and its
+  // artifacts and ledger another's, a check of the folder (sameLocation) could see the wrong one, and Explorer or a
+  // backup would see yet another name (B-188's checks 5 and 6).
   if (platform === 'win32') {
     const odd = abs.split(/[\\/]+/).find((part) => part !== '.' && part !== '..' && /[. ]$/.test(part));
     if (odd !== undefined) {
@@ -72,8 +86,8 @@ export function unsafeLocationReason(dir: string, env: Env = process.env, platfo
         kind: 'name',
         root: abs,
         message:
-          `Refusing to keep byway data in ${abs}: its part "${odd}" ends in a dot or a space, which Windows keeps for some ` +
-          "programs and drops for others, so byway's database and its files would end up in two folders. Set BYWAY_DATA_DIR to a folder whose names do not end in a dot or a space.",
+          `Refusing to keep byway data in ${abs}: its part "${odd}" ends in a dot or a space, which Node keeps and Windows drops for ` +
+          "most programs (SQLite drops a single trailing dot), so byway's database and its files could end up in different folders. Set BYWAY_DATA_DIR to a folder whose names do not end in a dot or a space.",
       };
     }
   }
