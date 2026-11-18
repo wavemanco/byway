@@ -3,7 +3,7 @@
 /**
  * "Demo mode — sample outputs, no AI calls." on every screen while byway is in demo mode (spec §5 "Demo mode"). It starts
  * from the server's mode. The root layout outlives page changes and demo mode can change in another tab, so, as the
- * sandbox banner does, it reads the mode again (GET /api/settings) on every navigation and every few seconds while the
+ * sandbox banner does, it reads the mode again (GET /api/mode) on every navigation and every few seconds while the
  * tab is visible (B-199's check: a banner drawn once said no AI calls over a screen that spent). A failed read keeps the
  * banner it has.
  */
@@ -22,7 +22,7 @@ export function DemoBanner({ demo: drawn }: { demo: boolean }) {
   useEffect(() => setDemo(drawn), [drawn]);
   const refresher = useRefresher(
     pathname,
-    (signal) => get<{ mode?: unknown }>('/api/settings', signal),
+    (signal) => get<{ mode?: unknown }>('/api/mode', signal),
     (settings) => {
       if (settings.mode === 'demo' || settings.mode === 'live') setDemo(settings.mode === 'demo');
     },
