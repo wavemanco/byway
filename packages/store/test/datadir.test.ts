@@ -1,7 +1,7 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, posix, win32 } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { UnsafeDataDirError, createStore, defaultDataDir, resolveDataDir, unsafeLocationReason } from '../src/index.ts';
+import { UnsafeDataDirError, createStore, defaultDataDir, resolveDataDir, sameLocation, unsafeLocationReason } from '../src/index.ts';
 import { openStore, tempDir } from './helpers.ts';
 
 describe('defaultDataDir', () => {
@@ -26,6 +26,77 @@ describe('defaultDataDir', () => {
 
   it('ignores an empty BYWAY_DATA_DIR', () => {
     expect(defaultDataDir({ env: { BYWAY_DATA_DIR: '  ' }, platform: 'linux', homedir: '/home/u' })).toBe('/home/u/.byway');
+  });
+});
+
+describe('sameLocation (B-188: a fixed demo key never guards the default data folder)', () => {
+  it('tells one folder by where it really leads: case, a trailing separator, a link to it and the \\\\?\\ form are the same folder', () => {
+    const root = tempDir();
+    const real = join(root, 'byway');
+    mkdirSync(real);
+    const link = join(root, 'alias');
+    symlinkSync(real, link, process.platform === 'win32' ? 'junction' : 'dir');
+    expect(sameLocation(real, real)).toBe(true);
+    expect(sameLocation(link, real)).toBe(true);
+    expect(sameLocation(`${real}${process.platform === 'win32' ? '\\' : '/'}`, real)).toBe(true);
+    if (process.platform === 'win32') {
+      expect(sameLocation(real.toUpperCase(), real)).toBe(true);
+      expect(sameLocation(`\\\\?\\${real}`, real)).toBe(true);
+    }
+    // A folder not made yet is compared by the path it will have.
+    expect(sameLocation(join(link, 'later'), join(real, 'later'))).toBe(true);
+    const other = join(root, 'other');
+    mkdirSync(other);
+    expect(sameLocation(other, real)).toBe(false);
+    expect(sameLocation(join(real, 'inside'), real)).toBe(false);
+  });
+
+  it('knows the folder by the file system’s own identity once it exists, through a network path to this computer too (B-188’s check 4)', () => {
+    const root = tempDir();
+    const real = join(root, 'byway');
+    mkdirSync(real);
+    expect(sameLocation(`\\\\?\\${real}`, real)).toBe(process.platform === 'win32');
+    if (process.platform !== 'win32') return;
+    // \\localhost\C$ reaches the same folder where administrative shares are on, as they are by default.
+    const unc = `\\\\localhost\\${real[0]}$${real.slice(2)}`;
+    let reachable = true;
+    try {
+      statSync(unc);
+    } catch {
+      reachable = false;
+    }
+    if (reachable) {
+      expect(sameLocation(unc, real)).toBe(true);
+      expect(sameLocation(`\\\\?\\UNC\\localhost\\${real[0]}$${real.slice(2)}`, real)).toBe(true);
+    }
+    expect(sameLocation(unc, root)).toBe(false);
+  });
+});
+
+describe('a data folder named two ways on Windows (B-188’s check 5)', () => {
+  it('is refused when a part of its path ends in a dot or a space, which Windows keeps for Node and drops for SQLite', () => {
+    for (const dir of ['/data/byway.', '/data/Local./byway', '/data/byway ', '/data/Local /byway']) {
+      expect(unsafeLocationReason(dir, {}, 'win32'), dir).toMatchObject({ kind: 'name', message: expect.stringMatching(/ends in a dot or a space/) });
+    }
+    for (const dir of ['/data/byway', '/data/by.way', '/data/.byway', '/data/by way']) expect(unsafeLocationReason(dir, {}, 'win32'), dir).toBeUndefined();
+    // Elsewhere such a name is one folder to every program.
+    expect(unsafeLocationReason('/data/byway.', {}, 'linux')).toBeUndefined();
+  });
+
+  it('is refused, on every system, when its path holds a #, % or ?, which the engine’s Temporal server reads as part of its database’s address (B-188’s check 6)', () => {
+    for (const platform of ['win32', 'linux'] as const) {
+      for (const dir of ['/data/a#b/byway', '/data/by%41way', '/data/what?/byway']) {
+        expect(unsafeLocationReason(dir, {}, platform), `${platform} ${dir}`).toMatchObject({ kind: 'name', message: expect.stringMatching(/no #, % or \?/) });
+      }
+    }
+    // The long-path form too: the server cannot open a database under it (B-188's check 7).
+    if (process.platform === 'win32') expect(unsafeLocationReason(`\\\\?\\${join(tempDir(), 'byway')}`)).toMatchObject({ kind: 'name', message: expect.stringMatching(/holds "\?".*move the contents/) });
+  });
+
+  it('stops byway before it opens anything there', () => {
+    if (process.platform !== 'win32') return;
+    const dotted = `${join(tempDir(), 'byway')}.`;
+    expect(() => resolveDataDir({ env: { BYWAY_DATA_DIR: dotted } })).toThrow(UnsafeDataDirError);
   });
 });
 

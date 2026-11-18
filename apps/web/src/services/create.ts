@@ -95,7 +95,9 @@ export function createServiceHost(engine: EngineModules, opts: ServiceHostOption
   if (opts.envFile) engine.gateway.loadEnvFile(opts.envFile, opts.env);
   const store = engine.store.createStore({ dataDir: opts.dataDir });
   const prompts = engine.prompts.createPromptRenderer();
-  const connect = opts.connect ?? (async (s: Store, address: string) => (await engine.runner.connectRunner({ store: s, address })).runner);
+  // Signs each answer with this start's key, which pnpm start hands the app (B-188, answer-check.ts).
+  const accessKey = process.env.BYWAY_ACCESS_KEY;
+  const connect = opts.connect ?? (async (s: Store, address: string) => (await engine.runner.connectRunner({ store: s, address, ...(accessKey ? { accessKey } : {}) })).runner);
   const runner = engineRunner(store, () => connect(store, opts.temporalAddress), (e) => engine.runner.isTransportFailure(e) || engine.runner.isTimeout(e));
   const pairs = new Map<boolean, { gateway: Gateway; advisor: Advisor }>();
 

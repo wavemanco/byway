@@ -1,4 +1,5 @@
 /** Client-side calls to the route handlers. Errors carry the server's plain-language message. */
+import { markRestarted, RESTARTED } from '../view/restarted.ts';
 
 export class ApiError extends Error {
   override name = 'ApiError';
@@ -45,6 +46,7 @@ async function send<T>(method: 'POST' | 'PATCH', url: string, body: unknown): Pr
   }
   if (!res.ok) {
     const code = typeof data.code === 'string' ? data.code : undefined;
+    if (code === RESTARTED) markRestarted();
     throw new ApiError(data.error ?? `The request failed (${res.status}). Try again.`, code, stringList(data.fields), typeof data.key === 'string' ? data.key : undefined, data, res.status);
   }
   return data as T;
@@ -59,15 +61,19 @@ export const patch = <T>(url: string, body: unknown) => send<T>('PATCH', url, bo
  */
 export async function get<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { cache: 'no-store', ...(signal ? { signal } : {}) });
-  let data: { error?: string };
+  let data: { error?: string; code?: unknown };
   try {
-    data = (await res.json()) as { error?: string };
+    data = (await res.json()) as { error?: string; code?: unknown };
   } catch (err) {
     if (signal?.aborted) throw err;
     if (res.ok) throw new ApiError('byway sent an answer that could not be read. Try again.');
     data = {};
   }
-  if (!res.ok) throw new ApiError(data.error ?? `The request failed (${res.status}).`);
+  if (!res.ok) {
+    const code = typeof data.code === 'string' ? data.code : undefined;
+    if (code === RESTARTED) markRestarted();
+    throw new ApiError(data.error ?? `The request failed (${res.status}).`, code);
+  }
   return data as T;
 }
 

@@ -370,6 +370,8 @@ export interface RecordResolutionInput {
   runId: string;
   call: StepCall;
   resolution: CheckpointResolution;
+  /** The answer as the update brought it, with its signature (B-188, answer-check.ts); `resolution` is checked from it. */
+  answer?: CheckpointResolution;
 }
 
 export interface FinishHumanInput {
@@ -442,6 +444,8 @@ export interface FailRunInput {
 
 /** Everything the workflow calls. Implemented by `createActivities`. */
 export interface RunnerActivities {
+  /** The run's first step (B-188, activities/claim.ts): claims the run for this execution with its whole input, or refuses. */
+  claimRun(input: RunInput): Promise<void>;
   beginRun(input: { runId: string; recipeId: string; profileId: string; budgetUsd: number }): Promise<void>;
   setRunStatus(input: { runId: string; status: Extract<RunStatus, 'running' | 'waiting' | 'paused'> }): Promise<void>;
   emitEvents(input: { runId: string; events: WorkflowEvent[] }): Promise<void>;

@@ -59,6 +59,8 @@ export interface DevEngineOptions {
   pages?: PageRenderer;
   /** Pin the dev server's (closed) HTTP API to this port; by default the CLI picks a random free one. For tests. */
   httpPort?: number;
+  /** This start's key (the per-start secret, B-188): the worker records answers only with its signature, and the client signs them. */
+  accessKey: string;
   /**
    * A workflow bundle built beforehand (buildWorkflows). By default the worker builds dist/workflows.js on every start;
    * a test, or the e2e suite's byway (serve.ts's BYWAY_WORKFLOWS_BUNDLE), passes its own file, so it never shares that
@@ -246,8 +248,12 @@ export async function startDevEngine(opts: DevEngineOptions): Promise<DevEngine>
   );
   try {
     // The server we reached keeps its state in this data directory, so it is the one we started.
-    if (!existsSync(dbFilename)) throw new Error(`The Temporal server on port ${port} is not the one byway started (it does not use ${dbFilename}). ${portInUseMessage(port)}`);
-    const worker = await createWorker({ connection: env.nativeConnection, namespace: env.namespace ?? 'default', gateway: opts.gateway, store: opts.store, ...(opts.prompts ? { prompts: opts.prompts } : {}), ...(opts.pages ? { pages: opts.pages } : {}), ...(opts.workflowsPath ? { workflowsPath: opts.workflowsPath } : {}) });
+    if (!existsSync(dbFilename)) {
+      throw new Error(
+        `The Temporal server on port ${port} has not opened byway's engine database at ${dbFilename}. Either another program answered on that port (stop it, or choose another port with BYWAY_TEMPORAL_PORT), or the server kept its database somewhere else, which a data folder path it reads differently can cause.`,
+      );
+    }
+    const worker = await createWorker({ connection: env.nativeConnection, namespace: env.namespace ?? 'default', gateway: opts.gateway, store: opts.store, accessKey: opts.accessKey, ...(opts.prompts ? { prompts: opts.prompts } : {}), ...(opts.pages ? { pages: opts.pages } : {}), ...(opts.workflowsPath ? { workflowsPath: opts.workflowsPath } : {}) });
     let atStart: EngineStartReport;
     try {
       atStart = await settleBeforePolling(env.client, worker, opts.store);
@@ -256,7 +262,7 @@ export async function startDevEngine(opts: DevEngineOptions): Promise<DevEngine>
       throw e;
     }
     const running = worker.run();
-    const runner = createRunnerClient({ client: env.client, store: opts.store });
+    const runner = createRunnerClient({ client: env.client, store: opts.store, accessKey: opts.accessKey });
     // The lost-run pass again every few minutes while the worker polls, leaving alone queued runs with no workflow yet;
     // what it ends, or why it could not run, is said, and never stops the engine.
     const warn = opts.warn ?? ((message: string) => console.warn(message));

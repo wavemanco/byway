@@ -90,6 +90,191 @@ async function pressTwiceWhileRefused(page: Page, control: Locator, sends: { cou
 
 const turn = (page: Page) => page.locator('section.turn');
 
+test.describe('Settings’ single-key shortcuts, kept with byway’s settings (B-188)', () => {
+  test('turned off in Settings, Y no longer answers a confirm: in another open tab at once, after a reload, and in the Settings tab itself', async ({ page, context }) => {
+    const { runId } = data().confirm;
+    const sends = await refuseSlowly(page, (p) => p.startsWith(`/api/runs/${runId}/checkpoints/`), 'e2e: that answer was not sent');
+    const listedY = () => turn(page).locator('.shortcuts kbd', { hasText: /^Y$/ });
+    const yes = () => turn(page).getByRole('button', { name: 'Yes', exact: true });
+    await page.goto(`/runs/${runId}`);
+    // On, Y answers (refused here, so the question stays open).
+    await expect(listedY()).toHaveCount(1);
+    await yes().focus();
+    await page.keyboard.press('y');
+    await expect.poll(() => sends.count()).toBe(1);
+    await expect(page.getByRole('alert').filter({ hasText: 'e2e: that answer was not sent' })).toBeVisible();
+
+    const settings = await context.newPage();
+    await settings.goto('/settings');
+    const toggle = settings.getByRole('switch', { name: 'Single-key shortcuts' });
+    try {
+      await expect(toggle).toHaveAttribute('aria-checked', 'true');
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-checked', 'false');
+      // The Run tab, which did not save it, follows at once.
+      await expect(listedY()).toHaveCount(0);
+      await yes().focus();
+      await page.keyboard.press('y');
+      await page.waitForTimeout(SLOW_MS);
+      expect(sends.count(), 'answers sent by Y once it is off').toBe(1);
+      // And it is kept: after a reload it is still off.
+      await page.reload();
+      await expect(yes()).toBeVisible();
+      await expect(listedY()).toHaveCount(0);
+      await yes().focus();
+      await page.keyboard.press('y');
+      await page.waitForTimeout(SLOW_MS);
+      expect(sends.count(), 'answers sent by Y after a reload').toBe(1);
+      // The tab where it was turned off goes on to the question: Y does nothing there either.
+      const own = await refuseSlowly(settings, (p) => p.startsWith(`/api/runs/${runId}/checkpoints/`), 'e2e: that answer was not sent');
+      await settings.goto(`/runs/${runId}`);
+      await expect(turn(settings).getByRole('button', { name: 'Yes', exact: true })).toBeVisible();
+      await expect(turn(settings).locator('.shortcuts kbd', { hasText: /^Y$/ })).toHaveCount(0);
+      await turn(settings).getByRole('button', { name: 'Yes', exact: true }).focus();
+      await settings.keyboard.press('y');
+      await settings.waitForTimeout(SLOW_MS);
+      expect(own.count(), 'answers sent by Y in the tab that turned it off').toBe(0);
+      await settings.goto('/settings');
+    } finally {
+      // The rest of the suite has it on.
+      if ((await toggle.getAttribute('aria-checked')) === 'false') {
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-checked', 'true');
+      }
+      await settings.close();
+    }
+  });
+
+  test('a tab in another browser profile, which hears no other tab, reads the switch again when it comes into view', async ({ page, context, browser }) => {
+    const { runId } = data().confirm;
+    const origin = test.info().project.use.baseURL ?? '';
+    const other = await browser.newContext();
+    await other.addCookies(await context.cookies());
+    const away = await other.newPage();
+    const sends = await refuseSlowly(away, (p) => p.startsWith(`/api/runs/${runId}/checkpoints/`), 'e2e: that answer was not sent');
+    const listedY = () => turn(away).locator('.shortcuts kbd', { hasText: /^Y$/ });
+    await away.goto(`${origin}/runs/${runId}`);
+    await expect(listedY()).toHaveCount(1);
+    await page.goto('/settings');
+    const toggle = page.getByRole('switch', { name: 'Single-key shortcuts' });
+    try {
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-checked', 'false');
+      // The other profile's tab comes back into view.
+      await away.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      await expect(listedY()).toHaveCount(0);
+      await turn(away).getByRole('button', { name: 'Yes', exact: true }).focus();
+      await away.keyboard.press('y');
+      await away.waitForTimeout(SLOW_MS);
+      expect(sends.count(), 'answers sent by Y in the other profile').toBe(0);
+    } finally {
+      if ((await toggle.getAttribute('aria-checked')) === 'false') {
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-checked', 'true');
+      }
+      await other.close();
+    }
+  });
+
+  test('a read of the switch answered after a newer change does not undo it (B-188’s check 5)', async ({ page, context }) => {
+    const { runId } = data().confirm;
+    // The Run tab's first read is made while the switch is on, and held until the switch has been turned off elsewhere.
+    let read: 'waiting' | 'held' | 'done' = 'waiting';
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    const settingsRead = (url: URL) => url.pathname === '/api/settings';
+    await page.route(settingsRead, async (route) => {
+      if (route.request().method() !== 'GET' || read !== 'waiting') return route.continue();
+      const answer = await route.fetch();
+      read = 'held';
+      await released;
+      await route.fulfill({ response: answer });
+      read = 'done';
+    });
+    const listedY = () => turn(page).locator('.shortcuts kbd', { hasText: /^Y$/ });
+    await page.goto(`/runs/${runId}`);
+    await expect.poll(() => read).toBe('held');
+    const settings = await context.newPage();
+    await settings.goto('/settings');
+    const toggle = settings.getByRole('switch', { name: 'Single-key shortcuts' });
+    try {
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-checked', 'false');
+      await expect(listedY()).toHaveCount(0);
+      // The read made before the change comes back saying on: the tab stays off.
+      release();
+      await expect.poll(() => read).toBe('done');
+      await page.waitForTimeout(500);
+      await expect(listedY()).toHaveCount(0);
+    } finally {
+      release();
+      await page.unroute(settingsRead);
+      if ((await toggle.getAttribute('aria-checked')) === 'false') {
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-checked', 'true');
+      }
+      await settings.close();
+    }
+  });
+
+  test('of two reads of the switch on their way, the one sent after the change stands, whichever comes back first (B-188’s check 6)', async ({ page, context, browser }) => {
+    const { runId } = data().confirm;
+    // A tab in another browser profile hears no other tab: only its reads tell it of a change.
+    const other = await browser.newContext();
+    await other.addCookies(await context.cookies());
+    const away = await other.newPage();
+    const held: (() => void)[] = [];
+    let holding = false;
+    await away.route(
+      (url) => url.pathname === '/api/settings',
+      async (route) => {
+        if (route.request().method() !== 'GET' || !holding) return route.continue();
+        const answer = await route.fetch();
+        await new Promise<void>((resolve) => held.push(resolve));
+        await route.fulfill({ response: answer });
+      },
+    );
+    const listedY = () => turn(away).locator('.shortcuts kbd', { hasText: /^Y$/ });
+    await away.goto(`${test.info().project.use.baseURL ?? ''}/runs/${runId}`);
+    await expect(listedY()).toHaveCount(1);
+    await page.goto('/settings');
+    const toggle = page.getByRole('switch', { name: 'Single-key shortcuts' });
+    try {
+      for (const order of ['older first', 'newer first'] as const) {
+        held.length = 0;
+        holding = true;
+        // Read 1 is made while the switch is on (the tab comes into view), read 2 after it is turned off (its window gets focus).
+        await away.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+        await expect.poll(() => held.length).toBe(1);
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-checked', 'false');
+        await away.evaluate(() => window.dispatchEvent(new Event('focus')));
+        await expect.poll(() => held.length).toBe(2);
+        const [first, second] = order === 'older first' ? [held[0]!, held[1]!] : [held[1]!, held[0]!];
+        first();
+        await away.waitForTimeout(300);
+        second();
+        await away.waitForTimeout(300);
+        await expect(listedY(), order).toHaveCount(0);
+        // On again, read again, for the other order.
+        holding = false;
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-checked', 'true');
+        await away.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+        await expect(listedY()).toHaveCount(1);
+      }
+    } finally {
+      holding = false;
+      for (const go of held) go();
+      if ((await toggle.getAttribute('aria-checked')) === 'false') {
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-checked', 'true');
+      }
+      await other.close();
+    }
+  });
+});
+
 test.describe('a control that starts something keeps focus, and a second press sends nothing (R5)', () => {
   test('Yes on a confirm, pressed with Enter twice, while the answer is on its way and after it is refused', async ({ page }) => {
     const { runId } = data().confirm;

@@ -223,7 +223,17 @@ describe('migrations', () => {
       [9, 'answer-waits', MIGRATION_9_CHECKSUM],
       [10, 'spend-book-waits', MIGRATION_10_CHECKSUM],
       [11, 'spend-book-retained-waits', MIGRATION_11_CHECKSUM],
+      [12, 'run-start-claim', 'sha256:0bc6925e06c75c65a1377e3913b9992734fea4ee7fb2d0f1754407624af2359d'],
+      [13, 'single-key-shortcuts-setting', 'sha256:5a878c06888815a1d35f49bd658b0774476ae04a0b7a33d9cc59d418b8809dd4'],
     ]);
+  });
+
+  it('mark every run from before migration 12 as claimed, so a replay cannot claim one (B-188)', async () => {
+    const dataDir = tempDir();
+    writeVersion1Database(dataDir);
+    const store = openStore({ dataDir });
+    expect(await store.runClaim('old-run')).toBe('before-schema-12');
+    expect(await store.claimRun('old-run', 'anything', 'exec-a')).toBe(false);
   });
 
   it('upgrade an existing version-1 database file in place, keeping every row', async () => {
@@ -288,7 +298,7 @@ describe('migrations', () => {
     expect(await store.getCheckpoint('cp')).toMatchObject({ status: 'resolved', resolution: { checkpointId: 'cp', text: 'Mine.' } });
     expect(await store.getWorkspace('ws')).toMatchObject({ name: 'Studio', budgetUsd: 25 });
     // The new tables and column work on the upgraded file.
-    expect(await store.getPreferences('ws')).toEqual({ profileId: 'balanced', demoMode: false, showTechnicalNames: false });
+    expect(await store.getPreferences('ws')).toEqual({ profileId: 'balanced', demoMode: false, showTechnicalNames: false, singleKeyShortcuts: true });
     await store.createIntake({ id: 'in', workspaceId: 'ws', problem: { text: 'Another memo' } });
     const run = await store.createRun({ id: 'v3-run', workspaceId: 'ws', recipeId: 'c4', recipeHash: `sha256:${'a'.repeat(64)}`, profileId: 'balanced', intakeId: 'in', title: 't', problem: 'p', medium: 'prose', budgetUsd: 3, status: 'paused' });
     expect(run).toMatchObject({ intakeId: 'in', status: 'paused' });
@@ -395,7 +405,8 @@ describe('migrations', () => {
     expect(versions(join(dataDir, 'byway.sqlite'))).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     const store = openStore({ dataDir });
     expect(versions(store.dbPath)).toEqual(MIGRATIONS.map((m) => m.version));
-    expect(await store.getPreferences('ws')).toEqual({ profileId: 'best', demoMode: false, showTechnicalNames: true });
+    // A row from before migration 13 keeps single-key shortcuts on, as the browser's default had them.
+    expect(await store.getPreferences('ws')).toEqual({ profileId: 'best', demoMode: false, showTechnicalNames: true, singleKeyShortcuts: true });
     expect(await store.getAnswerWaits('ws')).toEqual([]);
     expect(await store.setAnswerWait('ws', { provider: 'fal', model: 'fal-ai/kling-video/v3/pro/image-to-video', minutes: 45 })).toMatchObject({ minutes: 45 });
   });

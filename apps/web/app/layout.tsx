@@ -2,8 +2,10 @@ import type { Metadata, Viewport } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { Nav } from '../src/components/Nav.tsx';
+import { RestartedNotice } from '../src/components/RestartedNotice.tsx';
 import { SandboxBanner } from '../src/components/SandboxBanner.tsx';
 import { TechNamesProvider } from '../src/components/TechNames.tsx';
+import { SingleKeysProvider } from '../src/components/useShortcuts.ts';
 import { getContext } from '../src/services/index.ts';
 import { waitingRunCount } from '../src/view/run.ts';
 import './styles/tokens.css';
@@ -55,6 +57,8 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         {/* On every screen while the page renderer's OS sandbox is off, or on but unable to start (ADR-0105): from the
             server's state, then read again on each navigation and while the tab is visible. */}
         <SandboxBanner renderer={renderer} />
+        {/* Once any request from this tab is answered that byway started again at a new address (B-188). */}
+        <RestartedNotice />
         <header className="app-header">
           <div className="app-header-inner">
             <Link href="/" className="wordmark" aria-label="byway, start">
@@ -65,9 +69,11 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           </div>
         </header>
         <TechNamesProvider value={technical}>
-          <main id="main" tabIndex={-1}>
-            {children}
-          </main>
+          <SingleKeysProvider value={preferences.singleKeyShortcuts}>
+            <main id="main" tabIndex={-1}>
+              {children}
+            </main>
+          </SingleKeysProvider>
         </TechNamesProvider>
       </body>
     </html>

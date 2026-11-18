@@ -78,9 +78,9 @@ export class CheckpointWithdrawnError extends StoreError {
 export class UnsafeDataDirError extends StoreError {
   override name = 'UnsafeDataDirError';
   readonly path: string;
-  readonly kind: 'onedrive' | 'git';
+  readonly kind: 'onedrive' | 'git' | 'name';
 
-  constructor(path: string, kind: 'onedrive' | 'git', message: string) {
+  constructor(path: string, kind: 'onedrive' | 'git' | 'name', message: string) {
     super('unsafe-location', message);
     this.path = path;
     this.kind = kind;

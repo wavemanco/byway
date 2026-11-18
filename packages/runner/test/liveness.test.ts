@@ -12,6 +12,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { CancelledFailure, Context } from '@temporalio/activity';
 import { ActivityCancellationType, ApplicationFailure } from '@temporalio/common';
 import { MockActivityEnvironment } from '@temporalio/testing';
+
+/** The execution MockActivityEnvironment gives its activities. */
+const MOCK_EXECUTION = new MockActivityEnvironment().context?.info?.workflowExecution?.runId ?? '';
 import { CANCEL_SIGNAL, GatewayError, type CompletionRequest, type CompletionResult, type Gateway } from '@byway/contracts';
 import { mockAdapter, type ProviderAdapter, type Responder } from '@byway/gateway';
 import { COMPOSED_LIMITS, composedLimitProblems, workBound } from '@byway/recipe';
@@ -370,7 +373,9 @@ describe('a step whose run is ending, in an activity (ADR-0111)', () => {
 
   const start = async (status: 'running' | 'cancelled') => {
     const ws = (await store.ensureDefaultWorkspace()).id;
-    const run = await store.createRun({ id: `r-${Math.random().toString(36).slice(2)}`, workspaceId: ws, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'prose', budgetUsd: 5 });
+    const run = await store.createRun({ id: `r-${Math.random().toString(36).slice(2)}`, workspaceId: ws, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'prose', budgetUsd: 5, startDigest: 't' });
+    // Claimed for the mock activity environment's execution, as the run's first step claims it (B-188, claim.ts).
+    await store.claimRun(run.id, 't', MOCK_EXECUTION);
     await store.updateRun(run.id, { status: 'running' });
     const input = { run: { runId: run.id, workspaceId: ws, recipeId: 'tiny', profileId: 'demo', medium: 'prose' as const, problemId: await storeBrief(store.artifacts, { text: 'A memo' }) }, call: { key: `${run.id}/draft/-/1`, stepId: 'draft', stage: 'D1' as const }, step: draft, ports: {}, refs: [] };
     return { runId: run.id, input, end: () => store.updateRun(run.id, { status }) };
@@ -484,7 +489,9 @@ describe('the operation an activity invocation hands its calls', () => {
   /** A model step's input for a new run that is going. */
   const input = async () => {
     const ws = (await store.ensureDefaultWorkspace()).id;
-    const run = await store.createRun({ id: `r-${Math.random().toString(36).slice(2)}`, workspaceId: ws, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'prose', budgetUsd: 5 });
+    const run = await store.createRun({ id: `r-${Math.random().toString(36).slice(2)}`, workspaceId: ws, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'prose', budgetUsd: 5, startDigest: 't' });
+    // Claimed for the mock activity environment's execution, as the run's first step claims it (B-188, claim.ts).
+    await store.claimRun(run.id, 't', MOCK_EXECUTION);
     await store.updateRun(run.id, { status: 'running' });
     return { run: { runId: run.id, workspaceId: ws, recipeId: 'tiny', profileId: 'demo', medium: 'prose' as const, problemId: await storeBrief(store.artifacts, { text: 'A memo' }) }, call: { key: `${run.id}/draft/-/1`, stepId: 'draft', stage: 'D1' as const }, step: draft, ports: {}, refs: [] };
   };

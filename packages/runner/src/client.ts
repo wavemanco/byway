@@ -5,7 +5,7 @@
  * open checkpoint; cancel, pause and resume are signals; `view` reads the store.
  */
 import { randomUUID } from 'node:crypto';
-import { WorkflowExecutionAlreadyStartedError, WorkflowUpdateFailedError, type Client } from '@temporalio/client';
+import { ActivityFailure, WorkflowExecutionAlreadyStartedError, WorkflowUpdateFailedError, type Client } from '@temporalio/client';
 import { WorkflowNotFoundError } from '@temporalio/common';
 import { CANCEL_SIGNAL, PAUSE_SIGNAL, RecipeRefusedError, RESOLVE_UPDATE, RESUME_SIGNAL, TASK_QUEUE, type CheckpointResolution, type RunRecord, type RunStatus, type RunView, type Runner, type StartRunInput, type Store } from '@byway/contracts';
 import { CATALOG } from '@byway/catalog';
@@ -13,13 +13,17 @@ import { engineProblems, parseRecipe, recipeHash, type Recipe } from '@byway/rec
 import { validate } from '@byway/validator';
 import { LOST_RUN_MESSAGE, settleLostRun } from './lost-runs.ts';
 import { startFailureMessage, type WorkflowAfterFailedStart } from './start-failure.ts';
+import { signAnswer } from './answer-check.ts';
 import { storeRunInputs } from './stored-inputs.ts';
+import { startDigest } from './start-digest.ts';
 import { ENDED_STATUSES as ENDED, RUN_WORKFLOW, workflowIdFor, type RunInput } from './types.ts';
 
 export interface RunnerClientOptions {
   client: Client;
   store: Store;
   taskQueue?: string;
+  /** This start's key (the per-start secret, B-188): each answer the client sends is signed with it (answer-check.ts). */
+  accessKey?: string;
 }
 
 /** A run title from the problem: its first line, cut at a word near 72 characters. */
@@ -164,6 +168,17 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       // to the same files.
       const stored = await storeRunInputs(store.artifacts, input);
       const id = input.runId ?? randomUUID();
+      const args: RunInput = {
+        runId: id,
+        workspaceId: input.workspaceId,
+        recipe,
+        problemId: stored.problemId,
+        profileId: input.profileId,
+        budgetUsd: input.budgetUsd,
+        medium,
+        routes: input.routes ?? {},
+        inputs: stored.inputs,
+      };
       let record: RunRecord;
       let created = true;
       try {
@@ -179,6 +194,8 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
           medium,
           budgetUsd: input.budgetUsd,
           status: 'queued',
+          // Its first step claims the run only with this input (B-188, start-digest.ts), so only this start is carried out.
+          startDigest: startDigest(args),
         });
       } catch (e) {
         // The store refuses a second run with one id; a caller that named the id gets the first one back instead.
@@ -188,17 +205,6 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       }
       // Its workflow has ended (Temporal would start a new one under a closed id): the run is as it was left.
       if (!created && ENDED.has(record.status)) return record;
-      const args: RunInput = {
-        runId: id,
-        workspaceId: input.workspaceId,
-        recipe,
-        problemId: stored.problemId,
-        profileId: input.profileId,
-        budgetUsd: input.budgetUsd,
-        medium,
-        routes: input.routes ?? {},
-        inputs: stored.inputs,
-      };
       try {
         await client.workflow.start(RUN_WORKFLOW, { taskQueue, workflowId: workflowIdFor(id), args: [args] });
       } catch (e) {
@@ -227,10 +233,17 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       const run = await store.getRun(cp.runId);
       if (!run || ENDED.has(run.status)) throw new ResolutionRejectedError('This run is no longer running.');
       try {
-        await handle(cp.runId).executeUpdate(RESOLVE_UPDATE, { args: [resolution] });
+        // Signed with this start's key, so the worker records it (B-188, answer-check.ts).
+        const sent = opts.accessKey === undefined ? resolution : { ...resolution, signature: signAnswer(opts.accessKey, cp.runId, resolution) };
+        await handle(cp.runId).executeUpdate(RESOLVE_UPDATE, { args: [sent] });
       } catch (e) {
         // The workflow's validator (stale or mismatched answers) and handler refusals arrive as the Update's failure.
-        if (e instanceof WorkflowUpdateFailedError) throw new ResolutionRejectedError((e.cause as Error | undefined)?.message ?? e.message);
+        if (e instanceof WorkflowUpdateFailedError) {
+          // An activity's refusal (AnswerNotSigned) sits under Temporal's ActivityFailure, "Activity task failed".
+          let cause = e.cause as Error | undefined;
+          while (cause instanceof ActivityFailure && cause.cause instanceof Error) cause = cause.cause;
+          throw new ResolutionRejectedError(cause?.message ?? e.message);
+        }
         if (e instanceof WorkflowNotFoundError) {
           // The store says the run is going but Temporal has no running workflow for it: nobody can answer it now.
           await settleLostRun(store, cp.runId, { status: 'failed', error: LOST_RUN_MESSAGE });

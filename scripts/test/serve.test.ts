@@ -92,13 +92,59 @@ describe("serve.ts's renderer line and Playwright's browsers folder (ADR-0105)",
  * so it shares no file with a byway you are running from the same checkout. serve.ts reads the file's name from
  * BYWAY_WORKFLOWS_BUNDLE and hands the engine what it built; without it the worker builds dist/workflows.js itself.
  */
+describe("serve.ts's per-start secret (B-188)", () => {
+  const e2e = codeLines(read('scripts/e2e.ts'));
+
+  it('takes a given key or host name only in demo mode, from the shell, on a data folder other than the default, and only a name of guard.ts\'s form', () => {
+    expect(matching(serve, /process\.env\.BYWAY_ACCESS_(KEY|HOST)/)).toEqual(['const shell = { key: process.env.BYWAY_ACCESS_KEY?.trim(), host: process.env.BYWAY_ACCESS_HOST?.trim().toLowerCase() };']);
+    // Read before .env.agents is loaded, so a key or name kept there is never taken.
+    expect(serve.findIndex((l) => l.startsWith('const shell = '))).toBeLessThan(serve.findIndex((l) => l.startsWith('const keys = loadEnvFile(')));
+    expect(matching(serve, /\bfixed\b/)).toEqual([
+      'const fixed = demo && !sameLocation(dataDir, defaultDataDir({ env: { ...process.env, BYWAY_DATA_DIR: undefined } }));',
+      'const given = fixed ? shell.key : undefined;',
+      'const givenHost = fixed ? shell.host : undefined;',
+    ]);
+    expect(matching(serve, /const accessHost = /)).toEqual(["const accessHost = givenHost !== undefined && ACCESS_HOST.test(givenHost) ? givenHost : `byway-${randomBytes(12).toString('hex')}.localhost`;"]);
+  });
+
+  it('holds the web port on [::1] from before anything starts until byway has stopped', () => {
+    const hold = serve.indexOf('const ipv6 = await holdIpv6Loopback(webPort);');
+    expect(hold).toBeGreaterThan(serve.indexOf('await assertPortFree(webPort, webPortInUseMessage);'));
+    expect(hold).toBeLessThan(serve.findIndex((l) => l.startsWith('const keys = loadEnvFile(')));
+    expect(serve).toContain('await ipv6?.close();');
+    // And refuses to start when anything already answers there, which a bind check on Windows can miss.
+    const probe = serve.indexOf("if ((await answersAt('127.0.0.1', webPort)) || (await answersAt('::1', webPort))) throw new Error(webPortAnswersMessage(webPort));");
+    expect(probe).toBeGreaterThan(serve.indexOf('await assertPortFree(webPort, webPortInUseMessage);'));
+    expect(probe).toBeLessThan(hold);
+  });
+
+  it('prints the start link only once the web server says it listens, sending nothing to find out', () => {
+    const waits = serve.indexOf('void webListening(web).then(() => {');
+    expect(waits).toBeGreaterThan(serve.findIndex((l) => l.startsWith('web = spawn(process.execPath, [nextBin(), \'start\'')));
+    expect(serve.findIndex((l) => l.includes('/open?key='))).toBe(waits + 1);
+    // next start's output comes through byway, which reads its "Ready in" line.
+    expect(matching(serve, /\[nextBin\(\), 'start'/)).toEqual([expect.stringContaining("stdio: ['ignore', 'pipe', 'inherit', 'ipc']")]);
+    expect(serve).toContain("if (/\\bReady in\\b/.test(line)) resolve();");
+  });
+
+  it('the e2e suite writes byway\'s output to its log with the key masked', () => {
+    expect(matching(e2e, /log\.write\(/)).toEqual(["for (const stream of [server.stdout, server.stderr]) if (stream) createInterface({ input: stream, crlfDelay: Infinity }).on('line', (line) => log.write(`${line.replaceAll(accessKey, '<key>')}\\n`));"]);
+    expect(matching(e2e, /\.pipe\(log\)/)).toEqual([]);
+  });
+
+  it('the e2e suite waits for the printed link, and sends no request with the key to find out', () => {
+    expect(matching(e2e, /byway_access=/)).toEqual([]);
+    expect(e2e).toContain('await waitForLink(server, linkPrinted, 240_000);');
+  });
+});
+
 describe("serve.ts's workflow bundle, and the e2e suite's own (DEV-1)", () => {
   const e2e = codeLines(read('scripts/e2e.ts'));
 
   it('builds the bundle into the file BYWAY_WORKFLOWS_BUNDLE names inside packages/runner/dist, and the engine runs that file', () => {
     expect(matching(serve, /\bBYWAY_WORKFLOWS_BUNDLE\b/)).toEqual(['const bundle = process.env.BYWAY_WORKFLOWS_BUNDLE?.trim();']);
     expect(matching(serve, /\bbuildWorkflows\(/)).toEqual(['const workflowsBuilt = bundle ? buildWorkflows({ outfile: path.join(path.dirname(DEFAULT_WORKFLOWS_BUNDLE), bundle) }) : Promise.resolve(undefined);']);
-    expect(matching(serve, /\bstartDevEngine\(/)).toEqual(['const engineStarting = workflowsBuilt.then((workflowsPath) => startDevEngine({ dataDir, gateway, store, prompts, port: temporalPort, ...(workflowsPath ? { workflowsPath } : {}) }));']);
+    expect(matching(serve, /\bstartDevEngine\(/)).toEqual(['const engineStarting = workflowsBuilt.then((workflowsPath) => startDevEngine({ dataDir, gateway, store, prompts, port: temporalPort, accessKey, ...(workflowsPath ? { workflowsPath } : {}) }));']);
   });
 
   it('the e2e byway names a bundle of its own, and removes it with the data directory once byway has stopped', () => {

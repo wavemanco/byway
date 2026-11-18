@@ -130,15 +130,18 @@ svg {
   color: var(--ink);
 }
 
-/* The page renderer's OS sandbox (ADR-0105): off, or on and unable to start. On every screen until that changes. */
-.sandbox-banner {
+/* The page renderer's OS sandbox (ADR-0105): off, or on and unable to start. On every screen until that changes. And
+   byway having started again at a new address (B-188), on every screen of a tab from before. */
+.sandbox-banner,
+.restarted-banner {
   background: var(--caution-soft);
   border-bottom: 1px solid var(--line);
   color: var(--ink);
   font-size: var(--text-sm);
 }
 
-.sandbox-banner p {
+.sandbox-banner p,
+.restarted-banner p {
   max-width: var(--content);
   margin: 0 auto;
   padding: 6px var(--gutter);

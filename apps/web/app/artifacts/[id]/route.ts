@@ -10,7 +10,7 @@ import { getServices } from '../../../src/services/index.ts';
  */
 export async function GET(request: NextRequest, ctx: RouteContext<'/artifacts/[id]'>) {
   const { id } = await ctx.params;
-  // proxy.ts has already refused any Host that is not this computer's loopback address.
+  // proxy.ts has already refused any Host that is not this computer's loopback address or this start's name.
   const host = request.headers.get('host');
   const origin = host ? `${request.nextUrl.protocol}//${host}` : request.nextUrl.origin;
   return artifactResponse(await getServices(), id, request.nextUrl, origin, 'artifacts', request.headers);

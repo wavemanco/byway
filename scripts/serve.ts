@@ -43,17 +43,21 @@
  * The packages are imported by path: the repo root has no dependencies of its own, and each package resolves its own.
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import net from 'node:net';
 import path from 'node:path';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { ENGINE_STOPPED_MESSAGE, watchEngine } from '../apps/web/src/server/engine-watch.ts';
+import { ACCESS_HOST } from '../apps/web/src/server/guard.ts';
+import { answersAt, holdIpv6Loopback } from '../apps/web/src/server/ipv6-hold.ts';
 import { parseServeArgs } from '../apps/web/src/server/serving.ts';
 import { createGateway, loadEnvFile, withoutSecrets } from '../packages/gateway/src/index.ts';
 import { createPromptRenderer } from '../packages/prompts/src/index.ts';
 import { assertPortFree, browsersFolder, buildWorkflows, checkRenderer, dataDirReport, DEFAULT_WORKFLOWS_BUNDLE, engineStartLines, rendererCheckWithin, rendererLine, reportLines, startDevEngine, storeCaps, type DevEngine, type RendererCheckProgress } from '../packages/runner/src/index.ts';
-import { createStore, resolveDataDir } from '../packages/store/src/index.ts';
+import { createStore, defaultDataDir, resolveDataDir, sameLocation } from '../packages/store/src/index.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = path.join(ROOT, 'apps', 'web');
@@ -154,6 +158,25 @@ async function build(env: Record<string, string>): Promise<void> {
 
 /** The plain message for a web port that is taken (BUILD-2), beside the engine's (OPS-1). */
 const webPortInUseMessage = (port: number): string => `Port ${port} on 127.0.0.1 is already in use: is byway already running? Stop it, or choose another port with PORT.`;
+const webPortAnswersMessage = (port: number): string => `Something on this computer already answers at port ${port}: is byway already running? Stop it, or choose another port with PORT.`;
+
+/**
+ * Resolves once the web server says it listens on 127.0.0.1: `next start`'s "Ready in" line, which it prints from its
+ * listening handler, or the contributor web server's message over IPC (dev-web.ts). Nothing is sent to find out, since
+ * whatever answers first might not be byway (B-188's re-check 2). `next start`'s output is passed on as it comes.
+ */
+function webListening(child: ChildProcess): Promise<void> {
+  return new Promise((resolve) => {
+    child.on('message', (message) => {
+      if (typeof message === 'object' && message !== null && (message as { ready?: unknown }).ready === true) resolve();
+    });
+    if (child.stdout)
+      createInterface({ input: child.stdout, crlfDelay: Infinity }).on('line', (line) => {
+        console.log(line);
+        if (/\bReady in\b/.test(line)) resolve();
+      });
+  });
+}
 
 async function main(): Promise<void> {
   // A runner that pipes this output and goes away leaves a broken pipe: a killed `pnpm e2e` on Linux or macOS, where
@@ -167,12 +190,18 @@ async function main(): Promise<void> {
   // from (BUILD-2). The engine checks its port again when it starts, for a port taken meanwhile.
   await assertPortFree(temporalPort);
   await assertPortFree(webPort, webPortInUseMessage);
+  if ((await answersAt('127.0.0.1', webPort)) || (await answersAt('::1', webPort))) throw new Error(webPortAnswersMessage(webPort));
+  // And the web port on IPv6 loopback, held for as long as byway runs (B-188's re-check, ipv6-hold.ts): Chrome and Edge
+  // open the start link's .localhost name on [::1] first, where another program would otherwise receive it.
+  const ipv6 = await holdIpv6Loopback(webPort);
 
   quietTemporal();
   // Turbopack's caches are off now (next.config.ts), but ones left by an earlier byway may hold a snapshot of the
   // environment, keys included (SEC-3); they are never needed again, so they go.
   const dist = path.join(WEB, process.env.BYWAY_NEXT_DIST_DIR?.trim() || '.next');
   for (const cache of [path.join(dist, 'dev', 'cache', 'turbopack'), path.join(dist, 'cache', 'turbopack')]) rmSync(cache, { recursive: true, force: true });
+  // A fixed access key or name comes only from the shell, never from .env.agents (B-188's re-check 2, below).
+  const shell = { key: process.env.BYWAY_ACCESS_KEY?.trim(), host: process.env.BYWAY_ACCESS_HOST?.trim().toLowerCase() };
   const keys = loadEnvFile(path.join(ROOT, '.env.agents'));
   const dataDir = resolveDataDir();
   const store = createStore({ dataDir });
@@ -196,10 +225,20 @@ async function main(): Promise<void> {
 
   // The engine starts while the app builds. With BYWAY_WORKFLOWS_BUNDLE, the workflow bundle is built into that file
   // first and the worker runs it; otherwise the worker builds dist/workflows.js itself.
+  // The per-start secret (B-188, apps/web/src/server/guard.ts): a new random key and host name at each start, in this
+  // process and the web server's environment only, never on disk. BYWAY_ACCESS_KEY may name a key of 32 characters or
+  // more, and BYWAY_ACCESS_HOST a host name of guard.ts's form, for the e2e suite, which sets its browser's cookie from them;
+  // only in demo mode, which spends nothing, from the shell, and with a data folder other than the default one, so a key
+  // or name kept in a file never guards byway, and a known one never guards the person's own runs and Settings.
+  const fixed = demo && !sameLocation(dataDir, defaultDataDir({ env: { ...process.env, BYWAY_DATA_DIR: undefined } }));
+  const given = fixed ? shell.key : undefined;
+  const accessKey = given !== undefined && given.length >= 32 ? given : randomBytes(32).toString('base64url');
+  const givenHost = fixed ? shell.host : undefined;
+  const accessHost = givenHost !== undefined && ACCESS_HOST.test(givenHost) ? givenHost : `byway-${randomBytes(12).toString('hex')}.localhost`;
   console.log('  engine     starting Temporal and the runner worker…');
   const bundle = process.env.BYWAY_WORKFLOWS_BUNDLE?.trim();
   const workflowsBuilt = bundle ? buildWorkflows({ outfile: path.join(path.dirname(DEFAULT_WORKFLOWS_BUNDLE), bundle) }) : Promise.resolve(undefined);
-  const engineStarting = workflowsBuilt.then((workflowsPath) => startDevEngine({ dataDir, gateway, store, prompts, port: temporalPort, ...(workflowsPath ? { workflowsPath } : {}) }));
+  const engineStarting = workflowsBuilt.then((workflowsPath) => startDevEngine({ dataDir, gateway, store, prompts, port: temporalPort, accessKey, ...(workflowsPath ? { workflowsPath } : {}) }));
   engineStarting.catch(() => undefined);
   // The renderer is checked meanwhile, under the person's sandbox setting; the check never throws. Its time limit starts
   // when byway waits for it, below, and then says what the check had found by then (rendererProgress).
@@ -235,17 +274,22 @@ async function main(): Promise<void> {
   const browsers = await browsersFolder();
   if (browsers) console.log(`             Playwright's browsers folder: ${browsers}`);
 
-  const webEnv = { ...env, BYWAY_DATA_DIR: dataDir, BYWAY_DEMO: demo ? '1' : '0', BYWAY_TEMPORAL_ADDRESS: engine.address, PORT: String(webPort) };
+  const webEnv = { ...env, BYWAY_DATA_DIR: dataDir, BYWAY_DEMO: demo ? '1' : '0', BYWAY_TEMPORAL_ADDRESS: engine.address, PORT: String(webPort), BYWAY_ACCESS_KEY: accessKey, BYWAY_ACCESS_HOST: accessHost };
   let web: ChildProcess;
   if (mode === 'start') {
     // With an IPC channel, which the app's instrumentation hook listens on: byway's stop closes its services (stopWeb).
-    web = spawn(process.execPath, [nextBin(), 'start', '-H', '127.0.0.1', '-p', String(webPort)], { cwd: WEB, stdio: ['ignore', 'inherit', 'inherit', 'ipc'], env: webEnv });
+    web = spawn(process.execPath, [nextBin(), 'start', '-H', '127.0.0.1', '-p', String(webPort)], { cwd: WEB, stdio: ['ignore', 'pipe', 'inherit', 'ipc'], env: webEnv });
   } else {
     // Plain Node (it strips the script's types itself), from apps/web, as next dev ran. Over the IPC channel it is
     // asked to stop, and it stops by itself if this process goes away.
     web = spawn(process.execPath, [path.join(ROOT, 'scripts', 'dev-web.ts')], { cwd: WEB, stdio: ['ignore', 'inherit', 'inherit', 'ipc'], env: { ...webEnv, NODE_ENV: 'development' } });
   }
-  console.log(`  web        http://127.0.0.1:${webPort}${mode === 'dev' ? ' (next dev inside byway’s guard: every request and WebSocket is checked first)' : ''}`);
+  // The link only once the web server listens (B-188's re-check 2): until then the [::1] hold passes the browser on to
+  // 127.0.0.1, where a program listening on 0.0.0.0 or [::] would answer it. A web server that stops first stops byway.
+  void webListening(web).then(() => {
+    console.log(`  web        http://${accessHost}:${webPort}/open?key=${accessKey}${mode === 'dev' ? ' (next dev inside byway’s guard: every request and WebSocket is checked first)' : ''}`);
+    console.log('             open this link in Chrome, Edge or Firefox: byway answers only the browser that opened it, until it stops');
+  });
 
   let stopping: Promise<void> | undefined;
   const stop = (code: number) =>
@@ -253,6 +297,7 @@ async function main(): Promise<void> {
       console.log('\nStopping byway…');
       watch.stop();
       await stopWeb(web);
+      await ipv6?.close();
       // ENG-10: the worker gives in-flight steps a grace period and then abandons them (they are retried on the next
       // start), so the engine's stop is bounded; the deadline guards against a stop that hangs anyway.
       const stopped = await Promise.race([

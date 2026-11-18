@@ -17,7 +17,7 @@ pnpm install
 pnpm demo        # byway with sample outputs: no keys, no AI calls, nothing charged
 ```
 
-Open http://127.0.0.1:3000. Ctrl+C stops everything.
+Open the link printed on the "web" line, `http://byway-<24 hex digits>.localhost:3000/open?key=…`, in Chrome, Edge or Firefox: it sets the access cookie for that host name alone, and byway answers only a browser that has it (B-188, ADR-0117; apps/web/src/server/guard.ts). The key and the name are new at each start; in demo mode only, from the shell (not `.env.agents`) and with `BYWAY_DATA_DIR` naming a folder other than the default one (by the file system's own identity), `BYWAY_ACCESS_KEY` may set a key of 32 characters or more and `BYWAY_ACCESS_HOST` a name of that form, as the e2e suite does. byway also holds its web port on [::1] while it runs (Chrome and Edge try a .localhost name there first), does not start if another program has it or if anything already answers at the port on 127.0.0.1 or [::1], and prints the link only once its web server says it listens (`next start`'s "Ready in" line). Node on Windows does not resolve names under .localhost, so a script reaches byway at 127.0.0.1 with `Cookie: byway_access=<key>`; the start link itself works only at the printed name. Ctrl+C stops everything.
 
 To use real models:
 
@@ -91,7 +91,7 @@ Dependencies point down the stack: the app uses the advisor, runner, store, gate
 
 ## Data
 
-Product data lives in `BYWAY_DATA_DIR`, by default `%LOCALAPPDATA%\byway` on Windows and `~/.byway` elsewhere. byway refuses a folder inside OneDrive or inside a git working tree.
+Product data lives in `BYWAY_DATA_DIR`, by default `%LOCALAPPDATA%\byway` on Windows and `~/.byway` elsewhere. byway refuses a folder inside OneDrive or inside a git working tree, one whose path holds a #, % or ? (the engine's Temporal server opens its database by an address made from the path; the long-path form `\\?\` included), and on Windows one whose path has a part ending in a dot or a space (Node keeps such a name, Windows drops the dot or space for most programs, and SQLite a single trailing dot).
 
 | File | Contents |
 |---|---|

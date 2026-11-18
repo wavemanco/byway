@@ -59,7 +59,12 @@ export interface HarnessOptions {
   /** The spend book's lease and renewal, shortened for the restart tests. */
   leaseMs?: number;
   renewEveryMs?: number;
+  /** This start's key (the per-start secret, B-188): the harness's runner signs answers with it and its worker checks them. */
+  accessKey?: string;
 }
+
+/** The key a harness signs and checks answers with unless told otherwise (B-188, answer-check.ts). */
+export const HARNESS_ACCESS_KEY = 'harness-access-key-0123456789abcdef0123456789';
 
 /** A worker the harness started as a process of its own (spawnWorkerProcess). */
 export interface WorkerProcess {
@@ -251,6 +256,7 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
       prompts,
       pages,
       workflowsPath,
+      accessKey: opts.accessKey ?? HARNESS_ACCESS_KEY,
       seed: () => `sd${++seeds}x${path.basename(dir).slice(-6)}`,
       ...(opts.shutdownGraceTime ? { shutdownGraceTime: opts.shutdownGraceTime } : {}),
       ...(opts.shutdownForceTime ? { shutdownForceTime: opts.shutdownForceTime } : {}),
@@ -264,7 +270,7 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
   }
   let running: Promise<void> | undefined = worker.run();
   const processes: WorkerProcess[] = [];
-  const runner = createRunnerClient({ client: env.client, store, taskQueue });
+  const runner = createRunnerClient({ client: env.client, store, taskQueue, accessKey: opts.accessKey ?? HARNESS_ACCESS_KEY });
   const storeMode = (what: string) => {
     if (!own) throw new Error(`${what} needs createHarness({ book: 'store' })`);
   };
@@ -363,6 +369,7 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
         taskQueue,
         dataDir: dir,
         workflowsPath,
+        accessKey: opts.accessKey ?? HARNESS_ACCESS_KEY,
         ...extra,
         ...(opts.leaseMs !== undefined ? { leaseMs: opts.leaseMs } : {}),
         ...(opts.renewEveryMs !== undefined ? { renewEveryMs: opts.renewEveryMs } : {}),

@@ -10,6 +10,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
+import { accessHost, accessKey, accessState } from './e2e/access.ts';
 import { E2E_KEYS } from './e2e/keys.ts';
 
 const external = process.env.BYWAY_E2E_BASE_URL;
@@ -38,6 +39,8 @@ export default defineConfig({
   outputDir: './test-results',
   use: {
     baseURL: external ?? `http://127.0.0.1:${port}`,
+    // The access cookie byway's start link sets (B-188): every page the suite opens is the browser that opened the link.
+    storageState: accessState(),
     // A control that never appears fails the test in a minute, not at the run's six-minute limit.
     actionTimeout: 60_000,
     navigationTimeout: 90_000,
@@ -65,6 +68,8 @@ export default defineConfig({
             BYWAY_NEXT_DIST_DIR: '.next-e2e',
             PORT: String(port),
             BYWAY_TEMPORAL_PORT: ownTemporalPort(),
+            BYWAY_ACCESS_KEY: accessKey(),
+            BYWAY_ACCESS_HOST: accessHost(),
           },
         },
       }),

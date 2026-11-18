@@ -18,10 +18,12 @@
  * so here it has to start, with the sandbox on, as byway's default is.
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { createWriteStream, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { E2E_KEYS, SENTINEL } from '../apps/web/e2e/keys.ts';
 import { removeLeftovers } from './e2e-leftovers.ts';
@@ -65,19 +67,18 @@ const freePort = () =>
 
 const exited = (child: ChildProcess) => new Promise<number | null>((resolve) => (child.exitCode !== null ? resolve(child.exitCode) : child.once('exit', (code) => resolve(code))));
 
-async function waitUntilReady(url: string, server: ChildProcess, timeoutMs: number): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (server.exitCode !== null) throw new Error(`byway exited with code ${server.exitCode} before it was ready.`);
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
-      if (res.ok) return;
-    } catch {
-      // Not listening yet.
-    }
-    await new Promise((r) => setTimeout(r, 1000));
+async function waitForLink(server: ChildProcess, printed: Promise<void>, timeoutMs: number): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const gone = new Promise<never>((_, reject) => server.once('exit', (code) => reject(new Error(`byway exited with code ${code} before it was ready.`))));
+  gone.catch(() => undefined);
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`byway did not print its start link within ${timeoutMs / 1000} s.`)), timeoutMs);
+  });
+  try {
+    await Promise.race([printed, gone, late]);
+  } finally {
+    clearTimeout(timer);
   }
-  throw new Error(`byway was not ready at ${url} within ${timeoutMs / 1000} s.`);
 }
 
 async function main(): Promise<number> {
@@ -87,6 +88,10 @@ async function main(): Promise<number> {
   const temporalPort = await freePort();
   const baseUrl = `http://127.0.0.1:${webPort}`;
   const logFile = path.join(tmpdir(), 'byway-e2e-server.log');
+  // The per-start secret (B-188): byway starts with this key and host name, and the suite's browsers carry its cookie
+  // (e2e/access.ts).
+  const accessKey = randomBytes(32).toString('base64url');
+  const accessHost = `byway-${randomBytes(12).toString('hex')}.localhost`;
   const log = createWriteStream(logFile);
 
   console.log(`e2e: starting byway in demo mode at ${baseUrl} (engine port ${temporalPort}, data ${dataDir})`);
@@ -102,10 +107,12 @@ async function main(): Promise<number> {
       BYWAY_WORKFLOWS_BUNDLE: WORKFLOWS_BUNDLE,
       PORT: String(webPort),
       BYWAY_TEMPORAL_PORT: String(temporalPort),
+      BYWAY_ACCESS_KEY: accessKey,
+      BYWAY_ACCESS_HOST: accessHost,
     },
   });
-  server.stdout?.pipe(log);
-  server.stderr?.pipe(log);
+  // The log is a file on disk, which the key never reaches: byway prints it in its start link.
+  for (const stream of [server.stdout, server.stderr]) if (stream) createInterface({ input: stream, crlfDelay: Infinity }).on('line', (line) => log.write(`${line.replaceAll(accessKey, '<key>')}\n`));
   // The start-up lines, kept until the "renderer" line has been printed.
   let startup = '';
   const keep = (d: Buffer) => {
@@ -113,17 +120,22 @@ async function main(): Promise<number> {
     if (/^ {2}renderer {3}.*\n/m.test(startup)) server.stdout?.off('data', keep);
   };
   server.stdout?.on('data', keep);
+  // byway prints its start link only once its web server listens (serve.ts), so the suite waits for that line, and no
+  // request carrying the key goes out to find out (B-188's re-check 2).
+  const linkPrinted = new Promise<void>((resolve) => {
+    if (server.stdout) createInterface({ input: server.stdout, crlfDelay: Infinity }).on('line', (line) => line.includes('/open?key=') && resolve());
+  });
 
   let code = 1;
   try {
-    await waitUntilReady(`${baseUrl}/`, server, 240_000);
+    await waitForLink(server, linkPrinted, 240_000);
     console.log('e2e: byway is ready; running the suite');
     const cli = path.join(WEB, 'node_modules', '@playwright', 'test', 'cli.js');
     const suite = spawn(process.execPath, [cli, 'test', ...process.argv.slice(2)], {
       cwd: WEB,
       stdio: 'inherit',
       // The engine's address too: the specs that seed going runs park a workflow for each on it (apps/web/e2e/seed.ts).
-      env: { ...process.env, BYWAY_E2E_BASE_URL: baseUrl, BYWAY_E2E_DATA_DIR: dataDir, BYWAY_E2E_TEMPORAL_ADDRESS: `127.0.0.1:${temporalPort}` },
+      env: { ...process.env, BYWAY_E2E_BASE_URL: baseUrl, BYWAY_E2E_DATA_DIR: dataDir, BYWAY_E2E_TEMPORAL_ADDRESS: `127.0.0.1:${temporalPort}`, BYWAY_E2E_ACCESS_KEY: accessKey, BYWAY_E2E_ACCESS_HOST: accessHost },
     });
     code = (await exited(suite)) ?? 1;
     if (code !== 0) console.error(`e2e: the server's output is in ${logFile}`);

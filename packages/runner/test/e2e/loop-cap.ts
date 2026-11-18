@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { c6a } from '@byway/catalog';
 import { walk, withHash, type Recipe } from '@byway/recipe';
+import { startDigest } from '../../src/start-digest.ts';
 import { RUN_WORKFLOW, workflowIdFor, type RunInput } from '../../src/types.ts';
 import { FINAL_CHOICE_PROMPT, READY_PROMPT, STOPPED_AT_CAP } from '../../src/workflow/wording.ts';
 import { storeBrief } from '../helpers/briefs.ts';
@@ -110,8 +111,8 @@ export function loopCapScenarios(use: () => Harness): void {
         if (n.op === 'replicate') n.n = 1e9;
       });
       const id = randomUUID();
-      await h.store.createRun({ id, workspaceId: h.workspaceId, recipeId: recipe.id, recipeHash: withHash(recipe).hash!, profileId: 'demo', title: 'Too many', problem: 'A story', medium: 'prose', budgetUsd: 5, status: 'queued' });
       const input: RunInput = { runId: id, workspaceId: h.workspaceId, recipe, problemId: await storeBrief(h.store.artifacts, { text: 'A story' }), profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: {}, inputs: {} };
+      await h.store.createRun({ id, workspaceId: h.workspaceId, recipeId: recipe.id, recipeHash: withHash(recipe).hash!, profileId: 'demo', title: 'Too many', problem: 'A story', medium: 'prose', budgetUsd: 5, status: 'queued', startDigest: startDigest(input) });
       await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: h.taskQueue, workflowId: workflowIdFor(id), args: [input] });
       const view = await h.drive(id);
       expect(view.run.status).toBe('failed');

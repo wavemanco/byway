@@ -6,7 +6,10 @@
  * write is stored only when Chromium shows the written page as the person's edit of the page before.
  */
 import { routeChoice } from '@byway/catalog';
-import type { Medium } from '@byway/contracts';
+import { ApplicationFailure } from '@temporalio/activity';
+import { answerSigned } from '../answer-check.ts';
+import { currentExecution } from './claim.ts';
+import type { CheckpointResolution, Medium } from '@byway/contracts';
 import { withoutMarks } from '@byway/gateway';
 import { voiceWrite } from '@byway/recipe/semantics';
 import { applyClaims, claimLines } from '../claims.ts';
@@ -322,6 +325,25 @@ function plainChoice(recipeId: string, routeId: string, cp: OpenCheckpointInput[
 
 /** Write the person's answer to the store (the workflow already validated it) and announce it. */
 export async function recordResolution(deps: RunnerDeps, input: RecordResolutionInput): Promise<void> {
+  // Only an answer byway's app sent (B-188, answer-check.ts): one sent through Temporal's port by any other program
+  // carries no valid signature, and is refused before anything is written. What is written must be what was signed,
+  // and a worker without this start's key records no answer at all. (The runner's own tests call activities outside a
+  // worker, with no key.)
+  if (deps.accessKey !== undefined || currentExecution() !== undefined) {
+    const { answer, resolution } = input;
+    const written = answer !== undefined && answer.checkpointId === resolution.checkpointId && (['choice', 'text', 'approved'] as const).every((k) => resolution[k] === undefined || JSON.stringify(resolution[k]) === JSON.stringify(answer[k]));
+    if (deps.accessKey === undefined || answer === undefined || !written || !answerSigned(deps.accessKey, input.runId, answer)) {
+      // A retry of an attempt that recorded this very answer under an earlier start's key (byway stopped hard before
+      // Temporal heard of it) is that attempt's success, not a new answer: the run goes on with what the person said.
+      const stored = await deps.store.getCheckpoint(resolution.checkpointId);
+      const said = (r: CheckpointResolution | undefined) => JSON.stringify([r?.checkpointId, r?.choice ?? null, r?.text ?? null, r?.approved ?? null]);
+      if (stored?.status === 'resolved' && said(stored.resolution) === said(resolution)) {
+        await emit(deps.store, input.runId, 'checkpoint-resolved', { checkpointId: resolution.checkpointId }, at(input.call, `checkpoint/${resolution.checkpointId}/resolved`));
+        return;
+      }
+      throw ApplicationFailure.nonRetryable('This answer was not signed with this start’s key, so it is not recorded: another program sent it through the engine’s port, or byway stopped before an answer sent at its earlier start was written. If you answered this question before byway started again, answer it again.', 'AnswerNotSigned');
+    }
+  }
   try {
     await deps.store.resolveCheckpoint(input.resolution);
   } catch (e) {

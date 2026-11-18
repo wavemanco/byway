@@ -29,8 +29,8 @@ export interface ConnectedRunner {
  * A Runner for another process (the web app) talking to a running engine. Defined here, not in dev-engine.ts (which
  * re-exports it), because that module imports the worker and the Temporal test server at load time.
  */
-export async function connectRunner(opts: { store: Store; address?: string; namespace?: string }): Promise<ConnectedRunner> {
+export async function connectRunner(opts: { store: Store; address?: string; namespace?: string; accessKey?: string }): Promise<ConnectedRunner> {
   const connection = await Connection.connect({ address: opts.address ?? DEFAULT_TEMPORAL_ADDRESS });
   const client = new Client({ connection, namespace: opts.namespace ?? 'default' });
-  return { runner: createRunnerClient({ client, store: opts.store }), close: () => connection.close() };
+  return { runner: createRunnerClient({ client, store: opts.store, ...(opts.accessKey !== undefined ? { accessKey: opts.accessKey } : {}) }), close: () => connection.close() };
 }

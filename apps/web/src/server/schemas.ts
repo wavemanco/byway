@@ -94,5 +94,6 @@ export const SettingsPatch = z.object({
   profileId: z.string().max(64).optional(),
   demoMode: z.boolean().optional(),
   showTechnicalNames: z.boolean().optional(),
+  singleKeyShortcuts: z.boolean().optional(),
   workspaceBudgetUsd: z.number().positive().max(MAX_BUDGET_USD).optional(),
 });

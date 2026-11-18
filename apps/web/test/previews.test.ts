@@ -12,7 +12,7 @@ import { Markdown } from '../src/components/Markdown.tsx';
 import { ScaledPage } from '../src/components/ScaledPage.tsx';
 import { ScriptsToggle } from '../src/components/ScriptsToggle.tsx';
 import { PageResult } from '../src/components/result/PageResult.tsx';
-import { createViewerFlag, type FlagStorage } from '../src/components/viewerFlags.ts';
+import { DEFAULT_PREFERENCES } from '@byway/store';
 import { FIRST_SCREEN_ONLY, frameSandbox, isOwnArtifactUrl } from '../src/view/pages.ts';
 import { filesUnder, REPO } from './guards/scan.ts';
 
@@ -67,13 +67,12 @@ describe('running a generated page’s scripts (SEC-4)', () => {
   const SHIPPED = /\.(ts|tsx)$/;
   const shipped = () => [...filesUnder(path.join(WEB, 'src'), SHIPPED), ...filesUnder(path.join(WEB, 'app'), SHIPPED)];
 
-  it('is never a remembered switch: no stored flag is about scripts, and nothing writes one to browser storage', () => {
-    const files = shipped();
-    const flagKeys = files.flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/createViewerFlag\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1] as string));
-    // The scan finds the switches that are remembered (single-key shortcuts), so an empty list proves nothing.
-    expect(flagKeys.length).toBeGreaterThan(0);
-    expect(flagKeys.filter((k) => /script/i.test(k))).toEqual([]);
-    for (const f of files) expect(/(?:localStorage|sessionStorage)\.setItem\([^)]*script/i.test(readFileSync(f, 'utf8')), f).toBe(false);
+  it('is never a remembered switch: no stored setting is about scripts, and nothing writes one to browser storage', () => {
+    // The switches byway remembers are Settings' Store preferences (single-key shortcuts among them since B-188's re-check 2).
+    const remembered = Object.keys(DEFAULT_PREFERENCES);
+    expect(remembered).toContain('singleKeyShortcuts');
+    expect(remembered.filter((k) => /script/i.test(k))).toEqual([]);
+    for (const f of shipped()) expect(/(?:localStorage|sessionStorage)\.setItem\([^)]*script/i.test(readFileSync(f, 'utf8')), f).toBe(false);
   });
 
   it('says plainly, on or off, that a page running its scripts can send what it contains to other sites', () => {
@@ -81,6 +80,8 @@ describe('running a generated page’s scripts (SEC-4)', () => {
       const out = html(createElement(ScriptsToggle, { on, onChange: () => undefined }));
       expect(out).toContain(`aria-pressed="${on}"`);
       expect(out).toContain('A page running its scripts can send what it contains to other sites.');
+      // And this start's address, which the page can read from its own (B-188's re-check).
+      expect(out).toContain('It can also read the address byway has this time, which a program on this computer could use to reach byway.');
     }
     // On, it says how long: only while this screen shows the page.
     expect(html(createElement(ScriptsToggle, { on: true, onChange: () => undefined }))).toContain('until you leave or reload this screen');
@@ -109,24 +110,3 @@ describe('Markdown from models', () => {
   });
 });
 
-describe('per-viewer switches', () => {
-  function memory(): FlagStorage & { data: Map<string, string> } {
-    const data = new Map<string, string>();
-    return { data, getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v) };
-  }
-
-  it('remember a choice in this browser, and fall back to the default when storage is missing or refuses', () => {
-    const store = memory();
-    const flag = createViewerFlag('byway.test', false, () => store);
-    expect(flag.get()).toBe(false);
-    flag.set(true);
-    expect(flag.get()).toBe(true);
-    expect(store.data.get('byway.test')).toBe('1');
-    const broken = createViewerFlag('byway.test', true, () => {
-      throw new Error('blocked');
-    });
-    expect(broken.get()).toBe(true);
-    broken.set(false);
-    expect(broken.get()).toBe(false);
-  });
-});

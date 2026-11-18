@@ -25,7 +25,7 @@ export function usePageScripts(key: string): [boolean, (on: boolean) => void] {
   return [onFor === key, (on: boolean) => setOnFor(on ? key : null)];
 }
 
-const RISK = 'A page running its scripts can send what it contains to other sites.';
+const RISK = 'A page running its scripts can send what it contains to other sites. It can also read the address byway has this time, which a program on this computer could use to reach byway.';
 
 interface ScriptsToggleProps {
   on: boolean;

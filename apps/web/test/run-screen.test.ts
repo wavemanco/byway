@@ -256,6 +256,8 @@ describe('the Run screen joins what the spend book says of an ended run (RS-5)',
       // While byway is not answering, it retries whatever the run's status.
       expect(runPollDelay(data(ended(status)), 'lost'), status).toBe(3000);
     }
+    // byway answers at a new address now: this one never answers again, so the screen stops asking (B-188).
+    expect(runPollDelay(data({ ...ended('cancelled'), status: 'running' }), 'restarted')).toBeNull();
     // A run still going polls briskly; figures sent for it are not its own.
     expect(runPollDelay(data({ ...ended('cancelled'), status: 'running' }, { callsUnderWay: 0, settledUsd: 0 }), 'ok')).toBe(1000);
   });

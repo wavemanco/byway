@@ -1,7 +1,8 @@
 'use client';
 
-import { createContext, useContext, useEffect, useRef, type RefObject } from 'react';
-import { SINGLE_KEY_SHORTCUTS, useViewerFlag } from './viewerFlags.ts';
+import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import type { Preferences } from '@byway/contracts';
+import { get } from './api.ts';
 
 export type ShortcutMap = Partial<Record<string, (event: KeyboardEvent) => void>>;
 
@@ -78,9 +79,100 @@ function describe(event: KeyboardEvent, scope: HTMLElement | null | undefined): 
   };
 }
 
-/** Whether single-key shortcuts are on in this browser (Settings), for panels that list them. */
+/**
+ * Settings' "Single-key shortcuts", a Store preference (Preferences.singleKeyShortcuts) the root layout hands down, so it
+ * stays as set when byway starts again at a new address (B-188's re-check 2). On by default (WCAG 2.1.4 lets it be off).
+ */
+const SingleKeys = createContext<{ on: boolean; set(on: boolean): void }>({ on: true, set: () => undefined });
+
+/**
+ * The channel byway's open tabs hear a change of the switch on (B-188's re-check 3): a tab other than the one that saved
+ * it would otherwise keep the value it was rendered with, and a stray Y there would still answer a yes/no question. Only
+ * pages of byway's own address can use it; a generated page runs in a sandboxed frame of no address at all.
+ */
+const SETTINGS_CHANNEL = 'byway.settings';
+
+/** Tells byway's other open tabs that the switch changed; the tab that saved it reads it again from the server. */
+export function announceSingleKeys(on: boolean): void {
+  if (typeof BroadcastChannel === 'undefined') return;
+  const channel = new BroadcastChannel(SETTINGS_CHANNEL);
+  channel.postMessage({ singleKeyShortcuts: on });
+  channel.close();
+}
+
+export function SingleKeysProvider({ value, children }: { value: boolean; children: ReactNode }) {
+  const [on, setOn] = useState(value);
+  // Each change this tab hears (its render, the channel, its own save) is counted, so a read sent before one and
+  // answered after it is not applied over it (B-188's check 5): it may carry the value from before the change. Reads are
+  // numbered too, and a read's own answer is not a change: of two reads on their way, an older one answered after a
+  // newer one has been applied is dropped, and the newer one is never dropped for the older one's sake (B-188's check 6).
+  const changes = useRef(0);
+  const reads = useRef({ sent: 0, applied: 0 });
+  const change = useCallback((next: boolean) => {
+    changes.current++;
+    setOn(next);
+  }, []);
+  // A new value from the server (this tab saved it, or navigated) replaces whatever the channel said before.
+  useEffect(() => change(value), [change, value]);
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return;
+    const channel = new BroadcastChannel(SETTINGS_CHANNEL);
+    channel.onmessage = (event: MessageEvent) => {
+      const next = (event.data as { singleKeyShortcuts?: unknown } | null)?.singleKeyShortcuts;
+      if (typeof next === 'boolean') change(next);
+    };
+    return () => channel.close();
+  }, [change]);
+  // And from byway itself, once this page has loaded and whenever it comes back into view (B-188's check 4): a change made
+  // while this page was loading reached it by neither its render nor the channel, and a tab in another browser profile
+  // or a private window never hears the channel; a window kept in view beside another reads again when it gets focus.
+  // A read that fails, or is answered after a newer change, changes nothing.
+  useEffect(() => {
+    let current = true;
+    const reread = () => {
+      if (document.visibilityState !== 'visible') return;
+      const read = ++reads.current.sent;
+      const heard = changes.current;
+      get<Preferences>('/api/settings').then(
+        (prefs) => {
+          if (!current || changes.current !== heard || read < reads.current.applied || typeof prefs.singleKeyShortcuts !== 'boolean') return;
+          reads.current.applied = read;
+          setOn(prefs.singleKeyShortcuts);
+        },
+        () => undefined,
+      );
+    };
+    reread();
+    document.addEventListener('visibilitychange', reread);
+    window.addEventListener('focus', reread);
+    return () => {
+      current = false;
+      document.removeEventListener('visibilitychange', reread);
+      window.removeEventListener('focus', reread);
+    };
+  }, [change]);
+  const switchState = useMemo(() => ({ on, set: change }), [on, change]);
+  return createElement(SingleKeys, { value: switchState }, children);
+}
+
+/** Whether single-key shortcuts are on (Settings), for panels that list them. */
 export function useSingleKeyShortcuts(): boolean {
-  return useViewerFlag(SINGLE_KEY_SHORTCUTS)[0];
+  return useContext(SingleKeys).on;
+}
+
+/**
+ * Settings' own switch: the value every screen of this tab uses, and `saved(on)`, which a successful save calls so that
+ * this tab and byway's others take it at once.
+ */
+export function useSingleKeysSwitch(): [on: boolean, saved: (on: boolean) => void] {
+  const { on, set } = useContext(SingleKeys);
+  return [
+    on,
+    (next) => {
+      set(next);
+      announceSingleKeys(next);
+    },
+  ];
 }
 
 /**

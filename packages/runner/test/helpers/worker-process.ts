@@ -24,6 +24,8 @@ export interface WorkerProcessOptions {
   boardUrl?: string;
   leaseMs?: number;
   renewEveryMs?: number;
+  /** This start's key, which the harness's runner signs answers with (B-188). */
+  accessKey: string;
 }
 
 const options = JSON.parse(process.argv[2] ?? '{}') as WorkerProcessOptions;
@@ -47,6 +49,7 @@ const worker = await createWorker({
   prompts: fakePrompts(),
   pages: fakePages(),
   workflowsPath: options.workflowsPath,
+  accessKey: options.accessKey,
   seed: () => `sd${++seeds}xproc${process.pid}`,
 });
 const running = worker.run();

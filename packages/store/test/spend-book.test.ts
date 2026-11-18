@@ -42,8 +42,9 @@ spendBookContract('SQLite in memory', () => {
 
 describe('the store’s spend book', () => {
   it('is migration 6 (with its operation keys, migration 7, its answer waits, migration 10, and its retained sends’ waits, migration 11), and two stores on one data directory share it', async () => {
-    // Migrations 8 (the page renderer's settings, ADR-0105) and 9 (each model's answer wait) came between them.
-    expect(SCHEMA_VERSION).toBe(11);
+    // Migrations 8 (the page renderer's settings, ADR-0105) and 9 (each model's answer wait) came between them, and 12
+    // (the runs' start claim, B-188) and 13 (the single-key shortcuts setting, B-188) after.
+    expect(SCHEMA_VERSION).toBe(13);
     expect(MIGRATIONS[5]?.name).toBe('spend-book');
     expect(MIGRATIONS[6]?.name).toBe('operation-keys');
     expect(MIGRATIONS[9]?.name).toBe('spend-book-waits');

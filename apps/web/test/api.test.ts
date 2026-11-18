@@ -289,11 +289,12 @@ describe('route handler logic', () => {
     await expect(controlRun(d, 'run-missing', 'cancel')).rejects.toMatchObject({ status: 404 });
   });
 
-  it('saves the profile, demo mode and technical names as Store preferences, and refuses unknown profiles', async () => {
+  it('saves the profile, demo mode, technical names and single-key shortcuts as Store preferences, and refuses unknown profiles', async () => {
     const d = await deps();
     const next = await updateSettings(d, { profileId: 'best', workspaceBudgetUsd: 50, showTechnicalNames: true });
-    expect(next).toEqual({ profileId: 'best', demoMode: false, showTechnicalNames: true });
-    expect(await d.services.store.getPreferences(d.workspaceId)).toEqual(next);
+    expect(next).toEqual({ profileId: 'best', demoMode: false, showTechnicalNames: true, singleKeyShortcuts: true });
+    expect(await updateSettings(d, { singleKeyShortcuts: false })).toMatchObject({ profileId: 'best', singleKeyShortcuts: false });
+    expect(await d.services.store.getPreferences(d.workspaceId)).toEqual({ ...next, singleKeyShortcuts: false });
     expect((await d.services.store.getWorkspace(d.workspaceId))?.budgetUsd).toBe(50);
     await expect(updateSettings(d, { profileId: 'nope' })).rejects.toMatchObject({ status: 400 });
   });
@@ -607,8 +608,12 @@ describe('exports carry their images (EXP-1)', () => {
     const page = await d.services.store.artifacts.putText(`<!doctype html><img src="/api/artifacts/${png.id}" alt="x">`, 'text/html');
     const html = await (await artifactResponse(d.services, page.id, new URL(`http://127.0.0.1:3000/artifacts/${page.id}?download=1`))).text();
     expect(html).toBe(`<!doctype html><img src="data:image/png;base64,${TINY_PNG_BASE64}" alt="x">`);
-    // Viewing (not downloading) serves the stored bytes as they are.
-    expect(await (await artifactResponse(d.services, page.id, new URL(`http://127.0.0.1:3000/artifacts/${page.id}`))).text()).toContain('/api/artifacts/');
+    // Shown in byway's frame, a page carries its images inline too: the frame is sandboxed, so its own requests carry no
+    // access cookie (B-188). A Markdown file, shown in byway's own page, is served as stored.
+    for (const shown of ['', '?scripts=1']) {
+      expect(await (await artifactResponse(d.services, page.id, new URL(`http://127.0.0.1:3000/artifacts/${page.id}${shown}`))).text()).toBe(`<!doctype html><img src="data:image/png;base64,${TINY_PNG_BASE64}" alt="x">`);
+    }
+    expect(await (await artifactResponse(d.services, md.id, new URL(`http://127.0.0.1:3000/artifacts/${md.id}`))).text()).toContain('/api/artifacts/');
   });
 
   it('leaves a reference it cannot inline as it was (missing, or not an image or clip)', async () => {

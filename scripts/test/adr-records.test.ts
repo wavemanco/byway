@@ -117,6 +117,17 @@ describe('the records and the index agree', () => {
     }
   });
 
+  // It catches a record written into itself, as an edit script's String.replace once did with "$`" in its new text
+  // (B-188); not every slip of that kind ("$'", "$&", "$$" in a last section), which edit scripts avoid by using split and join.
+  it('every record holds one title and each of its sections once', () => {
+    for (const file of files.values()) {
+      const text = read(file);
+      expect(text.match(/^# ADR-\d{4}/gm), file).toHaveLength(1);
+      const sections: string[] = text.match(/^## .+$/gm) ?? [];
+      expect(sections.filter((s, i) => sections.indexOf(s) !== i), file).toEqual([]);
+    }
+  });
+
   it('an Accepted record’s Decision does not open as a proposal, except the records named here, whose note says why', () => {
     const opening = [...files.keys()].filter((n) => isAccepted(record(n).status) && opensAsProposal(record(n).Decision));
     expect(opening).toEqual(PROPOSAL_WORDING.map((p) => p.record));

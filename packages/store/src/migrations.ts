@@ -396,6 +396,30 @@ CREATE UNIQUE INDEX paid_operations_by_key ON paid_operations (op_key) WHERE op_
 ALTER TABLE paid_operations ADD COLUMN retained_waited TEXT CHECK (retained_waited IS NULL OR json_valid(retained_waited));
 `,
   },
+  {
+    version: 12,
+    name: 'run-start-claim',
+    sql: `
+-- Only a run this byway started is carried out (backlog row B-188). Runner.start keeps a digest of each run's workflow
+-- input; the run's first step claims the run for its Temporal execution, once, only with an input of that digest, and
+-- every later step checks that it runs in the claiming execution. A workflow started with another input, replayed or
+-- reset through Temporal's port by another program stops before any paid call. Runs from before this migration are
+-- marked claimed, so none of them can be claimed by a replay.
+ALTER TABLE runs ADD COLUMN start_digest TEXT CHECK (start_digest IS NULL OR start_digest <> '');
+ALTER TABLE runs ADD COLUMN claimed_by TEXT CHECK (claimed_by IS NULL OR claimed_by <> '');
+UPDATE runs SET claimed_by = 'before-schema-12';
+`,
+  },
+  {
+    version: 13,
+    name: 'single-key-shortcuts-setting',
+    sql: `
+-- Settings' "Single-key shortcuts" (UX-1), kept until now in the browser's own storage. Since B-188 byway answers at a new
+-- host name at each start, which that storage does not follow, so the switch came back on at every start; it is kept
+-- here instead. On by default, as before.
+ALTER TABLE preferences ADD COLUMN single_key_shortcuts INTEGER NOT NULL DEFAULT 1 CHECK (single_key_shortcuts IN (0, 1));
+`,
+  },
 ];
 
 /** The schema version this build writes. */

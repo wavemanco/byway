@@ -9,7 +9,11 @@ import type { AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createGuardedServer, guardRequest, requestPaths, type NextDevApp, type NextDevOptions } from '../src/server/dev-server.ts';
-import { request, upgrade } from './fixtures/http.ts';
+import { request, upgrade, TEST_ACCESS_HOST, TEST_ACCESS_KEY } from './fixtures/http.ts';
+
+// This start's key (B-188): the server under test reads it, and the request helpers send its cookie.
+process.env.BYWAY_ACCESS_KEY = TEST_ACCESS_KEY;
+process.env.BYWAY_ACCESS_HOST = TEST_ACCESS_HOST;
 
 /** Next's own `next()`, from the installed package: dev-server.ts types the part it uses locally (see there). */
 type InstalledNext = typeof import('next').default;
@@ -168,6 +172,41 @@ describe('contributor mode’s guarded server', () => {
     expect(res.status).toBe(500);
     expect(res.body).not.toContain('boom');
     expect((await request(port, '/', { Host: `127.0.0.1:${port}` })).status).toBe(500);
+  });
+
+  it('needs this start’s access cookie on every request and upgrade, Next’s internals included (B-188)', async () => {
+    const { next, port, own } = await setup();
+    for (const path of ['/', '/api/runs', '/__nextjs_launch-editor?file=x', '/_next/static/chunks/a.js']) {
+      for (const Cookie of ['', `byway_access=${'j'.repeat(43)}`]) {
+        const res = await request(port, path, { Host: own, 'Sec-Fetch-Site': 'same-origin', Cookie });
+        expect(res.status, `${path} ${Cookie}`).toBe(401);
+      }
+    }
+    expect((await upgrade(port, { Host: own, Origin: `http://${own}`, 'Sec-Fetch-Site': 'same-origin', Cookie: '' })).status).toMatch(/ 401 /);
+    expect(next.seen).toEqual([]);
+  });
+
+  it('the start link, at this start’s host name, sets the access cookie and goes on to the start screen, and Next never sees the key', async () => {
+    const { next, port, own } = await setup();
+    const named = `${TEST_ACCESS_HOST}:${port}`;
+    const res = await new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }>((resolve, reject) =>
+      http
+        .get({ host: '127.0.0.1', port, path: `/open?key=${TEST_ACCESS_KEY}`, headers: { Host: named }, agent: false }, (r) => {
+          let body = '';
+          r.setEncoding('utf8').on('data', (d: string) => (body += d)).on('end', () => resolve({ status: r.statusCode ?? 0, headers: r.headers, body }));
+        })
+        .on('error', reject),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers['set-cookie']).toEqual([`byway_access=${TEST_ACCESS_KEY}; Path=/; HttpOnly; SameSite=Strict`]);
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.body).toContain('<meta http-equiv="refresh" content="0;url=/">');
+    expect((await request(port, '/open?key=wrong', { Host: named, Cookie: '' })).status).toBe(403);
+    // At 127.0.0.1, whose cookie would go to every port, the right key sets nothing.
+    expect((await request(port, `/open?key=${TEST_ACCESS_KEY}`, { Host: own, Cookie: '' })).status).toBe(403);
+    // Requests at the host name pass the guard like those at 127.0.0.1, with the cookie.
+    expect((await request(port, '/', { Host: named, Cookie: '' })).status).toBe(401);
+    expect(next.seen).toEqual([]);
   });
 });
 

@@ -145,6 +145,8 @@ describe('request schemas', () => {
     expect(StartInput.safeParse({ intakeId: '0b7f2f5e-3c1a-4d2e-9f00-5a3c2b1d4e6f', recipeId: 'c4', budgetUsd: 2, refs: ['../x'] }).success).toBe(false);
     expect(StartInput.safeParse({ intakeId: '0b7f2f5e-3c1a-4d2e-9f00-5a3c2b1d4e6f', recipeId: 'c4', budgetUsd: 2, refs: Array(10).fill(ID) }).success).toBe(false);
     expect(SettingsPatch.safeParse({ showTechnicalNames: true }).success).toBe(true);
+    expect(SettingsPatch.safeParse({ singleKeyShortcuts: false }).success).toBe(true);
+    expect(SettingsPatch.safeParse({ singleKeyShortcuts: 'off' }).success).toBe(false);
     expect(ResolutionInput.safeParse({ choice: ['a'] }).success).toBe(true);
     expect(ResolutionInput.safeParse({ approved: 'yes' }).success).toBe(false);
     expect(SettingsPatch.safeParse({ workspaceBudgetUsd: 50, demoMode: true }).success).toBe(true);

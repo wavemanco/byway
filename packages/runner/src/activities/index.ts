@@ -27,6 +27,7 @@ import { CancelledFailure } from '@temporalio/activity';
 import type { RunnerActivities } from '../types.ts';
 import { assetStep } from './asset.ts';
 import type { RunnerDeps } from './deps.ts';
+import { checkClaim, claimRun } from './claim.ts';
 import { logDeclines, stepCallOf } from './declines.ts';
 import { guarded } from './failures.ts';
 import { finishHumanStep, openCheckpoint, recordResolution } from './human.ts';
@@ -51,6 +52,8 @@ export function createActivities(deps: RunnerDeps): RunnerActivities {
   const wrap =
     <I, O>(fn: (deps: RunnerDeps, input: I) => Promise<O>) =>
     async (input: I): Promise<O> => {
+      // Only in the execution that claimed the run (B-188, claim.ts): claimRun makes the claim, every other step checks it.
+      if (fn !== (claimRun as unknown)) await guarded(() => checkClaim(deps, stepCallOf(input)?.runId ?? runIdOf(input)));
       const invocation = startInvocation();
       const gateway = guardGateway(deps.gateway, deps.store, invocation.signal);
       // The run and step call the input names, when it is a step's: its memo scope, its declines and its sandbox note.
@@ -83,6 +86,7 @@ export function createActivities(deps: RunnerDeps): RunnerActivities {
       }
     };
   return {
+    claimRun: wrap(claimRun),
     beginRun: wrap(beginRun),
     setRunStatus: wrap(setRunStatus),
     emitEvents: wrap(emitEvents),

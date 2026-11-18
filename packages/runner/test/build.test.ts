@@ -43,9 +43,11 @@ import { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE, workflowBundleHash } from '..
  * calls are pure (backlog row B-176). B-176's fix marks them pure, so the bundle drops ids.ts whole, and with it the media and
  * tell-domain lists of @byway/protocol it alone brought in, and changes once more,
  * on purpose, from f5cb3d64… to 1d8d5728…, with no workflow code changed; after it, a new prompt id leaves the hash alone
- * (the test "holds none of @byway/prompts' id lists" below). Runs waiting under an older bundle end plainly (ADR-0078).
+ * (the test "holds none of @byway/prompts' id lists" below). B-188 changes it on purpose, from 1d8d5728… to 94f16fba…:
+ * the workflow claims its run with its whole input, as its first step, before its status loops start. Runs waiting
+ * under an older bundle end plainly (ADR-0078).
  */
-const PINNED_WORKFLOW_HASH = '1d8d5728c3f4d04af92e7926493d7b342e99e4913a1cac2c11199e94895c034d';
+const PINNED_WORKFLOW_HASH = '94f16fbab1826b601853e7de0953f841360bbe1e8ee7a69d1da0a80c6c79946f';
 
 describe('the workflow bundle', () => {
   it('inlines the workspace and leaves only the Temporal workflow SDK external', async () => {
@@ -64,7 +66,7 @@ describe('the workflow bundle', () => {
     }
   }, 60_000);
 
-  it('is the bundle runs in flight were started under: the spend book’s stage 3 changed no workflow code, cluster F, cluster A and block 2’s workflow batch changed it on purpose (ADR-0078, ADR-0099, ADR-0090, ADR-0093, ADR-0098)', async () => {
+  it('is the bundle runs in flight were started under: the spend book’s stage 3 changed no workflow code, cluster F, cluster A, block 2’s workflow batch and B-188’s start claim changed it on purpose (ADR-0078, ADR-0099, ADR-0090, ADR-0093, ADR-0098)', async () => {
     // A run records the hash of the bundle it started under, and a worker running another bundle ends it plainly
     // (ADR-0078). Pinned, so that a change to workflow code is a decision made with it, never a side effect of activity
     // work: update it in the same change that alters workflow code on purpose.

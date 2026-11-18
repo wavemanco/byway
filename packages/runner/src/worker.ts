@@ -27,6 +27,8 @@ export interface CreateWorkerOptions {
   pages?: PageRenderer;
   /** A prebuilt workflow bundle; by default the worker builds dist/workflows.js first. */
   workflowsPath?: string;
+  /** This start's key (the per-start secret, B-188): answers are recorded only with its signature; a worker without it records none. */
+  accessKey: string;
   labelFor?: RunnerDeps['labelFor'];
   seed?: RunnerDeps['seed'];
   random?: RunnerDeps['random'];
@@ -57,6 +59,8 @@ export interface RunnerWorker {
 }
 
 export async function createWorker(opts: CreateWorkerOptions): Promise<RunnerWorker> {
+  // B-188: a worker without this start's key would record no answer; it does not start.
+  if (typeof opts.accessKey !== 'string' || opts.accessKey.length < 32) throw new Error('The runner worker needs this start’s access key (32 characters or more): start byway with pnpm start, which makes one.');
   const workflowsPath = opts.workflowsPath ?? (await buildWorkflows());
   const ownConnection = opts.connection ? undefined : await NativeConnection.connect({ address: DEFAULT_TEMPORAL_ADDRESS });
   const connection = opts.connection ?? ownConnection!;
@@ -72,6 +76,7 @@ export async function createWorker(opts: CreateWorkerOptions): Promise<RunnerWor
     ...(opts.labelFor ? { labelFor: opts.labelFor } : {}),
     ...(opts.seed ? { seed: opts.seed } : {}),
     ...(opts.random ? { random: opts.random } : {}),
+    accessKey: opts.accessKey,
   };
   const taskQueue = opts.taskQueue ?? TASK_QUEUE;
   const workflowHash = workflowBundleHash(workflowsPath);

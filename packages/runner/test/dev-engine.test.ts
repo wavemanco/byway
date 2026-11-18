@@ -86,8 +86,11 @@ const recordRepeat: NonNullable<DevEngineOptions['repeat']> = (everyMs, pass, on
 /** What the engines said while they ran. */
 const warned: string[] = [];
 
+/** This start's key (B-188): the worker records only answers the app signed with it. */
+const ACCESS_KEY = 'dev-engine-test-access-key-0123456789abcdef';
+
 const start = (port: number, more: { httpPort?: number } = {}) =>
-  startDevEngine({ dataDir: dir, gateway, store, prompts: fakePrompts(), port, pages: fakePages(), workflowsPath, repeat: recordRepeat, warn: (m) => warned.push(m), ...more });
+  startDevEngine({ dataDir: dir, gateway, store, prompts: fakePrompts(), port, pages: fakePages(), workflowsPath, repeat: recordRepeat, warn: (m) => warned.push(m), accessKey: ACCESS_KEY, ...more });
 
 /** An HTTP request to the dev server's HTTP API, with the headers a hostile page or a rebinding attack would send. */
 const http = (port: number, method: 'GET' | 'POST', headers: Record<string, string>, body?: string) =>
@@ -136,7 +139,7 @@ describe('the dev engine', () => {
     expect(existsSync(path.join(dir, TEMPORAL_DB_FILENAME))).toBe(true);
 
     // The app is another process: it talks to the engine through its own client.
-    const app = await connectRunner({ store, address: engine.address });
+    const app = await connectRunner({ store, address: engine.address, accessKey: ACCESS_KEY });
     const ws = await store.ensureDefaultWorkspace();
     const run = await app.runner.start({ workspaceId: ws.id, recipe: tiny, problem: PROBLEM, profileId: 'demo', budgetUsd: 5 });
     for (;;) {

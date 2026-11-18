@@ -28,7 +28,7 @@ import { createWorker } from '../src/worker.ts';
 import { NO_SWAPS_CHOSEN, NOTHING_TO_REMOVE, NOTHING_TO_SWAP } from '../src/workflow/wording.ts';
 import { checkEvents, ofType } from './helpers/events.ts';
 import { png } from './helpers/fake-pages.ts';
-import { createHarness, type Harness } from './helpers/harness.ts';
+import { createHarness, HARNESS_ACCESS_KEY, type Harness } from './helpers/harness.ts';
 
 const library = createPromptRenderer();
 let h: Harness;
@@ -119,7 +119,7 @@ describe('the real templates, the runner and the demo gateway agree (spec §3.3)
     const taskQueue = 'runner-default-prompts';
     // Next to the default bundle, where Temporal's bundler resolves @temporalio/* from the runner's node_modules.
     const outfile = DEFAULT_WORKFLOWS_BUNDLE.replace(/workflows\.js$/, `default-prompts-${process.pid}.js`);
-    const worker = await createWorker({ connection: h.env.nativeConnection, taskQueue, gateway: h.gateway, store: h.store, pages: h.pages, workflowsPath: await buildWorkflows({ outfile }) });
+    const worker = await createWorker({ connection: h.env.nativeConnection, taskQueue, gateway: h.gateway, store: h.store, pages: h.pages, workflowsPath: await buildWorkflows({ outfile }), accessKey: HARNESS_ACCESS_KEY });
     const running = worker.run();
     try {
       const runner = createRunnerClient({ client: h.env.client, store: h.store, taskQueue });
