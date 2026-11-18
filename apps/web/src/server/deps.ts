@@ -1,12 +1,13 @@
 /** Wiring for route handlers and server components: the services and the request's workspace and profile. */
 import { isEngineUnavailable } from '../services/engine-runner.ts';
-import { getContext } from '../services/index.ts';
+import { getContext, getServices } from '../services/index.ts';
 import { HttpError, type Deps } from './api.ts';
 import { fail, json } from './http.ts';
 
 export async function getDeps(): Promise<Deps> {
   const { services, workspaceId, profileId, heldKeyIn, questionEstimates, pricesCheckedOn, modelWaits } = await getContext();
-  return { services, workspaceId, profileId, heldKeyIn, questionEstimates, pricesCheckedOn, modelWaits };
+  // The advisor a run is explained by: byway's services as started, which Settings' demo switch does not change (B-199).
+  return { services, workspaceId, profileId, heldKeyIn, questionEstimates, pricesCheckedOn, modelWaits, runAdvisor: (await getServices()).advisor };
 }
 
 /**

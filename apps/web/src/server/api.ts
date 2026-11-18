@@ -61,6 +61,12 @@ export interface Deps {
   pricesCheckedOn: string;
   /** Every model the gateway's profiles use, with the answer waits it offers (ServiceHost.modelWaits). */
   modelWaits(): ModelWait[];
+  /**
+   * The advisor of byway's services as it was started (pnpm start: real models where keys are set; pnpm demo: the mock),
+   * which Settings' demo switch does not change: it explains a run under its own profile as its worker runs it (B-199's
+   * fourth check). Without it, the request's own advisor.
+   */
+  runAdvisor?: Services['advisor'];
 }
 
 /** Runs a model-backed advisor call; a model error becomes an HttpError the person can act on (UX-2). */
@@ -335,7 +341,7 @@ function refuseChangedMode(deps: Deps, demo: boolean, what: string): void {
  * checks: one built in demo mode was estimated at nothing, and its image steps explained as no image made). Nothing is
  * stored: the view's digest goes back with its Start, which is compared with what this tab showed (B-199's third check).
  * One that no longer passes is shown as stored, so drawing the screen never lifts its refusal; one built from a recipe
- * byway no longer has is shown as stored too, and its Start says why it cannot run.
+ * byway no longer has is shown refused, as its Start would refuse it.
  */
 export function composedNow(deps: Deps, intake: IntakeRecord): ComposeView | null {
   if (!intake.composed) return null;
@@ -344,8 +350,13 @@ export function composedNow(deps: Deps, intake: IntakeRecord): ComposeView | nul
     return composeView(deps.services.advisor.admit(intake.composed, { problem: intake.problem, profileId: deps.profileId }));
   } catch (err) {
     if (!unknownRecipe(err)) throw err;
-    return composeView(intake.composed);
+    return composeView(goneResult(intake.composed));
   }
+}
+
+/** A stored composed recipe whose nearest recipe byway no longer has: refused, since there is nothing to check it against. */
+function goneResult(stored: ComposeResult): ComposeResult {
+  return { ...stored, ok: false, violations: [{ ruleId: NEAREST_GONE, message: "the recipe it was built from is no longer one of byway's, so it cannot be checked again" }] };
 }
 
 /**
@@ -384,12 +395,12 @@ async function admitComposed(deps: Deps, intakeId: string, stored: ComposeResult
   } catch (err) {
     if (!unknownRecipe(err)) throw err;
     // The recipe it was built from is no longer one of byway's, so there is nothing to check it against. It is refused
-    // like one that no longer passes: the intake says why, and Start stays blocked until a new one is built.
-    const gone: ComposeResult = { ...stored, ok: false, violations: [{ ruleId: NEAREST_GONE, message: "the recipe it was built from is no longer one of byway's, so it cannot be checked again" }] };
-    await deps.services.store.updateIntake(intakeId, { composed: gone });
+    // like one that no longer passes, and the screen shows it so when drawn (composedNow); the intake is left as it was.
+    const gone = goneResult(stored);
     throw new HttpError(400, "This recipe was built from one byway no longer has, so it cannot be checked again or run. Build your own again.", COMPOSED_REFUSED, { composed: composeView(gone) });
   }
-  await deps.services.store.updateIntake(intakeId, { composed: again });
+  // A refused Start leaves the intake as it was (B-199's fourth check): the refusal carries the new view to its screen,
+  // and the screen admits it again when drawn. Only a Start without the view's digest keeps it, for its next try.
   if (!again.ok) {
     throw new HttpError(400, "This recipe no longer passes byway's checks, so it cannot run. Build your own again for one that does.", COMPOSED_REFUSED, { composed: composeView(again) });
   }
@@ -397,8 +408,10 @@ async function admitComposed(deps: Deps, intakeId: string, stored: ComposeResult
   // drawn since does not stand in for this one having seen the change. Without it, with what is stored, as before.
   const changed = shown !== undefined ? shownDigest(again) !== shown : JSON.stringify(again.diff) !== JSON.stringify(stored.diff) || JSON.stringify(again.presentation) !== JSON.stringify(stored.presentation);
   if (changed) {
+    if (shown === undefined) await deps.services.store.updateIntake(intakeId, { composed: again });
     throw new HttpError(409, 'byway checked this recipe again and now explains it differently, so it did not start. Read what it does, then start it.', COMPOSED_CHANGED, { composed: composeView(again) });
   }
+  await deps.services.store.updateIntake(intakeId, { composed: again });
   return again.recipe;
 }
 
@@ -434,9 +447,19 @@ export async function recipeForRun(deps: Deps, run: RunRecord): Promise<RunRecip
   const recipe = advisor.recipe(run.recipeId);
   const presentation = advisor.catalog().find((p) => p.recipeId === run.recipeId);
   if (recipe && presentation) return { presentation, label: advisor.label(recipe), recipe, steps: stepIndex(presentation, recipe) };
-  const composed = run.intakeId ? (await store.getIntake(run.intakeId))?.composed : undefined;
-  if (composed && composed.recipe.id === run.recipeId) {
-    return { presentation: composed.presentation, label: composed.label, recipe: composed.recipe, steps: stepIndex(composed.presentation, composed.recipe) };
+  const intake = run.intakeId ? await store.getIntake(run.intakeId) : undefined;
+  const composed = intake?.composed;
+  if (intake && composed && composed.recipe.id === run.recipeId) {
+    // Explained as it runs: admitted again under the run's own profile, by the advisor its worker's gateway matches (no
+    // model call), so a later Start under another profile or mode, refused or not, does not rewrite what this run's
+    // screens say it does (B-199's fourth check). A recipe built from one byway no longer has keeps what was stored.
+    let shown: Pick<ComposeResult, 'presentation' | 'label'> = composed;
+    try {
+      shown = (deps.runAdvisor ?? advisor).admit(composed, { problem: intake.problem, profileId: run.profileId });
+    } catch (err) {
+      if (!unknownRecipe(err)) throw err;
+    }
+    return { presentation: shown.presentation, label: shown.label, recipe: composed.recipe, steps: stepIndex(shown.presentation, composed.recipe) };
   }
   return {};
 }

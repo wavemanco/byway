@@ -11,7 +11,7 @@ import { RecipeRefusedError, type ComposeResult } from '@byway/contracts';
 import { c4 } from '@byway/catalog';
 import { steps, withHash, type Recipe, type Seq } from '@byway/recipe';
 import type { Services } from '../src/services/index.ts';
-import { composeIntake, createIntake, HttpError, startRun, type Deps } from '../src/server/api.ts';
+import { composedNow, composeIntake, createIntake, HttpError, startRun, type Deps } from '../src/server/api.ts';
 import { COMPOSED_CHANGED, COMPOSED_REFUSED } from '../src/view/refusals.ts';
 import { testHost, type TestHost } from './fixtures/services.ts';
 
@@ -46,7 +46,7 @@ describe('starting a composed recipe admits it again', () => {
     expect((await d.services.store.getRun(runId))?.recipeHash).toBe(stored.recipe.hash);
   });
 
-  it('a stored ok recipe that fails the checks as they are now is refused (400), and the intake says so', async () => {
+  it('a stored ok recipe that fails the checks as they are now is refused (400), and the screen drawn again says so (ADR-0121)', async () => {
     const d = await deps();
     const { intakeId, stored } = await composed(d);
     // What admission accepted before ADR-0092: a model pass after your words that says it does not write.
@@ -56,10 +56,14 @@ describe('starting a composed recipe admits it again', () => {
     d3.steps.push({ ...revise, id: 'ai-polish', writes: false, produces: [] });
     delete recipe.hash;
     await d.services.store.updateIntake(intakeId, { composed: { ...stored, recipe: withHash(recipe) } });
+    const before = (await d.services.store.getIntake(intakeId))!;
     await expect(startRun(d, { demo: true, intakeId, budgetUsd: 2 })).rejects.toMatchObject({ status: 400, code: COMPOSED_REFUSED });
-    const after = (await d.services.store.getIntake(intakeId))!.composed!;
-    expect(after.ok).toBe(false);
-    expect(after.violations.map((v) => v.ruleId)).toEqual(expect.arrayContaining(['ST12', 'PR6', 'COMPOSED-VOICE']));
+    // A refused Start leaves the intake as it was; the screen admits it again when drawn, and shows why it cannot run.
+    const after = (await d.services.store.getIntake(intakeId))!;
+    expect(after.composed).toEqual(before.composed);
+    const shown = composedNow(d, after)!;
+    expect(shown.ok).toBe(false);
+    expect(shown.violations.map((v) => v.ruleId)).toEqual(expect.arrayContaining(['ST12', 'PR6', 'COMPOSED-VOICE']));
   });
 
   it('a recipe that no longer hashes to what was offered is refused (400)', async () => {
@@ -69,7 +73,7 @@ describe('starting a composed recipe admits it again', () => {
     await expect(startRun(d, { demo: true, intakeId, budgetUsd: 2 })).rejects.toMatchObject({ status: 400, code: COMPOSED_REFUSED });
   });
 
-  it('a recipe built from one byway no longer has is refused (400), asking for a new one; the intake says so', async () => {
+  it('a recipe built from one byway no longer has is refused (400), asking for a new one; the screen drawn again says so (ADR-0121)', async () => {
     const d = await deps();
     const { intakeId, stored } = await composed(d);
     await d.services.store.updateIntake(intakeId, { composed: { ...stored, nearestRecipeId: 'c0-retired' } });
@@ -81,9 +85,11 @@ describe('starting a composed recipe admits it again', () => {
     expect(shown).not.toHaveProperty('recipe');
     // An HttpError is what the route handler (server/deps.ts handle) sends with its status and body; anything else is a 500.
     expect(refused).toBeInstanceOf(HttpError);
-    const after = (await d.services.store.getIntake(intakeId))!.composed!;
-    expect(after.ok).toBe(false);
-    expect(after.violations.map((v) => v.ruleId)).toEqual(['ADMIT-NEAREST']);
+    const after = (await d.services.store.getIntake(intakeId))!;
+    expect(after.composed).toEqual({ ...stored, nearestRecipeId: 'c0-retired' });
+    const drawn = composedNow(d, after)!;
+    expect(drawn.ok).toBe(false);
+    expect(drawn.violations.map((v) => v.ruleId)).toEqual(['ADMIT-NEAREST']);
     expect(await d.services.store.listRuns(d.workspaceId)).toEqual([]);
   });
 

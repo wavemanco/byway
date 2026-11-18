@@ -302,6 +302,23 @@ describe('route handler logic', () => {
     expect(started?.estimate.highUsd).toBeGreaterThan(0);
   });
 
+  it('explains a run you built under its own profile, so a later Start under another mode, refused, changes nothing it says (ADR-0121)', async () => {
+    const { demo, live } = await bothModes();
+    const { intakeId } = await createIntake(live, { text: 'A landing page for my pottery studio' });
+    await composeCommand(demo, intakeId, { demo: true });
+    const shown = composedNow(live, (await live.services.store.getIntake(intakeId))!)!;
+    const { runId } = await startRun(live, { demo: false, intakeId, budgetUsd: 5, composedShown: shown.shown });
+    const run = (await live.services.store.getRun(runId))!;
+    const asRun = await recipeForRun({ ...live, runAdvisor: live.services.advisor }, run);
+    const stored = (await live.services.store.getIntake(intakeId))!.composed;
+    // Demo mode turned on; an old tab's Start is refused, and nothing it did reaches the intake or the run's screen.
+    await expect(startRun(demo, { demo: true, intakeId, budgetUsd: 5, composedShown: '0'.repeat(64) })).rejects.toMatchObject({ status: 409, code: 'composed-changed' });
+    expect((await live.services.store.getIntake(intakeId))!.composed).toEqual(stored);
+    // The run's screens, drawn while demo mode is on, explain it as its worker runs it: under its own profile.
+    expect(await recipeForRun({ ...demo, runAdvisor: live.services.advisor }, run)).toEqual(asRun);
+    expect(asRun.presentation).toEqual(shown.presentation);
+  });
+
   it('says a run started with real models uses them while demo mode is on, and only then (B-199)', async () => {
     const { demo, live } = await bothModes();
     const { intakeId } = await createIntake(live, { text: 'A memo' });
