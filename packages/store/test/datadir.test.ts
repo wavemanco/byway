@@ -89,7 +89,8 @@ describe('a data folder named two ways on Windows (B-188’s check 5)', () => {
         expect(unsafeLocationReason(dir, {}, platform), `${platform} ${dir}`).toMatchObject({ kind: 'name', message: expect.stringMatching(/no #, % or \?/) });
       }
     }
-    if (process.platform === 'win32') expect(unsafeLocationReason(`\\\\?\\${join(tempDir(), 'byway')}`)).toBeUndefined();
+    // The long-path form too: the server cannot open a database under it (B-188's check 7).
+    if (process.platform === 'win32') expect(unsafeLocationReason(`\\\\?\\${join(tempDir(), 'byway')}`)).toMatchObject({ kind: 'name', message: expect.stringMatching(/holds "\?".*move the contents/) });
   });
 
   it('stops byway before it opens anything there', () => {

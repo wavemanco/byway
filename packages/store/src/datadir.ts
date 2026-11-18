@@ -63,16 +63,18 @@ export function assertSafeDataDir(dir: string, env: Env = process.env): void {
 export function unsafeLocationReason(dir: string, env: Env = process.env, platform: NodeJS.Platform = process.platform): UnsafeLocation | undefined {
   const abs = path.resolve(dir);
   // Temporal's server opens its database by a SQLite address made from this path (file:<path>?…): a "#" ends the address,
-  // a "%" starts an escape and a "?" starts its options, so the engine's database would be kept somewhere else, or not
-  // open, while byway's own are kept here (B-188's check 6). The long-path prefix \\?\ is not part of the name.
-  const reserved = /[#%?]/.exec(abs.replace(/^\\\\\?\\/, ''));
+  // a "%" may start an escape and a "?" starts its options, so the engine's database would be kept somewhere else, or not
+  // open, while byway's own are kept here (B-188's check 6). The long-path form \\?\ is refused too: the server cannot
+  // open a database under it, and on Windows it is the only place a "?" can be (B-188's check 7).
+  const reserved = /[#%?]/.exec(abs);
   if (reserved) {
     return {
       kind: 'name',
       root: abs,
       message:
         `Refusing to keep byway data in ${abs}: its path holds "${reserved[0]}", which the engine's Temporal server reads as part of a ` +
-        'database address, not of a folder name, so it would keep its database somewhere else or fail to open it. Set BYWAY_DATA_DIR to a folder whose path has no #, % or ?.',
+        'database address (a "%" may be read as an escape, and the long-path form \\\\?\\ is one it cannot open), not of a folder name, so it would keep its ' +
+        'database somewhere else or fail to open it. Set BYWAY_DATA_DIR to a folder whose path has no #, % or ?, and move the contents of the folder you used to it.',
     };
   }
   // On Windows a part of the path ending in a dot or a space is kept by Node and dropped by Windows for most programs,

@@ -117,7 +117,9 @@ describe('the records and the index agree', () => {
     }
   });
 
-  it('every record holds one title and each of its sections once (an edit script once wrote a record into itself, B-188)', () => {
+  // It catches a record written into itself, as an edit script's String.replace once did with "$`" in its new text
+  // (B-188); not every slip of that kind ("$'", "$&", "$$" in a last section), which edit scripts avoid by using split and join.
+  it('every record holds one title and each of its sections once', () => {
     for (const file of files.values()) {
       const text = read(file);
       expect(text.match(/^# ADR-\d{4}/gm), file).toHaveLength(1);
