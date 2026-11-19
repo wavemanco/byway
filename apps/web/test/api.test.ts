@@ -319,6 +319,32 @@ describe('route handler logic', () => {
     expect(asRun.presentation).toEqual(shown.presentation);
   });
 
+  it('keeps a Start\'s admission on the intake only once its run has started, not when its budget or examples refuse it (ADR-0121)', async () => {
+    const { demo, live } = await bothModes();
+    const { intakeId } = await createIntake(live, { text: 'A landing page for my pottery studio' });
+    await composeCommand(demo, intakeId, { demo: true });
+    const built = (await live.services.store.getIntake(intakeId))!.composed;
+    const shown = composedNow(live, (await live.services.store.getIntake(intakeId))!)!;
+    await expect(startRun(live, { demo: false, intakeId, budgetUsd: 999, composedShown: shown.shown })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/workspace budget/) });
+    await expect(startRun(live, { demo: false, intakeId, budgetUsd: 5, composedShown: shown.shown, refs: [`sha256:${'0'.repeat(64)}`] })).rejects.toMatchObject({ status: 400 });
+    expect((await live.services.store.getIntake(intakeId))!.composed).toEqual(built);
+    expect(await live.services.store.listRuns(live.workspaceId)).toEqual([]);
+    // Started, the run's admission is what the intake keeps.
+    await startRun(live, { demo: false, intakeId, budgetUsd: 5, composedShown: shown.shown });
+    expect((await live.services.store.getIntake(intakeId))!.composed?.estimate).toEqual(shown.estimate);
+  });
+
+  it('shows a run you built on a profile byway no longer has as stored, rather than no screen (ADR-0121)', async () => {
+    const { demo, live } = await bothModes();
+    const { intakeId } = await createIntake(live, { text: 'A memo' });
+    await composeCommand(demo, intakeId, { demo: true });
+    const shown = composedNow(live, (await live.services.store.getIntake(intakeId))!)!;
+    const { runId } = await startRun(live, { demo: false, intakeId, budgetUsd: 5, composedShown: shown.shown });
+    const run = (await live.services.store.getRun(runId))!;
+    const stored = (await live.services.store.getIntake(intakeId))!.composed!;
+    expect(await recipeForRun({ ...live, runAdvisor: live.services.advisor }, { ...run, profileId: 'retired-profile' })).toMatchObject({ presentation: stored.presentation, label: stored.label });
+  });
+
   it('says a run started with real models uses them while demo mode is on, and only then (B-199)', async () => {
     const { demo, live } = await bothModes();
     const { intakeId } = await createIntake(live, { text: 'A memo' });
