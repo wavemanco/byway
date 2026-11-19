@@ -142,7 +142,7 @@ export function RecommendationView(props: Props) {
   const retrying = useAction(async (first: boolean) => {
     setError(null);
     try {
-      const result = await post<RecommendResult>(`/api/intakes/${intakeId}/recommend`, { ensure: true });
+      const result = await post<RecommendResult>(`/api/intakes/${intakeId}/recommend`, { ensure: true, demo });
       setState((s) => recovered(s, result));
       void remaining.now();
       const title = recipeTitle(result.recommendation.presentation, technical);
@@ -170,7 +170,7 @@ export function RecommendationView(props: Props) {
     setState((s) => ({ ...s, rec: { ...rec, answers } }));
     setError(null);
     try {
-      const result = await post<RecommendResult>(`/api/intakes/${intakeId}/recommend`, { answers });
+      const result = await post<RecommendResult>(`/api/intakes/${intakeId}/recommend`, { answers, demo });
       const next = result.recommendation;
       const changed = next.recipeId !== rec.recipeId;
       setState((s) => rerouted(s, result));
@@ -186,7 +186,7 @@ export function RecommendationView(props: Props) {
   const composing = useAction(async () => {
     setError(null);
     try {
-      const result = await post<ComposeResultView>(`/api/intakes/${intakeId}/compose`, {});
+      const result = await post<ComposeResultView>(`/api/intakes/${intakeId}/compose`, { demo });
       setState((s) => composedReady(s, result));
       void remaining.now();
       setFocusProposal((n) => n + 1);
@@ -221,11 +221,18 @@ export function RecommendationView(props: Props) {
             <h1>byway could not recommend a recipe</h1>
             <p>{state.problem}</p>
             <div className="empty-actions">
-              {/* A refusal asking again cannot fix makes the Library the way on; Try again stays for after the cause is fixed (B-178). */}
-              <ActionButton className={state.tryAgainHelps ? 'button button-primary' : 'button'} onClick={retry} busy={retrying.busy}>
-                {retrying.busy ? 'Trying again…' : 'Try again'}
-              </ActionButton>
-              <Link className={state.tryAgainHelps ? 'button' : 'button button-primary'} href="/library">
+              {/* A refusal asking again cannot fix makes the Library the way on; Try again stays for after the cause is fixed (B-178).
+                  byway's mode changed since this screen was drawn: a reload is the way on, and Try again would be refused again (B-199). */}
+              {state.reload ? (
+                <button type="button" className="button button-primary" onClick={() => window.location.reload()}>
+                  Reload this page
+                </button>
+              ) : (
+                <ActionButton className={state.tryAgainHelps ? 'button button-primary' : 'button'} onClick={retry} busy={retrying.busy}>
+                  {retrying.busy ? 'Trying again…' : 'Try again'}
+                </ActionButton>
+              )}
+              <Link className={state.tryAgainHelps || state.reload ? 'button' : 'button button-primary'} href="/library">
                 Choose from the Library
               </Link>
             </div>
@@ -449,6 +456,10 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
       const refs = option.takesRefs && exampleCount(examples) > 0 ? await storeExamples(examples, onExampleRefused) : [];
       const body = {
         intakeId,
+        // The mode this screen showed, which byway checks is still its own (B-199).
+        demo,
+        // And, for a recipe you built, what this tab showed of it, which byway compares its Start with (B-199).
+        ...(composed ? { composedShown: composed.shown } : {}),
         budgetUsd: budget,
         ...(recipeId ? { recipeId } : {}),
         ...(routes && Object.keys(routes).length > 0 ? { routes } : {}),

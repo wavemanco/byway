@@ -38,6 +38,12 @@ export const COMPOSED_CHANGED = 'composed-changed';
  */
 export const TRY_AGAIN_WONT_HELP = 'try-again-wont-help';
 
+/**
+ * byway's mode changed since the screen was drawn: it showed demo mode and byway now spends, or the other way (B-199).
+ * Asking again from the same screen is refused the same way, so the Recommendation screen offers a reload instead.
+ */
+export const MODE_CHANGED = 'mode-changed';
+
 /** A top-level field of a refused body, the variable name of the key found in it and, for a list, its items that held one. */
 export interface HeldKeyPart {
   field: string;

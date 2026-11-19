@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Recommendation } from '@byway/contracts';
 import type { ComposeView } from '../src/server/api.ts';
 import { awaitingFirst, composedAfterStart, composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState } from '../src/view/recommendation.ts';
-import { COMPOSED_CHANGED, COMPOSED_REFUSED, HELD_KEY_REFUSAL, TRY_AGAIN_WONT_HELP } from '../src/view/refusals.ts';
+import { COMPOSED_CHANGED, COMPOSED_REFUSED, HELD_KEY_REFUSAL, MODE_CHANGED, TRY_AGAIN_WONT_HELP } from '../src/view/refusals.ts';
 import { composedRefusalGroups, composeNotice } from '../src/view/composed.ts';
 
 const rec = (recipeId: string): Recommendation =>
@@ -77,6 +77,14 @@ describe('the Recommendation screen’s state (F14)', () => {
     expect(screen(refused, null, OPTIONS)).toBe('failed');
     expect(failed().tryAgainHelps).toBe(true);
     expect(retryFailed(refused, 'The model provider is busy right now. Try again in a minute.').tryAgainHelps).toBe(true);
+  });
+
+  it('a refusal for byway’s mode having changed offers a reload, not Try again, and a recovery clears it (B-199)', () => {
+    const changed = retryFailed(failed(), 'Demo mode was turned off since this page was shown: reload it to see what this costs.', MODE_CHANGED);
+    expect(changed).toMatchObject({ reload: true, tryAgainHelps: false });
+    expect(screen(changed, null, OPTIONS)).toBe('failed');
+    expect(failed().reload).toBe(false);
+    expect(recovered(changed, { recommendation: rec('c1'), remainingUsd: 19 }).reload).toBe(false);
   });
 
   it('a flip after recovery follows the newly routed recipe', () => {

@@ -28,6 +28,9 @@ import {
   composeCommand,
   recommendCommand,
   workspaceRemaining,
+  composedNow,
+  composeView,
+  runUsesRealModels,
 } from '../src/server/api.ts';
 import { AnswerWaitPatch, RecommendInput } from '../src/server/schemas.ts';
 import { artifactInfo, getRunData } from '../src/server/run-data.ts';
@@ -72,7 +75,7 @@ describe('route handler logic', () => {
     expect((await currentRecommendation(d, intakeId)).recipeId).toBe(again.recipeId);
     expect((await d.services.store.getIntake(intakeId))?.answers?.find((a) => a.questionId === 'visual')).toMatchObject({ answer: false, setBy: 'user' });
 
-    const { runId } = await startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 3 });
+    const { runId } = await startRun(d, { demo: true, intakeId, recipeId: 'c1', budgetUsd: 3 });
     const data = await getRunData(d.services, runId);
     expect(data.view.run).toMatchObject({ recipeId: 'c1', budgetUsd: 3, intakeId, profileId: 'demo' });
   });
@@ -93,7 +96,7 @@ describe('route handler logic', () => {
     expect(composed).not.toHaveProperty('recipe');
     const kept = (await d.services.store.getIntake(intakeId))?.composed;
     expect(kept?.recipe.kind).toBe('composed');
-    const { runId } = await startRun(d, { intakeId, budgetUsd: 2 });
+    const { runId } = await startRun(d, { demo: true, intakeId, budgetUsd: 2 });
     const run = await d.services.store.getRun(runId);
     if (!run) throw new Error('run missing');
     expect(run.intakeId).toBe(intakeId);
@@ -109,7 +112,7 @@ describe('route handler logic', () => {
   it('presents library runs from the catalog with a computed label and a step index', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
-    const { runId } = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 });
+    const { runId } = await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2 });
     const run = await d.services.store.getRun(runId);
     if (!run) throw new Error('run missing');
     const shown = await recipeForRun(d, run);
@@ -124,7 +127,7 @@ describe('route handler logic', () => {
   it('prices each open question that commits money, with the run\'s own profile, on its problem and the work beside it, for the Run screen', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
-    const { runId } = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 });
+    const { runId } = await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2 });
     const run = await d.services.store.getRun(runId);
     if (!run) throw new Error('run missing');
     const { recipe } = await recipeForRun(d, run);
@@ -171,7 +174,7 @@ describe('route handler logic', () => {
   it("prices a failed gate's question in both its wordings, with or without a retry, at Yes (ENGINE-1)", async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A launch page', recipeId: 'c5' });
-    const { runId } = await startRun(d, { intakeId, recipeId: 'c5', budgetUsd: 5 });
+    const { runId } = await startRun(d, { demo: true, intakeId, recipeId: 'c5', budgetUsd: 5 });
     const run = await d.services.store.getRun(runId);
     if (!run) throw new Error('run missing');
     const open = (prompt: string): CheckpointRecord => ({ id: `${runId}/cp-${prompt.length}`, runId, stepId: 'launch-gate', kind: 'confirm', prompt, status: 'open', openedAt: '2026-10-28T10:00:00.000Z' });
@@ -183,27 +186,202 @@ describe('route handler logic', () => {
     expect(costs?.[oneShot.id]).toEqual(costs?.[retried.id]);
   });
 
+  it('refuses a Start whose screen showed another mode than byway is in now, and starts nothing (B-199)', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo' });
+    await expect(startRun(d, { demo: false, intakeId, recipeId: 'c4', budgetUsd: 2 })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/turned on since this page was shown/) });
+    expect(await d.services.store.listRuns(d.workspaceId)).toEqual([]);
+    await current?.dispose();
+    // With a provider key and demo mode off, byway spends: a screen drawn in demo mode, which said nothing is charged, is refused.
+    current = testHost({ demo: false, env: { ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000000000' } });
+    const services: Services = current.host.services(false);
+    expect(services.mode).toBe('live');
+    const ws = await services.store.ensureDefaultWorkspace();
+    const live: Deps = { ...d, services, workspaceId: ws.id };
+    const other = await createIntake(live, { text: 'A memo' });
+    await expect(startRun(live, { demo: true, intakeId: other.intakeId, recipeId: 'c4', budgetUsd: 2 })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/turned off since this page was shown: reload it to see what the run costs/) });
+    expect(await services.store.listRuns(ws.id)).toEqual([]);
+  });
+
+  it('refuses Build my own and a re-route from a screen drawn in another mode before any call is bought (B-199)', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo' });
+    const compose = vi.spyOn(d.services.advisor, 'compose');
+    const recommend = vi.spyOn(d.services.advisor, 'recommend');
+    await expect(composeCommand(d, intakeId, { demo: false })).rejects.toMatchObject({ status: 409, code: 'mode-changed', message: expect.stringMatching(/turned on since this page was shown/) });
+    await expect(recommendCommand(d, intakeId, { ensure: true, demo: false })).rejects.toMatchObject({ status: 409 });
+    await expect(recommendCommand(d, intakeId, { answers: [], demo: false })).rejects.toMatchObject({ status: 409 });
+    expect(compose).not.toHaveBeenCalled();
+    expect(recommend).not.toHaveBeenCalled();
+  });
+
+  it('gives a Start sent again under its id its run back, whatever the mode is now; a new Start is checked (B-199)', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo' });
+    await current?.dispose();
+    current = testHost({ demo: false, env: { ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000000000' } });
+    const services: Services = current.host.services(false);
+    const ws = await services.store.ensureDefaultWorkspace();
+    const live: Deps = { ...d, services, workspaceId: ws.id, profileId: 'balanced' };
+    const memo = await createIntake(live, { text: 'A memo' });
+    const runId = '5d6e7f80-91a2-4b3c-8d4e-5f6a7b8c9d0e';
+    expect(await startRun(live, { demo: false, intakeId: memo.intakeId, recipeId: 'c4', budgetUsd: 2, runId })).toEqual({ runId });
+    // Its answer was lost, and demo mode was turned on before the screen sent it again.
+    const demoNow: Deps = { ...live, services: current.host.services(true), profileId: 'demo' };
+    expect(await startRun(demoNow, { demo: false, intakeId: memo.intakeId, recipeId: 'c4', budgetUsd: 2, runId })).toEqual({ runId });
+    await expect(startRun(demoNow, { demo: false, intakeId: memo.intakeId, recipeId: 'c4', budgetUsd: 2 })).rejects.toMatchObject({ status: 409 });
+    expect(intakeId).toBeTruthy();
+  });
+
+  /** One byway with a provider key: demo mode on in Settings (`demo`) and off (`live`). */
+  async function bothModes(): Promise<{ demo: Deps; live: Deps }> {
+    await current?.dispose();
+    current = testHost({ demo: false, env: { ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000000000' } });
+    const live: Services = current.host.services(false);
+    const ws = await live.store.ensureDefaultWorkspace();
+    const base = { workspaceId: ws.id, heldKeyIn: current.host.heldKeyIn, questionEstimates: current.host.questionEstimates, pricesCheckedOn: current.host.pricesCheckedOn, modelWaits: current.host.modelWaits };
+    return { demo: { ...base, services: current.host.services(true), profileId: 'demo' }, live: { ...base, services: live, profileId: 'balanced' } };
+  }
+
+  it('shows a recipe built in demo mode as a Start would admit it now, estimate and explanation, and stores nothing (B-199)', async () => {
+    const { demo, live } = await bothModes();
+    const { intakeId } = await createIntake(demo, { text: 'A landing page for my pottery studio' });
+    await composeCommand(demo, intakeId, { demo: true });
+    const built = (await demo.services.store.getIntake(intakeId))!;
+    expect(built.composed?.estimate.highUsd).toBe(0);
+    // Demo mode turned off, and the screen drawn again: what a run would cost now, and its steps as they would run.
+    const shown = composedNow(live, built)!;
+    expect(shown.estimate.highUsd).toBeGreaterThan(0);
+    const { recipe: _recipe, ...admitted } = live.services.advisor.admit(built.composed!, { problem: built.problem, profileId: 'balanced' });
+    expect(shown).toMatchObject(admitted);
+    expect((await live.services.store.getIntake(intakeId))!.composed).toEqual(built.composed);
+    // A tab still showing what it was built with is refused, and shown the recipe as it would run; the tab drawn again starts.
+    const stale = composeView(built.composed!).shown;
+    await expect(startRun(live, { demo: false, intakeId, budgetUsd: 5, composedShown: stale })).rejects.toMatchObject({ status: 409, code: 'composed-changed', body: { composed: expect.objectContaining({ shown: shown.shown }) } });
+    expect(await startRun(live, { demo: false, intakeId, budgetUsd: 5, composedShown: shown.shown })).toEqual({ runId: expect.any(String) });
+  });
+
+  it('compares a composed Start with what its own tab showed, not with what another tab drew since (B-199)', async () => {
+    const { demo, live } = await bothModes();
+    const { intakeId } = await createIntake(live, { text: 'A landing page for my pottery studio' });
+    await composeCommand(demo, intakeId, { demo: true });
+    const stored = (await live.services.store.getIntake(intakeId))!;
+    // Tab A was drawn under one profile; the profile changes, and tab B draws the screen under the new one.
+    const tabA = composedNow(live, stored)!;
+    const best: Deps = { ...live, profileId: 'best' };
+    const tabB = composedNow(best, stored)!;
+    expect(tabB.shown).not.toBe(tabA.shown);
+    await expect(startRun(best, { demo: false, intakeId, budgetUsd: 20, composedShown: tabA.shown })).rejects.toMatchObject({ status: 409, code: 'composed-changed' });
+    expect(await live.services.store.listRuns(live.workspaceId)).toEqual([]);
+    expect(await startRun(best, { demo: false, intakeId, budgetUsd: 20, composedShown: tabB.shown })).toEqual({ runId: expect.any(String) });
+  });
+
+  it('shows a recipe that no longer passes as stored, so drawing the screen never lifts its refusal (B-199)', async () => {
+    const { demo, live } = await bothModes();
+    const { intakeId } = await createIntake(live, { text: 'A memo' });
+    await composeCommand(demo, intakeId, { demo: true });
+    const stored = (await live.services.store.getIntake(intakeId))!;
+    const refused = { ...stored.composed!, ok: false, violations: [{ ruleId: 'ADMIT-HASH', message: 'it is not the recipe you were shown' }] };
+    await live.services.store.updateIntake(intakeId, { composed: refused });
+    const view = composedNow(live, (await live.services.store.getIntake(intakeId))!)!;
+    expect(view).toMatchObject({ ok: false, violations: [{ ruleId: 'ADMIT-HASH' }] });
+    expect((await live.services.store.getIntake(intakeId))!.composed).toEqual(refused);
+  });
+
+  it('gives a resent Start of a recipe you built its run back across a mode change, and keeps the recipe that run started with (B-199)', async () => {
+    const { demo, live } = await bothModes();
+    const { intakeId } = await createIntake(live, { text: 'A landing page for my pottery studio' });
+    await composeCommand(demo, intakeId, { demo: true });
+    const shown = composedNow(live, (await live.services.store.getIntake(intakeId))!)!;
+    const runId = '6e7f8091-a2b3-4c4d-9e5f-6a7b8c9d0e1f';
+    expect(await startRun(live, { demo: false, intakeId, budgetUsd: 5, runId, composedShown: shown.shown })).toEqual({ runId });
+    const started = (await live.services.store.getIntake(intakeId))!.composed;
+    // Its answer was lost, and demo mode was turned on before the screen sent it again.
+    expect(await startRun(demo, { demo: false, intakeId, budgetUsd: 5, runId, composedShown: shown.shown })).toEqual({ runId });
+    expect((await live.services.store.getIntake(intakeId))!.composed).toEqual(started);
+    expect(started?.estimate.highUsd).toBeGreaterThan(0);
+  });
+
+  it('explains a run you built under its own profile, so a later Start under another mode, refused, changes nothing it says (ADR-0121)', async () => {
+    const { demo, live } = await bothModes();
+    const { intakeId } = await createIntake(live, { text: 'A landing page for my pottery studio' });
+    await composeCommand(demo, intakeId, { demo: true });
+    const shown = composedNow(live, (await live.services.store.getIntake(intakeId))!)!;
+    const { runId } = await startRun(live, { demo: false, intakeId, budgetUsd: 5, composedShown: shown.shown });
+    const run = (await live.services.store.getRun(runId))!;
+    const asRun = await recipeForRun({ ...live, runAdvisor: live.services.advisor }, run);
+    const stored = (await live.services.store.getIntake(intakeId))!.composed;
+    // Demo mode turned on; an old tab's Start is refused, and nothing it did reaches the intake or the run's screen.
+    await expect(startRun(demo, { demo: true, intakeId, budgetUsd: 5, composedShown: '0'.repeat(64) })).rejects.toMatchObject({ status: 409, code: 'composed-changed' });
+    expect((await live.services.store.getIntake(intakeId))!.composed).toEqual(stored);
+    // The run's screens, drawn while demo mode is on, explain it as its worker runs it: under its own profile.
+    expect(await recipeForRun({ ...demo, runAdvisor: live.services.advisor }, run)).toEqual(asRun);
+    expect(asRun.presentation).toEqual(shown.presentation);
+  });
+
+  it('keeps a Start\'s admission on the intake only once its run has started, not when its budget or examples refuse it (ADR-0121)', async () => {
+    const { demo, live } = await bothModes();
+    const { intakeId } = await createIntake(live, { text: 'A landing page for my pottery studio' });
+    await composeCommand(demo, intakeId, { demo: true });
+    const built = (await live.services.store.getIntake(intakeId))!.composed;
+    const shown = composedNow(live, (await live.services.store.getIntake(intakeId))!)!;
+    await expect(startRun(live, { demo: false, intakeId, budgetUsd: 999, composedShown: shown.shown })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/workspace budget/) });
+    await expect(startRun(live, { demo: false, intakeId, budgetUsd: 5, composedShown: shown.shown, refs: [`sha256:${'0'.repeat(64)}`] })).rejects.toMatchObject({ status: 400 });
+    expect((await live.services.store.getIntake(intakeId))!.composed).toEqual(built);
+    expect(await live.services.store.listRuns(live.workspaceId)).toEqual([]);
+    // Started, the run's admission is what the intake keeps.
+    await startRun(live, { demo: false, intakeId, budgetUsd: 5, composedShown: shown.shown });
+    expect((await live.services.store.getIntake(intakeId))!.composed?.estimate).toEqual(shown.estimate);
+  });
+
+  it('shows a run you built on a profile byway no longer has as stored, rather than no screen (ADR-0121)', async () => {
+    const { demo, live } = await bothModes();
+    const { intakeId } = await createIntake(live, { text: 'A memo' });
+    await composeCommand(demo, intakeId, { demo: true });
+    const shown = composedNow(live, (await live.services.store.getIntake(intakeId))!)!;
+    const { runId } = await startRun(live, { demo: false, intakeId, budgetUsd: 5, composedShown: shown.shown });
+    const run = (await live.services.store.getRun(runId))!;
+    const stored = (await live.services.store.getIntake(intakeId))!.composed!;
+    expect(await recipeForRun({ ...live, runAdvisor: live.services.advisor }, { ...run, profileId: 'retired-profile' })).toMatchObject({ presentation: stored.presentation, label: stored.label });
+  });
+
+  it('says a run started with real models uses them while demo mode is on, and only then (B-199)', async () => {
+    const { demo, live } = await bothModes();
+    const { intakeId } = await createIntake(live, { text: 'A memo' });
+    const { runId } = await startRun(live, { demo: false, intakeId, recipeId: 'c4', budgetUsd: 2 });
+    const run = await live.services.store.getRun(runId);
+    const prefs = await live.services.store.getPreferences(live.workspaceId);
+    const on = { ...prefs, demoMode: true };
+    expect(runUsesRealModels({ services: demo.services, workspaceId: demo.workspaceId, preferences: on, demoForced: false }, run)).toBe(true);
+    // Demo mode off, under pnpm demo, another workspace's run, or a run of the demo profile: no.
+    expect(runUsesRealModels({ services: live.services, workspaceId: live.workspaceId, preferences: prefs, demoForced: false }, run)).toBe(false);
+    expect(runUsesRealModels({ services: demo.services, workspaceId: demo.workspaceId, preferences: on, demoForced: true }, run)).toBe(false);
+    expect(runUsesRealModels({ services: demo.services, workspaceId: 'another', preferences: on, demoForced: false }, run)).toBe(false);
+    expect(runUsesRealModels({ services: demo.services, workspaceId: demo.workspaceId, preferences: on, demoForced: false }, run && { ...run, profileId: 'demo' })).toBe(false);
+    expect(runUsesRealModels({ services: demo.services, workspaceId: demo.workspaceId, preferences: on, demoForced: false }, undefined)).toBe(false);
+  });
+
   it('refuses unknown intakes, a missing composed recipe, and budgets over what the workspace has left', async () => {
     const d = await deps();
     await expect(recommendIntake(d, '0b7f2f5e-3c1a-4d2e-9f00-5a3c2b1d4e6f')).rejects.toBeInstanceOf(HttpError);
     const { intakeId } = await createIntake(d, { text: 'A memo' });
-    await expect(startRun(d, { intakeId, budgetUsd: 2 })).rejects.toMatchObject({ status: 400 });
-    await expect(startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 500 })).rejects.toThrow(/workspace budget/);
+    await expect(startRun(d, { demo: true, intakeId, budgetUsd: 2 })).rejects.toMatchObject({ status: 400 });
+    await expect(startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 500 })).rejects.toThrow(/workspace budget/);
   });
 
   it('starts one run for a Start sent twice with the same run id; the id for another problem or recipe is a conflict (F03 P3)', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
     const runId = '5d6e7f80-91a2-4b3c-8d4e-5f6a7b8c9d0e';
-    const first = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2, runId });
+    const first = await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2, runId });
     expect(first).toEqual({ runId });
     // The answer was lost and the browser sends the same Start again.
-    expect(await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2, runId })).toEqual({ runId });
+    expect(await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2, runId })).toEqual({ runId });
     expect((await d.services.store.listRuns(d.workspaceId)).filter((r) => r.id === runId)).toHaveLength(1);
     const { intakeId: other } = await createIntake(d, { text: 'Another memo', recipeId: 'c4' });
-    await expect(startRun(d, { intakeId: other, recipeId: 'c4', budgetUsd: 2, runId })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/another problem/) });
+    await expect(startRun(d, { demo: true, intakeId: other, recipeId: 'c4', budgetUsd: 2, runId })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/another problem/) });
     // The same Start id asking for another recipe is another start, whatever its id says (the screen mints a new id then).
-    await expect(startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 2, runId })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/another problem or recipe/) });
+    await expect(startRun(d, { demo: true, intakeId, recipeId: 'c1', budgetUsd: 2, runId })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/another problem or recipe/) });
   });
 
   it("returns the same run for a Start sent again after the run's first call has lowered what is left; another budget is still checked (WEB-1)", async () => {
@@ -211,13 +389,13 @@ describe('route handler logic', () => {
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
     const runId = '6e7f8091-a2b3-4c5d-9e0f-6a7b8c9d0e1f';
     const budgetUsd = (await workspaceRemaining(d)).remainingUsd;
-    expect(await startRun(d, { intakeId, recipeId: 'c4', budgetUsd, runId })).toEqual({ runId });
+    expect(await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd, runId })).toEqual({ runId });
     await d.services.store.spendBook.admit({ opId: 'first-call', owner: 'worker', leaseMs: 60_000, workspaceId: d.workspaceId, runId, purpose: 'build:prose', kind: 'completion', provider: 'google', model: 'gemini-3-pro', reserveUsd: 0.5, paid: true, caps: { workspaceUsd: 1000 } });
     // The answer was lost; the same Start again is the same run, though what is left is now below its budget.
-    expect(await startRun(d, { intakeId, recipeId: 'c4', budgetUsd, runId })).toEqual({ runId });
+    expect(await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd, runId })).toEqual({ runId });
     expect((await d.services.store.listRuns(d.workspaceId)).filter((r) => r.id === runId)).toHaveLength(1);
     // A resend under that id with another budget is checked as a new Start is.
-    await expect(startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 500, runId })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/workspace budget/) });
+    await expect(startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 500, runId })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/workspace budget/) });
   });
 
   it('leaves a damaged artifact out of what the Run screen polls, as a missing one is, and shows the rest (WEB-4)', async () => {
@@ -235,7 +413,7 @@ describe('route handler logic', () => {
   it('prices an open question beside a damaged artifact, leaving that artifact out, and the Run screen still loads (DATA-1)', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
-    const { runId } = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 });
+    const { runId } = await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2 });
     const bad = await d.services.store.artifacts.putText('# Bad!', 'text/markdown');
     const hex = bad.id.slice('sha256:'.length);
     writeFileSync(path.join(current!.dataDir, 'artifacts', 'sha256', hex.slice(0, 2), hex.slice(2)), '# Bad?');
@@ -251,7 +429,7 @@ describe('route handler logic', () => {
   it('resolves a question only within its own run, and passes validation messages through', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page', recipeId: 'c1' });
-    const { runId } = await startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 5 });
+    const { runId } = await startRun(d, { demo: true, intakeId, recipeId: 'c1', budgetUsd: 5 });
     const cp = await openQuestion(d, runId);
     expect(cp.kind).toBe(FIRST_QUESTION.kind);
     await expect(resolveInRun(d, 'run-other', cp.id, { choice: ['seed'] })).rejects.toMatchObject({ status: 404 });
@@ -265,7 +443,7 @@ describe('route handler logic', () => {
   it('says a question was withdrawn, not answered, when its run ended while it was open (API-1)', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page', recipeId: 'c1' });
-    const { runId } = await startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 5 });
+    const { runId } = await startRun(d, { demo: true, intakeId, recipeId: 'c1', budgetUsd: 5 });
     const cp = await openQuestion(d, runId);
     await controlRun(d, runId, 'cancel');
     await d.services.store.withdrawCheckpoints(runId);
@@ -278,7 +456,7 @@ describe('route handler logic', () => {
   it('pauses, resumes and cancels runs through the runner, and leaves ended runs alone', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
-    const { runId } = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 });
+    const { runId } = await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2 });
     await controlRun(d, runId, 'pause');
     expect((await d.services.store.getRun(runId))?.status).toBe('paused');
     await controlRun(d, runId, 'resume');
@@ -368,7 +546,7 @@ describe('examples you admire (ADR-0071)', () => {
 
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
     const start = vi.spyOn(d.services.runner, 'start');
-    await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2, refs: [text.artifactId, image.artifactId, text.artifactId] });
+    await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2, refs: [text.artifactId, image.artifactId, text.artifactId] });
     expect(start.mock.calls[0]?.[0]).toMatchObject({ intakeId, inputs: { refs: [text.artifactId, image.artifactId] } });
   });
 
@@ -380,8 +558,8 @@ describe('examples you admire (ADR-0071)', () => {
 
     const { intakeId } = await createIntake(d, { text: 'A landing page', recipeId: 'c1' });
     const ref = await addRef(d, { text: 'A page I admire.' });
-    await expect(startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 2, refs: [ref.artifactId] })).rejects.toThrow(/does not use examples/);
-    await expect(startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2, refs: [`sha256:${'0'.repeat(64)}`] })).rejects.toThrow(/not found/);
+    await expect(startRun(d, { demo: true, intakeId, recipeId: 'c1', budgetUsd: 2, refs: [ref.artifactId] })).rejects.toThrow(/does not use examples/);
+    await expect(startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2, refs: [`sha256:${'0'.repeat(64)}`] })).rejects.toThrow(/not found/);
   });
 });
 
@@ -522,9 +700,9 @@ describe('model errors while recommending or composing (UX-2)', () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo' });
     vi.spyOn(d.services.advisor, 'recommend').mockRejectedValueOnce(gatewayError('rate-limited'));
-    await expect(recommendCommand(d, intakeId, { ensure: true })).rejects.toMatchObject({ message: expect.stringMatching(/busy/) });
+    await expect(recommendCommand(d, intakeId, { ensure: true, demo: true })).rejects.toMatchObject({ message: expect.stringMatching(/busy/) });
     expect((await d.services.store.getIntake(intakeId))?.recommendation).toBeUndefined();
-    const second = await recommendCommand(d, intakeId, { ensure: true });
+    const second = await recommendCommand(d, intakeId, { ensure: true, demo: true });
     expect(second.recommendation.recipeId).toBeTruthy();
   });
 });
@@ -537,15 +715,15 @@ describe('Recommendation screen commands return everything they change (F14, ADR
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
     recommend.mockRejectedValueOnce(rateLimited());
-    await expect(recommendCommand(d, intakeId, { ensure: true })).rejects.toMatchObject({ message: expect.stringMatching(/busy/) });
+    await expect(recommendCommand(d, intakeId, { ensure: true, demo: true })).rejects.toMatchObject({ message: expect.stringMatching(/busy/) });
     expect(recommend).toHaveBeenCalledTimes(1);
 
-    const first = await recommendCommand(d, intakeId, { ensure: true });
+    const first = await recommendCommand(d, intakeId, { ensure: true, demo: true });
     expect(first.recommendation.recipeId).toBe('c1');
     expect((await d.services.store.getIntake(intakeId))?.recommendation?.recipeId).toBe('c1');
     expect(first.remainingUsd).toBe((await workspaceRemaining(d)).remainingUsd);
     // Asking again returns the stored one: no second model call.
-    const second = await recommendCommand(d, intakeId, { ensure: true });
+    const second = await recommendCommand(d, intakeId, { ensure: true, demo: true });
     expect(second.recommendation).toEqual(first.recommendation);
     expect(recommend).toHaveBeenCalledTimes(2);
   });
@@ -553,9 +731,9 @@ describe('Recommendation screen commands return everything they change (F14, ADR
   it('re-routing with flipped answers still works through the same command', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
-    const { recommendation } = await recommendCommand(d, intakeId, { ensure: true });
+    const { recommendation } = await recommendCommand(d, intakeId, { ensure: true, demo: true });
     const answers = recommendation.answers.map((a) => (a.questionId === 'visual' ? { ...a, answer: false, setBy: 'user' as const } : a));
-    const next = await recommendCommand(d, intakeId, { answers });
+    const next = await recommendCommand(d, intakeId, { answers, demo: true });
     expect(next.recommendation.recipeId).not.toBe('c1');
     expect(typeof next.remainingUsd).toBe('number');
   });
@@ -567,7 +745,7 @@ describe('Recommendation screen commands return everything they change (F14, ADR
     recommend.mockRejectedValueOnce(rateLimited());
     await expect(currentRecommendation(d, intakeId)).rejects.toBeInstanceOf(HttpError);
     const calls = recommend.mock.calls.length;
-    const result = await composeCommand(d, intakeId);
+    const result = await composeCommand(d, intakeId, { demo: true });
     expect(result.composed.ok).toBe(true);
     expect(result.remainingUsd).toBe((await workspaceRemaining(d)).remainingUsd);
     expect(recommend.mock.calls.length).toBe(calls);
@@ -584,8 +762,11 @@ describe('Recommendation screen commands return everything they change (F14, ADR
   });
 
   it('accepts exactly two request bodies: { ensure: true } or { answers }; an empty body is still refused', () => {
-    expect(RecommendInput.safeParse({ ensure: true }).success).toBe(true);
-    expect(RecommendInput.safeParse({ answers: [] }).success).toBe(true);
+    expect(RecommendInput.safeParse({ ensure: true, demo: true }).success).toBe(true);
+    expect(RecommendInput.safeParse({ answers: [], demo: false }).success).toBe(true);
+    // Each says the mode its screen showed (B-199).
+    expect(RecommendInput.safeParse({ ensure: true }).success).toBe(false);
+    expect(RecommendInput.safeParse({ answers: [] }).success).toBe(false);
     expect(RecommendInput.safeParse({}).success).toBe(false);
     expect(RecommendInput.safeParse({ ensure: false }).success).toBe(false);
     expect(RecommendInput.safeParse({ ensure: 'yes' }).success).toBe(false);
@@ -695,7 +876,7 @@ describe('Settings: Spending records (F03, ADR-0095)', () => {
 describe('what the Run screen polls once its run has ended (ADR-0111)', () => {
   async function startedRun(d: Deps): Promise<string> {
     const { intakeId } = await createIntake(d, { text: 'Tighten my quarterly memo', recipeId: 'c4' });
-    return (await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 })).runId;
+    return (await startRun(d, { demo: true, intakeId, recipeId: 'c4', budgetUsd: 2 })).runId;
   }
   const call = (d: Deps, opId: string, runId?: string) => ({
     opId,
@@ -776,12 +957,12 @@ describe('the first recommendation is asked for once per intake (F03, ADR-0091)'
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
-    const [a, b] = await Promise.all([recommendCommand(d, intakeId, { ensure: true }), recommendCommand(d, intakeId, { ensure: true })]);
+    const [a, b] = await Promise.all([recommendCommand(d, intakeId, { ensure: true, demo: true }), recommendCommand(d, intakeId, { ensure: true, demo: true })]);
     expect(a.recommendation).toEqual(b.recommendation);
     expect(recommend).toHaveBeenCalledTimes(1);
     expect(intakeCalls()).toBe(1);
     // Later asks read the stored one.
-    await recommendCommand(d, intakeId, { ensure: true });
+    await recommendCommand(d, intakeId, { ensure: true, demo: true });
     expect(recommend).toHaveBeenCalledTimes(1);
   });
 
@@ -789,7 +970,7 @@ describe('the first recommendation is asked for once per intake (F03, ADR-0091)'
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'Tighten my quarterly memo' });
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
-    const [first, command] = await Promise.all([currentRecommendation(d, intakeId), recommendCommand(d, intakeId, { ensure: true })]);
+    const [first, command] = await Promise.all([currentRecommendation(d, intakeId), recommendCommand(d, intakeId, { ensure: true, demo: true })]);
     expect(first).toEqual(command.recommendation);
     expect(recommend).toHaveBeenCalledTimes(1);
     expect(intakeCalls()).toBe(1);
@@ -800,13 +981,13 @@ describe('the first recommendation is asked for once per intake (F03, ADR-0091)'
     const { intakeId } = await createIntake(d, { text: 'A memo' });
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
     recommend.mockRejectedValueOnce(new GatewayError('rate-limited', 'rate-limited from the provider'));
-    const both = await Promise.allSettled([recommendCommand(d, intakeId, { ensure: true }), recommendCommand(d, intakeId, { ensure: true })]);
+    const both = await Promise.allSettled([recommendCommand(d, intakeId, { ensure: true, demo: true }), recommendCommand(d, intakeId, { ensure: true, demo: true })]);
     expect(both).toEqual([
       { status: 'rejected', reason: expect.objectContaining({ message: expect.stringMatching(/busy/) }) },
       { status: 'rejected', reason: expect.objectContaining({ message: expect.stringMatching(/busy/) }) },
     ]);
     expect(recommend).toHaveBeenCalledTimes(1);
-    expect((await recommendCommand(d, intakeId, { ensure: true })).recommendation.recipeId).toBeTruthy();
+    expect((await recommendCommand(d, intakeId, { ensure: true, demo: true })).recommendation.recipeId).toBeTruthy();
     expect(recommend).toHaveBeenCalledTimes(2);
   });
 
@@ -828,15 +1009,15 @@ describe('"Build my own" and a re-route asked again while under way join the cal
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
     const compose = vi.spyOn(d.services.advisor, 'compose');
-    const [a, b] = await Promise.all([composeCommand(d, intakeId), composeCommand(d, intakeId)]);
+    const [a, b] = await Promise.all([composeCommand(d, intakeId, { demo: true }), composeCommand(d, intakeId, { demo: true })]);
     expect(a.composed).toEqual(b.composed);
     expect(compose).toHaveBeenCalledTimes(1);
     // "Try building again" once nothing is under way composes again, as it always has.
-    await composeCommand(d, intakeId);
+    await composeCommand(d, intakeId, { demo: true });
     expect(compose).toHaveBeenCalledTimes(2);
     // Another intake's compose is its own.
     const other = await createIntake(d, { text: 'Tighten my quarterly memo' });
-    await Promise.all([composeCommand(d, intakeId), composeCommand(d, other.intakeId)]);
+    await Promise.all([composeCommand(d, intakeId, { demo: true }), composeCommand(d, other.intakeId, { demo: true })]);
     expect(compose).toHaveBeenCalledTimes(4);
   });
 
@@ -846,10 +1027,10 @@ describe('"Build my own" and a re-route asked again while under way join the cal
     const { answers } = await currentRecommendation(d, intakeId);
     const flipped = answers.map((a, i) => (i === 0 ? { ...a, answer: !a.answer, confidence: 1, setBy: 'user' as const } : a));
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
-    const [a, b] = await Promise.all([recommendCommand(d, intakeId, { answers: flipped }), recommendCommand(d, intakeId, { answers: flipped })]);
+    const [a, b] = await Promise.all([recommendCommand(d, intakeId, { answers: flipped, demo: true }), recommendCommand(d, intakeId, { answers: flipped, demo: true })]);
     expect(a.recommendation).toEqual(b.recommendation);
     expect(recommend).toHaveBeenCalledTimes(1);
-    await Promise.all([recommendCommand(d, intakeId, { answers: flipped }), recommendCommand(d, intakeId, { answers })]);
+    await Promise.all([recommendCommand(d, intakeId, { answers: flipped, demo: true }), recommendCommand(d, intakeId, { answers, demo: true })]);
     expect(recommend).toHaveBeenCalledTimes(3);
   });
 
@@ -858,10 +1039,10 @@ describe('"Build my own" and a re-route asked again while under way join the cal
     const { intakeId } = await createIntake(d, { text: 'A memo' });
     const compose = vi.spyOn(d.services.advisor, 'compose');
     compose.mockRejectedValueOnce(new GatewayError('rate-limited', 'rate-limited from the provider'));
-    const both = await Promise.allSettled([composeCommand(d, intakeId), composeCommand(d, intakeId)]);
+    const both = await Promise.allSettled([composeCommand(d, intakeId, { demo: true }), composeCommand(d, intakeId, { demo: true })]);
     expect(both.map((r) => r.status)).toEqual(['rejected', 'rejected']);
     expect(compose).toHaveBeenCalledTimes(1);
-    expect((await composeCommand(d, intakeId)).composed).toBeTruthy();
+    expect((await composeCommand(d, intakeId, { demo: true })).composed).toBeTruthy();
     expect(compose).toHaveBeenCalledTimes(2);
   });
 });

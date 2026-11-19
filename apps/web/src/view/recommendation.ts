@@ -13,7 +13,7 @@
  */
 import type { Recommendation } from '@byway/contracts';
 import type { ComposeView } from '../server/api.ts';
-import { COMPOSED_CHANGED, COMPOSED_REFUSED, TRY_AGAIN_WONT_HELP } from './refusals.ts';
+import { COMPOSED_CHANGED, COMPOSED_REFUSED, MODE_CHANGED, TRY_AGAIN_WONT_HELP } from './refusals.ts';
 
 export type Selection = { kind: 'recipe'; recipeId: string } | { kind: 'composed' };
 
@@ -26,6 +26,11 @@ export interface RecState {
    * makes "Choose from the Library" its main button and keeps "Try again" beside it (B-178).
    */
   tryAgainHelps: boolean;
+  /**
+   * True when the failure was byway's mode changing since this screen was drawn (MODE_CHANGED, B-199): asking again from
+   * this screen is refused the same way, so the panel's main button reloads it, and Try again is not offered.
+   */
+  reload: boolean;
   /** What the proposal shows; null when there is nothing to show (recommending failed and nothing else was chosen). */
   selection: Selection | null;
   composed: ComposeView | null;
@@ -44,7 +49,7 @@ const recipe = (recipeId: string): Selection => ({ kind: 'recipe', recipeId });
 
 export function initialRecState(seed: RecSeed): RecState {
   const selection = seed.chosenRecipeId ? recipe(seed.chosenRecipeId) : seed.recommendation ? recipe(seed.recommendation.recipeId) : null;
-  return { rec: seed.recommendation, problem: seed.recommendation ? null : seed.recommendProblem, tryAgainHelps: true, selection, composed: seed.composed, remainingUsd: seed.remainingUsd };
+  return { rec: seed.recommendation, problem: seed.recommendation ? null : seed.recommendProblem, tryAgainHelps: true, reload: false, selection, composed: seed.composed, remainingUsd: seed.remainingUsd };
 }
 
 /** Try again succeeded. A recipe the person built meanwhile stays on screen; otherwise the recommendation is shown. */
@@ -53,6 +58,7 @@ export function recovered(state: RecState, result: { recommendation: Recommendat
     ...state,
     rec: result.recommendation,
     problem: null,
+    reload: false,
     selection: state.selection?.kind === 'composed' ? state.selection : recipe(result.recommendation.recipeId),
     remainingUsd: result.remainingUsd,
   };
@@ -60,7 +66,7 @@ export function recovered(state: RecState, result: { recommendation: Recommendat
 
 /** Try again failed: the failure panel stays, with the new reason and whether another try can help (B-178). */
 export function retryFailed(state: RecState, message: string, code?: string): RecState {
-  return { ...state, problem: message, tryAgainHelps: code !== TRY_AGAIN_WONT_HELP };
+  return { ...state, problem: message, tryAgainHelps: code !== TRY_AGAIN_WONT_HELP && code !== MODE_CHANGED, reload: code === MODE_CHANGED };
 }
 
 /** A flipped chooser answer re-routed: the screen follows the newly recommended recipe. */

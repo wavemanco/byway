@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { RecommendationView, type RecipeOption } from '../../../src/components/RecommendationView.tsx';
-import { composeView, workspaceRemaining } from '../../../src/server/api.ts';
+import { composedNow, workspaceRemaining } from '../../../src/server/api.ts';
 import { getDeps } from '../../../src/server/deps.ts';
 import { pricesChecked } from '../../../src/view/prices.ts';
 import { takesRefs } from '../../../src/view/refs.ts';
@@ -52,7 +52,7 @@ export default async function RecommendPage({ params, searchParams }: PageProps<
   }
   const recommendation = chosenRecipeId ? null : (intake.recommendation ?? null);
   // The composed recipe stays on the server; the page gets what it shows.
-  const composed = intake.composed ? composeView(intake.composed) : null;
+  const composed = composedNow(deps, intake);
   const spend = await workspaceRemaining(deps);
 
   return (

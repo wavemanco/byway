@@ -214,3 +214,18 @@ test('the local guard refuses a foreign Host on every path, Next.js internals in
   expect(await status('/settings', `${hostname}:${port}`, '')).toBe(401);
   expect(await status('/api/settings', `${hostname}:${port}`, `byway_access=${'x'.repeat(43)}`)).toBe(401);
 });
+
+test('the demo banner reads the mode again on the next screen, so a tab drawn in demo mode follows another tab that turned it off (B-199)', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('note').filter({ hasText: 'Demo mode — sample outputs' })).toBeVisible();
+  // As another tab turning demo mode off would leave it.
+  const modeRead = (url: URL) => url.pathname === '/api/mode';
+  await page.route(modeRead, (route) => route.fulfill({ json: { mode: 'live' } }));
+  try {
+    await page.getByRole('link', { name: 'Library' }).first().click();
+    await expect(page).toHaveURL(/\/library/);
+    await expect(page.getByRole('note').filter({ hasText: 'Demo mode — sample outputs' })).toHaveCount(0);
+  } finally {
+    await page.unroute(modeRead);
+  }
+});

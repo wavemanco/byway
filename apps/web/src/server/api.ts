@@ -6,7 +6,7 @@
  * Everything here goes through the four contracts: intakes and preferences live in the Store, recipes come from
  * Advisor.recipe (or the intake's composed recipe), and pause and resume are the Runner's.
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { AnswerWait, CheckpointRecord, ChooserAnswer, ComposeResult, EvidenceLabel, IntakeRecord, ModelWait, Preferences, Recommendation, RecipePresentation, RendererSettings, RunRecord, SpendRecords } from '@byway/contracts';
 import type { Recipe } from '@byway/recipe';
 import type { z } from 'zod';
@@ -18,7 +18,8 @@ import { auditText } from '../view/spending.ts';
 import { takesRefs } from '../view/refs.ts';
 import { onlyProtocolChecks } from '../view/composed.ts';
 import type { QuestionCosts } from '../view/questions.ts';
-import { COMPOSED_CHANGED, COMPOSED_REFUSED } from '../view/refusals.ts';
+import { COMPOSED_CHANGED, COMPOSED_REFUSED, MODE_CHANGED } from '../view/refusals.ts';
+import { DEMO_PROFILE_ID } from '../services/config.ts';
 import { isEnded } from '../view/run.ts';
 import type { UnusedAnswerNote } from '../view/rundata.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
@@ -30,7 +31,7 @@ import type { HeldKeyIn } from './http.ts';
 import { modelProblem } from './model-errors.ts';
 import { RefError, storeRef } from './refs.ts';
 import { readIntact } from './run-data.ts';
-import type { AnswerWaitPatch, ControlInput, ProblemInput, RecommendInput, RefInput, RendererPatch, ResolutionInput, SettingsPatch, SpendAction, StartInput } from './schemas.ts';
+import type { AnswerWaitPatch, ComposeInput, ControlInput, ProblemInput, RecommendInput, RefInput, RendererPatch, ResolutionInput, SettingsPatch, SpendAction, StartInput } from './schemas.ts';
 
 export class HttpError extends Error {
   override name = 'HttpError';
@@ -60,6 +61,12 @@ export interface Deps {
   pricesCheckedOn: string;
   /** Every model the gateway's profiles use, with the answer waits it offers (ServiceHost.modelWaits). */
   modelWaits(): ModelWait[];
+  /**
+   * The advisor of byway's services as it was started (pnpm start: real models where keys are set; pnpm demo: the mock),
+   * which Settings' demo switch does not change: it explains a run under its own profile as its worker runs it (B-199's
+   * fourth check). Without it, the request's own advisor.
+   */
+  runAdvisor?: Services['advisor'];
 }
 
 /** Runs a model-backed advisor call; a model error becomes an HttpError the person can act on (UX-2). */
@@ -135,11 +142,21 @@ export async function currentRecommendation(deps: Deps, intakeId: string): Promi
 export type ComposeView = Omit<ComposeResult, 'recipe'> & {
   /** Whether it takes your examples (the "Examples you admire" field). */
   takesRefs: boolean;
+  /**
+   * A digest of what the screen shows of it (shownDigest), which its Start sends back (B-199's third check): byway
+   * compares a Start's admission with what the sending tab showed, not with what another tab's screen drew since.
+   */
+  shown: string;
 };
 
 export function composeView(result: ComposeResult): ComposeView {
   const { recipe, ...view } = result;
-  return { ...view, takesRefs: takesRefs(recipe) };
+  return { ...view, takesRefs: takesRefs(recipe), shown: shownDigest(result) };
+}
+
+/** What a screen shows of a composed recipe, which a Start must still find: how it explains its steps, and what it costs. */
+export function shownDigest(result: Pick<ComposeResult, 'diff' | 'presentation' | 'estimate'>): string {
+  return createHash('sha256').update(JSON.stringify([result.diff, result.presentation, result.estimate])).digest('hex');
 }
 
 /**
@@ -216,12 +233,14 @@ export interface ComposeResultView {
  * sequence, ensure asks the model at most once, and two at the same time share one call (currentRecommendation).
  */
 export async function recommendCommand(deps: Deps, intakeId: string, input: z.infer<typeof RecommendInput>): Promise<RecommendResult> {
+  refuseChangedMode(deps, input.demo, 'this');
   const recommendation = 'ensure' in input ? await currentRecommendation(deps, intakeId) : await recommendIntake(deps, intakeId, input.answers);
   return { recommendation, remainingUsd: (await workspaceRemaining(deps)).remainingUsd };
 }
 
 /** POST /compose ("Build my own"). It never asks for a recommendation, so it works while recommending is refused. */
-export async function composeCommand(deps: Deps, intakeId: string): Promise<ComposeResultView> {
+export async function composeCommand(deps: Deps, intakeId: string, input: z.infer<typeof ComposeInput>): Promise<ComposeResultView> {
+  refuseChangedMode(deps, input.demo, 'this');
   const composed = await composeIntake(deps, intakeId);
   return { composed, remainingUsd: (await workspaceRemaining(deps)).remainingUsd };
 }
@@ -237,9 +256,15 @@ export async function addRef(deps: Deps, input: z.infer<typeof RefInput>): Promi
 }
 
 export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): Promise<{ runId: string }> {
+  // A Start sent again under its id is that run (ADR-0099 decision 7), whatever the mode is now: it has started already,
+  // and refusing it would hide a run that is under way (B-199's check). Any other Start is checked for the mode first.
+  const before = input.runId !== undefined ? await deps.services.store.getRun(input.runId) : undefined;
+  if (before === undefined) refuseChangedMode(deps, input.demo, 'the run');
   const intake = await requireIntake(deps, input.intakeId);
   const { services } = deps;
   let recipe: Recipe | undefined;
+  // A composed recipe admitted for this Start, kept on the intake only once its run has started (ADR-0121 item 4).
+  let admitted: ComposeResult | undefined;
   if (input.recipeId) {
     recipe = services.advisor.recipe(input.recipeId);
     if (!recipe) throw new HttpError(404, 'That recipe is not in the library.');
@@ -249,7 +274,14 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
     if (!intake.composed.ok) {
       throw new HttpError(400, onlyProtocolChecks(intake.composed.violations) ? 'The composed recipe did not pass the protocol checks, so it cannot run.' : 'The composed recipe cannot run. The screen says why; build your own again.');
     }
-    recipe = await admitComposed(deps, intake.id, intake.composed, intake.problem);
+    // A Start sent again under its run's id runs the recipe that run was started with: admitted again under the mode as
+    // it is now, it could read differently and be refused although its run is under way, and the run's own explanation
+    // would be overwritten (B-199's second check). The runner still refuses any mismatch of recipe, intake or problem.
+    if (before !== undefined) recipe = intake.composed.recipe;
+    else {
+      admitted = await admitComposed(deps, intake.id, intake.composed, intake.problem, input.composedShown);
+      recipe = admitted.recipe;
+    }
   }
   const refs = input.refs ?? [];
   if (refs.length > 0) {
@@ -261,20 +293,21 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
   const spend = await workspaceRemaining(deps);
   // A Start sent again under its id, with the same budget, is that run (ADR-0099 decision 7): its own first call has
   // already lowered what is left, so it is not checked again. The runner still decides same run or conflict.
-  const before = input.runId !== undefined ? await services.store.getRun(input.runId) : undefined;
   const problem = before !== undefined && before.budgetUsd === input.budgetUsd ? null : budgetProblem(input.budgetUsd, spend);
   if (problem) throw new HttpError(400, problem);
   const run = await refusedAsHttp(!input.recipeId, () => startOnce(services, {
     workspaceId: spend.workspaceId,
     recipe,
     problem: intake.problem,
-    profileId: deps.profileId,
+    // A Start sent again is the same Start: the profile it was first sent with, not the one demo mode may give now.
+    profileId: before?.profileId ?? deps.profileId,
     budgetUsd: input.budgetUsd,
     intakeId: intake.id,
     ...(input.routes ? { routes: input.routes } : {}),
     ...(refs.length > 0 ? { inputs: { refs: [...new Set(refs)] } } : {}),
     ...(input.runId ? { runId: input.runId } : {}),
   }));
+  if (admitted) await services.store.updateIntake(intake.id, { composed: admitted });
   return { runId: run.id };
 }
 
@@ -294,6 +327,57 @@ async function refusedAsHttp<T>(composed: boolean, start: () => Promise<T>): Pro
   }
 }
 
+/**
+ * The mode a screen showed must still be byway's before anything it sends that may spend (B-199): a screen drawn in demo
+ * mode says nothing is charged, and demo mode can be turned off in another tab while it is open, or on.
+ */
+function refuseChangedMode(deps: Deps, demo: boolean, what: string): void {
+  if (demo === (deps.services.mode === 'demo')) return;
+  throw new HttpError(
+    409,
+    demo
+      ? `Demo mode was turned off since this page was shown: reload it to see what ${what} costs.`
+      : `Demo mode was turned on since this page was shown: reload it to see ${what} with sample outputs.`,
+    MODE_CHANGED,
+  );
+}
+
+/**
+ * The stored composed recipe as the Recommendation screen shows it: admitted again as a Start would admit it (no model
+ * call), with the profile a run would use now, so its estimate and its explanation are what the run would get (B-199's
+ * checks: one built in demo mode was estimated at nothing, and its image steps explained as no image made). Nothing is
+ * stored: the view's digest goes back with its Start, which is compared with what this tab showed (B-199's third check).
+ * One that no longer passes is shown as stored, so drawing the screen never lifts its refusal; one built from a recipe
+ * byway no longer has is shown refused, as its Start would refuse it.
+ */
+export function composedNow(deps: Deps, intake: IntakeRecord): ComposeView | null {
+  if (!intake.composed) return null;
+  if (!intake.composed.ok) return composeView(intake.composed);
+  try {
+    return composeView(deps.services.advisor.admit(intake.composed, { problem: intake.problem, profileId: deps.profileId }));
+  } catch (err) {
+    if (!unknownRecipe(err)) throw err;
+    return composeView(goneResult(intake.composed));
+  }
+}
+
+/** A stored composed recipe whose nearest recipe byway no longer has: refused, since there is nothing to check it against. */
+function goneResult(stored: ComposeResult): ComposeResult {
+  return { ...stored, ok: false, violations: [{ ruleId: NEAREST_GONE, message: "the recipe it was built from is no longer one of byway's, so it cannot be checked again" }] };
+}
+
+/**
+ * Whether `run` uses real models although byway is in demo mode (B-199's second check): runs keep the models they started
+ * with, so a run started on a real profile goes on with it after Settings' demo switch is turned on. Only that switch
+ * does it: with no provider key, or under pnpm demo, every call goes to the mock, the run's own included.
+ */
+export function runUsesRealModels(context: { services: Services; workspaceId: string; preferences: Preferences; demoForced: boolean }, run: RunRecord | undefined): boolean {
+  const { services } = context;
+  if (services.mode !== 'demo' || !context.preferences.demoMode || context.demoForced) return false;
+  if (!services.gateway.providers().some((p) => p.provider !== 'mock' && p.configured)) return false;
+  return run !== undefined && run.workspaceId === context.workspaceId && run.profileId !== DEMO_PROFILE_ID;
+}
+
 /** The violation a stored composed recipe gets when the recipe it was built from is no longer in the catalog. */
 const NEAREST_GONE = 'ADMIT-NEAREST';
 
@@ -311,26 +395,31 @@ const unknownRecipe = (err: unknown): boolean => err instanceof Error && err.nam
  * does not start until the person has seen the new one, which the refusal carries. One built from a recipe the catalog
  * no longer has cannot be checked again, and is refused too (NEAREST_GONE).
  */
-async function admitComposed(deps: Deps, intakeId: string, stored: ComposeResult, problem: IntakeRecord['problem']): Promise<Recipe> {
+async function admitComposed(deps: Deps, intakeId: string, stored: ComposeResult, problem: IntakeRecord['problem'], shown?: string): Promise<ComposeResult> {
   let again: ComposeResult;
   try {
     again = deps.services.advisor.admit(stored, { problem, profileId: deps.profileId });
   } catch (err) {
     if (!unknownRecipe(err)) throw err;
     // The recipe it was built from is no longer one of byway's, so there is nothing to check it against. It is refused
-    // like one that no longer passes: the intake says why, and Start stays blocked until a new one is built.
-    const gone: ComposeResult = { ...stored, ok: false, violations: [{ ruleId: NEAREST_GONE, message: "the recipe it was built from is no longer one of byway's, so it cannot be checked again" }] };
-    await deps.services.store.updateIntake(intakeId, { composed: gone });
+    // like one that no longer passes, and the screen shows it so when drawn (composedNow); the intake is left as it was.
+    const gone = goneResult(stored);
     throw new HttpError(400, "This recipe was built from one byway no longer has, so it cannot be checked again or run. Build your own again.", COMPOSED_REFUSED, { composed: composeView(gone) });
   }
-  await deps.services.store.updateIntake(intakeId, { composed: again });
+  // A refused Start leaves the intake as it was (ADR-0121 item 4): the refusal carries the new view to its screen, and
+  // the screen admits it again when drawn. Only a Start without the view's digest keeps it on a 409, for its next try; a
+  // Start that passes here keeps it once its run has started (startRun), not before its budget and examples are checked.
   if (!again.ok) {
     throw new HttpError(400, "This recipe no longer passes byway's checks, so it cannot run. Build your own again for one that does.", COMPOSED_REFUSED, { composed: composeView(again) });
   }
-  if (JSON.stringify(again.diff) !== JSON.stringify(stored.diff) || JSON.stringify(again.presentation) !== JSON.stringify(stored.presentation)) {
+  // Compared with what the sending tab showed, when it says (the view's digest; B-199's third check): another tab's screen
+  // drawn since does not stand in for this one having seen the change. Without it, with what is stored, as before.
+  const changed = shown !== undefined ? shownDigest(again) !== shown : JSON.stringify(again.diff) !== JSON.stringify(stored.diff) || JSON.stringify(again.presentation) !== JSON.stringify(stored.presentation);
+  if (changed) {
+    if (shown === undefined) await deps.services.store.updateIntake(intakeId, { composed: again });
     throw new HttpError(409, 'byway checked this recipe again and now explains it differently, so it did not start. Read what it does, then start it.', COMPOSED_CHANGED, { composed: composeView(again) });
   }
-  return again.recipe;
+  return again;
 }
 
 /**
@@ -357,17 +446,30 @@ export interface RunRecipe {
 
 /**
  * How a run's recipe is presented: catalog recipes from the advisor, with a computed label; composed ones from the
- * intake the run started from (RunRecord.intakeId), which keeps the composed recipe, its presentation and its label.
- * Unknown gives neither, rather than a guess.
+ * recipe kept on the intake the run started from (RunRecord.intakeId), admitted again under the run's own profile by the
+ * advisor of byway's services as started (ADR-0121 item 5), or as stored when that cannot be done. Unknown gives neither,
+ * rather than a guess.
  */
 export async function recipeForRun(deps: Deps, run: RunRecord): Promise<RunRecipe> {
   const { advisor, store } = deps.services;
   const recipe = advisor.recipe(run.recipeId);
   const presentation = advisor.catalog().find((p) => p.recipeId === run.recipeId);
   if (recipe && presentation) return { presentation, label: advisor.label(recipe), recipe, steps: stepIndex(presentation, recipe) };
-  const composed = run.intakeId ? (await store.getIntake(run.intakeId))?.composed : undefined;
-  if (composed && composed.recipe.id === run.recipeId) {
-    return { presentation: composed.presentation, label: composed.label, recipe: composed.recipe, steps: stepIndex(composed.presentation, composed.recipe) };
+  const intake = run.intakeId ? await store.getIntake(run.intakeId) : undefined;
+  const composed = intake?.composed;
+  if (intake && composed && composed.recipe.id === run.recipeId) {
+    // Explained as it runs: admitted again under the run's own profile, by the advisor its worker's gateway matches (no
+    // model call), so a later Start under another profile or mode, refused or not, does not rewrite what this run's
+    // screens say it does (B-199's fourth check). A recipe built from one byway no longer has keeps what was stored.
+    let shown: Pick<ComposeResult, 'presentation' | 'label'> = composed;
+    try {
+      shown = (deps.runAdvisor ?? advisor).admit(composed, { problem: intake.problem, profileId: run.profileId });
+    } catch (err) {
+      // A recipe whose source is gone, or a run on a profile or model byway no longer prices: what was stored, rather than
+      // no Run, Result or History screen (B-199's fifth check).
+      if (!(err instanceof Error && err.name === 'AdvisorError')) throw err;
+    }
+    return { presentation: shown.presentation, label: shown.label, recipe: composed.recipe, steps: stepIndex(shown.presentation, composed.recipe) };
   }
   return {};
 }

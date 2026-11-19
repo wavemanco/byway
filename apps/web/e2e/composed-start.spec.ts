@@ -75,13 +75,15 @@ test('a composed recipe that no longer passes the checks is refused at Start (40
 });
 
 test('a composed recipe whose explanation changed does not start (409); the new one shows, and a second Start runs it', async ({ page }) => {
-  const intakeId = await buildMyOwn(page);
-  await storedAs(intakeId, (c) => ({ ...c, diff: ['The same steps as Memo Polish.'] }));
-  // The screen shows what is stored: the stale explanation.
-  await page.reload();
-  await page.getByRole('button', { name: 'Show your recipe' }).click();
-  await expect(page.locator('.composed')).toContainText('The same steps as Memo Polish.');
+  await buildMyOwn(page);
+  // As a tab drawn before the change would send it: what it showed is not what byway would run now (B-199's third check).
+  const starts = (url: URL) => url.pathname === '/api/runs';
+  await page.route(starts, async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    await route.continue({ postData: JSON.stringify({ ...route.request().postDataJSON(), composedShown: '0'.repeat(64) }) });
+  });
   expect(await startAndRead(page)).toBe(409);
+  await page.unroute(starts);
   await expect(page.locator('.start-bar-error')).toContainText('now explains it differently');
   await expect(page.locator('.composed')).toContainText('repeats up to 1 round instead of 2');
   await expect(page.locator('.composed')).not.toContainText('The same steps as Memo Polish.');
@@ -90,6 +92,21 @@ test('a composed recipe whose explanation changed does not start (409); the new 
   expect(await startAndRead(page)).toBe(201);
   await expect(page).toHaveURL(/\/runs\//, { timeout: 60_000 });
   // Cancel it, so it does not keep the demo engine busy for the tests after this one.
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Cancel run' }).click();
+  await expect(page.locator('.run-status')).toHaveText('Cancelled');
+});
+
+test('a screen drawn again shows a composed recipe as byway would admit it now, and its Start runs it (B-199)', async ({ page }) => {
+  const intakeId = await buildMyOwn(page);
+  await storedAs(intakeId, (c) => ({ ...c, diff: ['The same steps as Memo Polish.'] }));
+  // Drawn again, the screen admits it as a Start would: the explanation as it is now, not the stale one stored.
+  await page.reload();
+  await page.getByRole('button', { name: 'Show your recipe' }).click();
+  await expect(page.locator('.composed')).toContainText('repeats up to 1 round instead of 2');
+  await expect(page.locator('.composed')).not.toContainText('The same steps as Memo Polish.');
+  expect(await startAndRead(page)).toBe(201);
+  await expect(page).toHaveURL(/\/runs\//, { timeout: 60_000 });
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await page.getByRole('button', { name: 'Cancel run' }).click();
   await expect(page.locator('.run-status')).toHaveText('Cancelled');
